@@ -12,6 +12,7 @@ import json
 import os
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -40,12 +41,20 @@ def to_twelvedata_params(symbol: str) -> dict:
 def http_get_json(url: str, retries: int = 4) -> dict:
     delay = 2.0
     last_err = None
-    for _ in range(retries):
+    for attempt in range(retries):
         try:
             with urllib.request.urlopen(url, timeout=30) as resp:
                 return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as err:
+            # 404/400 같은 클라이언트 오류(4xx)는 재시도해도 성공하지 못하므로
+            # 즉시 실패시킨다. 다만 429(레이트리밋)는 기다리면 풀리므로 재시도한다.
+            if 400 <= err.code < 500 and err.code != 429:
+                raise RuntimeError(f"fetch failed: {url}: {err}") from err
+            last_err = err
         except Exception as err:  # noqa: BLE001
             last_err = err
+        # 마지막 시도 뒤에는 대기하지 않는다 (불필요한 지연 제거)
+        if attempt < retries - 1:
             time.sleep(delay)
             delay *= 2
     raise RuntimeError(f"fetch failed: {url}: {last_err}")
