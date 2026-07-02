@@ -1,0 +1,466 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ETF 최대낙폭(MDD) 계산기</title>
+<style>
+  :root {
+    --surface-1:      #fcfcfb;
+    --page-plane:     #f9f9f7;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --gridline:       #e1e0d9;
+    --baseline:       #c3c2b7;
+    --border:         rgba(11,11,11,0.10);
+    --good:           #0ca30c;
+    --critical:       #d03b3b;
+    --series-price:   #2a78d6;   /* blue */
+    --series-dd:      #e34948;   /* red */
+    --tooltip-bg:     #0b0b0b;
+    --tooltip-text:   #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --surface-1:      #1a1a19;
+      --page-plane:     #0d0d0d;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #898781;
+      --gridline:       #2c2c2a;
+      --baseline:       #383835;
+      --border:         rgba(255,255,255,0.10);
+      --good:           #0ca30c;
+      --critical:       #e66767;
+      --series-price:   #3987e5;
+      --series-dd:      #e66767;
+      --tooltip-bg:     #fcfcfb;
+      --tooltip-text:   #0b0b0b;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page-plane);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 28px 20px 60px; }
+
+  h1 { font-size: 19px; font-weight: 700; margin: 0 0 4px; }
+  .lede { font-size: 13px; color: var(--text-muted); margin: 0 0 24px; }
+
+  /* ---- 필터 행 ---- */
+  .controls {
+    display: flex; flex-wrap: wrap; gap: 10px;
+    margin-bottom: 20px;
+  }
+  select {
+    font: inherit; font-size: 13.5px;
+    padding: 9px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--surface-1);
+    color: var(--text-primary);
+    min-width: 220px;
+  }
+  #periodSelect { min-width: 120px; }
+
+  /* ---- 카드 공통 ---- */
+  .card {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 20px 22px;
+    margin-bottom: 16px;
+  }
+
+  /* ---- 통계 타일 ---- */
+  .stat-row { display: grid; grid-template-columns: 1.3fr 1fr 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+  @media (max-width: 640px) { .stat-row { grid-template-columns: 1fr 1fr; } }
+  .stat { padding: 4px 2px; }
+  .stat-label { font-size: 12px; color: var(--text-muted); margin: 0 0 6px; }
+  .stat-hero { font-size: 40px; font-weight: 700; line-height: 1; margin: 0; }
+  .stat-value { font-size: 18px; font-weight: 600; margin: 0; }
+  .stat-sub { font-size: 12px; color: var(--text-secondary); margin: 4px 0 0; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 999px;
+  }
+  .badge.recovered { color: var(--good); background: color-mix(in srgb, var(--good) 14%, transparent); }
+  .badge.ongoing { color: var(--critical); background: color-mix(in srgb, var(--critical) 14%, transparent); }
+
+  /* ---- 차트 ---- */
+  .chart-title { font-size: 13px; font-weight: 600; color: var(--text-secondary); margin: 0 0 12px; }
+  .chart-box { position: relative; }
+  svg.chart { width: 100%; height: auto; display: block; overflow: visible; }
+  .axis-label { font-size: 10.5px; fill: var(--text-muted); }
+  .gridline { stroke: var(--gridline); stroke-width: 1; }
+  .baseline { stroke: var(--baseline); stroke-width: 1; }
+  .price-line { fill: none; stroke: var(--series-price); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .dd-line { fill: none; stroke: var(--series-dd); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .dd-area { fill: var(--series-dd); opacity: 0.10; }
+  .marker { fill: var(--surface-1); stroke-width: 2; }
+  .marker.peak { stroke: var(--text-secondary); }
+  .marker.trough { stroke: var(--critical); }
+  .direct-label { font-size: 11px; font-weight: 600; fill: var(--text-primary); }
+  .crosshair-line { stroke: var(--text-muted); stroke-width: 1; stroke-dasharray: 3 3; pointer-events: none; }
+
+  .tooltip {
+    position: absolute; pointer-events: none;
+    background: var(--tooltip-bg); color: var(--tooltip-text);
+    font-size: 12px; padding: 8px 10px; border-radius: 8px;
+    transform: translate(-50%, -115%);
+    white-space: nowrap;
+    opacity: 0; transition: opacity 0.1s;
+    z-index: 5;
+  }
+  .tooltip .t-date { color: var(--text-muted); font-size: 11px; margin-bottom: 3px; }
+  .tooltip .t-row { display: flex; gap: 8px; justify-content: space-between; }
+  .tooltip .t-key { display: inline-flex; align-items: center; gap: 5px; }
+  .tooltip .t-swatch { width: 8px; height: 2px; display: inline-block; }
+
+  footer { font-size: 12px; color: var(--text-muted); margin-top: 8px; line-height: 1.6; }
+  footer b { color: var(--text-secondary); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>ETF 최대낙폭(MDD) 계산기</h1>
+  <p class="lede">종목을 고르면 선택한 기간 동안의 최대낙폭(고점 대비 최대 하락폭)을 계산해서 보여줍니다.</p>
+
+  <div class="controls">
+    <select id="etfSelect" aria-label="ETF 선택"></select>
+    <select id="periodSelect" aria-label="기간 선택">
+      <option value="0">전체 기간</option>
+      <option value="1">최근 1년</option>
+      <option value="3">최근 3년</option>
+      <option value="5" selected>최근 5년</option>
+      <option value="10">최근 10년</option>
+    </select>
+  </div>
+
+  <div id="app">
+    <p style="color:var(--text-muted); font-size:13px;">데이터를 불러오는 중…</p>
+  </div>
+
+  <footer id="footerNote"></footer>
+</div>
+
+<script>
+"use strict";
+
+const DATA_DIR = "data";
+const state = { manifest: null, cache: new Map() };
+
+async function fetchJSON(path) {
+  const res = await fetch(path);
+  if (!res.ok) throw new Error(`${path} 불러오기 실패 (${res.status})`);
+  return res.json();
+}
+
+function fmtPct(x) {
+  return (x * 100).toFixed(1) + "%";
+}
+function fmtPrice(x, currency) {
+  const sym = currency === "KRW" ? "₩" : "$";
+  return sym + x.toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
+function fmtDate(d) { return d; }
+
+/* ---------- MDD 계산 ---------- */
+function calcMDD(dates, closes) {
+  let peakPrice = closes[0], peakIdx = 0;
+  let mdd = 0, mddPeakIdx = 0, mddTroughIdx = 0;
+  const ddSeries = new Array(closes.length);
+  for (let i = 0; i < closes.length; i++) {
+    if (closes[i] > peakPrice) { peakPrice = closes[i]; peakIdx = i; }
+    const dd = (closes[i] - peakPrice) / peakPrice;
+    ddSeries[i] = dd;
+    if (dd < mdd) { mdd = dd; mddPeakIdx = peakIdx; mddTroughIdx = i; }
+  }
+  let recoveryIdx = -1;
+  const peakVal = closes[mddPeakIdx];
+  for (let i = mddTroughIdx + 1; i < closes.length; i++) {
+    if (closes[i] >= peakVal) { recoveryIdx = i; break; }
+  }
+  return { mdd, peakIdx: mddPeakIdx, troughIdx: mddTroughIdx, recoveryIdx, ddSeries };
+}
+
+function daysBetween(dateStrA, dateStrB) {
+  const a = new Date(dateStrA), b = new Date(dateStrB);
+  return Math.round((b - a) / 86400000);
+}
+
+function sliceByPeriod(dates, closes, years) {
+  if (!years) return { dates, closes };
+  const lastDate = new Date(dates[dates.length - 1]);
+  const cutoff = new Date(lastDate);
+  cutoff.setFullYear(cutoff.getFullYear() - years);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  let startIdx = dates.findIndex((d) => d >= cutoffStr);
+  if (startIdx < 0) startIdx = 0;
+  return { dates: dates.slice(startIdx), closes: closes.slice(startIdx) };
+}
+
+/* ---------- 차트 렌더링 (공용) ---------- */
+const CHART_W = 800, CHART_H = 220, PAD_L = 46, PAD_R = 12, PAD_T = 14, PAD_B = 22;
+
+function niceTicks(min, max, count) {
+  if (min === max) { min -= 1; max += 1; }
+  const span = max - min;
+  const step0 = span / count;
+  const mag = Math.pow(10, Math.floor(Math.log10(step0)));
+  const norm = step0 / mag;
+  let step;
+  if (norm < 1.5) step = 1 * mag;
+  else if (norm < 3) step = 2 * mag;
+  else if (norm < 7) step = 5 * mag;
+  else step = 10 * mag;
+  const niceMin = Math.floor(min / step) * step;
+  const niceMax = Math.ceil(max / step) * step;
+  const ticks = [];
+  for (let v = niceMin; v <= niceMax + step * 0.001; v += step) ticks.push(v);
+  return ticks;
+}
+
+function buildChart(container, opts) {
+  const { dates, values, color, mode, markers, valueFmt, seriesLabel } = opts;
+  const n = values.length;
+  const xAt = (i) => PAD_L + (i / (n - 1)) * (CHART_W - PAD_L - PAD_R);
+
+  let vMin = Math.min(...values), vMax = Math.max(...values);
+  if (mode === "drawdown") vMax = Math.max(vMax, 0);
+  const ticks = niceTicks(vMin, vMax, 5);
+  const tMin = ticks[0], tMax = ticks[ticks.length - 1];
+  const yAt = (v) => PAD_T + (1 - (v - tMin) / (tMax - tMin)) * (CHART_H - PAD_T - PAD_B);
+
+  let path = "";
+  for (let i = 0; i < n; i++) path += (i === 0 ? "M" : "L") + xAt(i).toFixed(2) + "," + yAt(values[i]).toFixed(2) + " ";
+
+  let areaPath = "";
+  if (mode === "drawdown") {
+    const zeroY = yAt(0).toFixed(2);
+    areaPath = `M${xAt(0).toFixed(2)},${zeroY} ` + path.replace(/^M/, "L") + `L${xAt(n - 1).toFixed(2)},${zeroY} Z`;
+  }
+
+  const gridSvg = ticks
+    .map((t) => {
+      const y = yAt(t).toFixed(2);
+      const label = mode === "drawdown" ? (t * 100).toFixed(0) + "%" : "$" + t.toLocaleString();
+      return `<line class="gridline" x1="${PAD_L}" x2="${CHART_W - PAD_R}" y1="${y}" y2="${y}"/>` +
+             `<text class="axis-label" x="${PAD_L - 6}" y="${Number(y) + 3}" text-anchor="end">${label}</text>`;
+    })
+    .join("");
+
+  // x축: 대략 5개 라벨
+  const xTickCount = 5;
+  let xLabelsSvg = "";
+  for (let k = 0; k <= xTickCount; k++) {
+    const idx = Math.round((k / xTickCount) * (n - 1));
+    const x = xAt(idx).toFixed(2);
+    xLabelsSvg += `<text class="axis-label" x="${x}" y="${CHART_H - 4}" text-anchor="middle">${dates[idx].slice(0, 7)}</text>`;
+  }
+
+  let markerSvg = "";
+  if (markers) {
+    for (const m of markers) {
+      const x = xAt(m.idx).toFixed(2), y = yAt(values[m.idx]).toFixed(2);
+      markerSvg += `<circle class="marker ${m.cls}" cx="${x}" cy="${y}" r="5"/>`;
+      if (m.label) {
+        const anchor = m.idx > n * 0.75 ? "end" : m.idx < n * 0.25 ? "start" : "middle";
+        const dx = anchor === "end" ? -8 : anchor === "start" ? 8 : 0;
+        markerSvg += `<text class="direct-label" x="${Number(x) + dx}" y="${Number(y) - 10}" text-anchor="${anchor}">${m.label}</text>`;
+      }
+    }
+  }
+
+  container.innerHTML = `
+    <div class="chart-box">
+      <svg class="chart" viewBox="0 0 ${CHART_W} ${CHART_H}" preserveAspectRatio="xMidYMid meet">
+        ${gridSvg}
+        <line class="baseline" x1="${PAD_L}" x2="${CHART_W - PAD_R}" y1="${CHART_H - PAD_B}" y2="${CHART_H - PAD_B}"/>
+        ${areaPath ? `<path class="dd-area" d="${areaPath}"/>` : ""}
+        <path class="${mode === "drawdown" ? "dd-line" : "price-line"}" d="${path}"/>
+        ${markerSvg}
+        ${xLabelsSvg}
+        <g class="hover-layer" style="display:none">
+          <line class="crosshair-line" x1="0" x2="0" y1="${PAD_T}" y2="${CHART_H - PAD_B}"/>
+        </g>
+      </svg>
+      <div class="tooltip"></div>
+    </div>`;
+
+  const svg = container.querySelector("svg");
+  const hoverLayer = container.querySelector(".hover-layer");
+  const crosshair = container.querySelector(".crosshair-line");
+  const tooltip = container.querySelector(".tooltip");
+
+  function pointerToIndex(evt) {
+    const pt = svg.createSVGPoint();
+    pt.x = evt.clientX; pt.y = evt.clientY;
+    const loc = pt.matrixTransform(svg.getScreenCTM().inverse());
+    const ratio = Math.min(1, Math.max(0, (loc.x - PAD_L) / (CHART_W - PAD_L - PAD_R)));
+    return Math.round(ratio * (n - 1));
+  }
+
+  function onMove(evt) {
+    const i = pointerToIndex(evt);
+    if (i < 0 || i >= n) return;
+    hoverLayer.style.display = "";
+    const x = xAt(i);
+    crosshair.setAttribute("x1", x); crosshair.setAttribute("x2", x);
+
+    const rect = svg.getBoundingClientRect();
+    const px = rect.left + (x / CHART_W) * rect.width;
+    const py = rect.top + (yAt(values[i]) / CHART_H) * rect.height;
+    tooltip.style.left = (px - rect.left) + "px";
+    tooltip.style.top = (py - rect.top) + "px";
+    tooltip.style.opacity = "1";
+    tooltip.innerHTML =
+      `<div class="t-date">${dates[i]}</div>` +
+      `<div class="t-row"><span class="t-key"><span class="t-swatch" style="background:${color}"></span>${seriesLabel}</span>` +
+      `<strong>${valueFmt(values[i])}</strong></div>`;
+  }
+  function onLeave() { hoverLayer.style.display = "none"; tooltip.style.opacity = "0"; }
+
+  svg.addEventListener("pointermove", onMove);
+  svg.addEventListener("pointerleave", onLeave);
+}
+
+/* ---------- 메인 렌더 ---------- */
+async function loadSymbol(symbol) {
+  if (state.cache.has(symbol)) return state.cache.get(symbol);
+  const d = await fetchJSON(`${DATA_DIR}/${symbol}.json`);
+  state.cache.set(symbol, d);
+  return d;
+}
+
+async function render() {
+  const symbol = document.getElementById("etfSelect").value;
+  const years = Number(document.getElementById("periodSelect").value);
+  const app = document.getElementById("app");
+  app.innerHTML = `<p style="color:var(--text-muted); font-size:13px;">불러오는 중…</p>`;
+
+  let full;
+  try {
+    full = await loadSymbol(symbol);
+  } catch (err) {
+    app.innerHTML = `<p style="color:var(--critical); font-size:13px;">${err.message}</p>`;
+    return;
+  }
+
+  const meta = [...state.manifest.us, ...state.manifest.kr].find((e) => e.symbol === symbol);
+  const { dates, closes } = sliceByPeriod(full.dates, full.closes, years);
+  if (dates.length < 2) {
+    app.innerHTML = `<p style="color:var(--text-muted); font-size:13px;">선택한 기간에 데이터가 부족합니다.</p>`;
+    return;
+  }
+  const { mdd, peakIdx, troughIdx, recoveryIdx, ddSeries } = calcMDD(dates, closes);
+
+  const peakDate = dates[peakIdx], troughDate = dates[troughIdx];
+  const fallDays = daysBetween(peakDate, troughDate);
+  const recovered = recoveryIdx !== -1;
+  const recoveryDate = recovered ? dates[recoveryIdx] : null;
+  const recoveryDays = recovered ? daysBetween(troughDate, recoveryDate) : null;
+
+  app.innerHTML = `
+    <div class="card">
+      <div class="stat-row">
+        <div class="stat">
+          <p class="stat-label">최대낙폭 (MDD)</p>
+          <p class="stat-hero" style="color:var(--critical)">-${(Math.abs(mdd) * 100).toFixed(1)}%</p>
+        </div>
+        <div class="stat">
+          <p class="stat-label">고점</p>
+          <p class="stat-value">${fmtPrice(closes[peakIdx], full.currency)}</p>
+          <p class="stat-sub">${peakDate}</p>
+        </div>
+        <div class="stat">
+          <p class="stat-label">저점</p>
+          <p class="stat-value">${fmtPrice(closes[troughIdx], full.currency)}</p>
+          <p class="stat-sub">${troughDate} · 고점 후 ${fallDays}일</p>
+        </div>
+        <div class="stat">
+          <p class="stat-label">회복 상태</p>
+          ${recovered
+            ? `<span class="badge recovered">✓ 회복 완료</span><p class="stat-sub">${recoveryDate} · ${recoveryDays}일 소요</p>`
+            : `<span class="badge ongoing">● 미회복 (진행 중)</span><p class="stat-sub">${dates[dates.length - 1]} 기준</p>`}
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <p class="chart-title">가격 추이 — ${meta ? meta.name : symbol}</p>
+      <div id="priceChart"></div>
+    </div>
+
+    <div class="card">
+      <p class="chart-title">낙폭 추이 (Underwater) — 고점 대비 하락률</p>
+      <div id="ddChart"></div>
+    </div>
+  `;
+
+  const priceColor = getComputedStyle(document.documentElement).getPropertyValue("--series-price").trim();
+  buildChart(document.getElementById("priceChart"), {
+    dates, values: closes, color: priceColor,
+    mode: "price",
+    markers: [
+      { idx: peakIdx, cls: "peak", label: "고점" },
+      { idx: troughIdx, cls: "trough", label: `−${(Math.abs(mdd) * 100).toFixed(1)}%` },
+    ],
+    valueFmt: (v) => fmtPrice(v, full.currency),
+    seriesLabel: "종가",
+  });
+
+  buildChart(document.getElementById("ddChart"), {
+    dates, values: ddSeries, color: getComputedStyle(document.documentElement).getPropertyValue("--series-dd").trim(),
+    mode: "drawdown",
+    markers: [{ idx: troughIdx, cls: "trough", label: `−${(Math.abs(mdd) * 100).toFixed(1)}%` }],
+    valueFmt: (v) => (v * 100).toFixed(1) + "%",
+    seriesLabel: "낙폭",
+  });
+}
+
+async function init() {
+  try {
+    state.manifest = await fetchJSON(`${DATA_DIR}/manifest.json`);
+  } catch (err) {
+    document.getElementById("app").innerHTML =
+      `<p style="color:var(--critical); font-size:13px;">데이터를 불러오지 못했습니다: ${err.message}</p>`;
+    return;
+  }
+
+  const select = document.getElementById("etfSelect");
+  const byCategory = new Map();
+  for (const etf of state.manifest.us) {
+    if (!byCategory.has(etf.category)) byCategory.set(etf.category, []);
+    byCategory.get(etf.category).push(etf);
+  }
+  for (const [category, list] of byCategory) {
+    const group = document.createElement("optgroup");
+    group.label = category;
+    for (const etf of list) {
+      const opt = document.createElement("option");
+      opt.value = etf.symbol;
+      opt.textContent = etf.name;
+      group.appendChild(opt);
+    }
+    select.appendChild(group);
+  }
+
+  document.getElementById("footerNote").innerHTML =
+    `데이터 출처: Twelve Data · 마지막 갱신: <b>${state.manifest.updated}</b> · ` +
+    `종가는 분할(split) 조정만 반영되며 배당 재투자는 반영되지 않을 수 있습니다. 한국 상장 ETF는 현재 데이터 소스 제약으로 준비 중입니다.`;
+
+  select.addEventListener("change", render);
+  document.getElementById("periodSelect").addEventListener("change", render);
+  render();
+}
+
+init();
+</script>
+</body>
+</html>
