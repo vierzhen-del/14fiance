@@ -1,0 +1,38 @@
+{
+  "us": [
+    { "symbol": "SPY",  "name": "SPY (S&P500)",            "category": "대표 지수" },
+    { "symbol": "VOO",  "name": "VOO (S&P500)",            "category": "대표 지수" },
+    { "symbol": "VTI",  "name": "VTI (미국 전체시장)",      "category": "대표 지수" },
+    { "symbol": "QQQ",  "name": "QQQ (나스닥100)",          "category": "대표 지수" },
+    { "symbol": "DIA",  "name": "DIA (다우존스30)",         "category": "대표 지수" },
+    { "symbol": "IWM",  "name": "IWM (러셀2000)",           "category": "대표 지수" },
+    { "symbol": "SCHD", "name": "SCHD (배당성장)",          "category": "배당" },
+    { "symbol": "VIG",  "name": "VIG (배당성장)",           "category": "배당" },
+    { "symbol": "DGRW", "name": "DGRW (배당퀄리티)",        "category": "배당" },
+    { "symbol": "DGRO", "name": "DGRO (배당성장)",          "category": "배당" },
+    { "symbol": "DIVO", "name": "DIVO (배당 커버드콜)",     "category": "배당" },
+    { "symbol": "SCHG", "name": "SCHG (대형성장)",          "category": "성장·모멘텀" },
+    { "symbol": "SPMO", "name": "SPMO (S&P500 모멘텀)",     "category": "성장·모멘텀" },
+    { "symbol": "MOAT", "name": "MOAT (경제적해자)",        "category": "성장·모멘텀" },
+    { "symbol": "VONG", "name": "VONG (러셀1000 성장)",     "category": "성장·모멘텀" },
+    { "symbol": "IWF",  "name": "IWF (러셀1000 성장)",      "category": "성장·모멘텀" },
+    { "symbol": "SMH",  "name": "SMH (반도체)",             "category": "반도체·레버리지" },
+    { "symbol": "SOXX", "name": "SOXX (반도체)",            "category": "반도체·레버리지" },
+    { "symbol": "SOXL", "name": "SOXL (반도체 3배)",        "category": "반도체·레버리지" },
+    { "symbol": "QLD",  "name": "QLD (나스닥100 2배)",      "category": "반도체·레버리지" },
+    { "symbol": "GLD",  "name": "GLD (금)",                 "category": "자산배분" },
+    { "symbol": "TLT",  "name": "TLT (미국 장기국채)",      "category": "자산배분" }
+  ],
+  "kr": [
+    { "symbol": "069500.KS", "name": "KODEX 200",                          "category": "국내 지수" },
+    { "symbol": "102110.KS", "name": "TIGER 200",                          "category": "국내 지수" },
+    { "symbol": "229200.KS", "name": "KODEX 코스닥150",                    "category": "국내 지수" },
+    { "symbol": "360750.KS", "name": "TIGER 미국S&P500",                   "category": "미국 지수(국내상장)" },
+    { "symbol": "133690.KS", "name": "TIGER 미국나스닥100",                "category": "미국 지수(국내상장)" },
+    { "symbol": "379800.KS", "name": "KODEX 미국S&P500",                   "category": "미국 지수(국내상장)" },
+    { "symbol": "379810.KS", "name": "KODEX 미국나스닥100",                "category": "미국 지수(국내상장)" },
+    { "symbol": "458730.KS", "name": "TIGER 미국배당다우존스",             "category": "배당·반도체(국내상장)" },
+    { "symbol": "381180.KS", "name": "TIGER 미국필라델피아반도체나스닥",   "category": "배당·반도체(국내상장)" },
+    { "symbol": "390390.KS", "name": "KODEX 미국반도체",                   "category": "배당·반도체(국내상장)" }
+  ]
+}
