@@ -1,0 +1,204 @@
+{
+ "updated": "2026-07-02 21:48 UTC",
+ "us": [
+  {
+   "symbol": "SPY",
+   "name": "SPY (S&P500)",
+   "category": "대표 지수",
+   "currency": "USD",
+   "first": "2006-08-17",
+   "last": "2026-07-02",
+   "count": 5000
+  },
+  {
+   "symbol": "VOO",
+   "name": "VOO (S&P500)",
+   "category": "대표 지수",
+   "currency": "USD",
+   "first": "2010-09-09",
+   "last": "2026-07-02",
+   "count": 3977
+  },
+  {
+   "symbol": "VTI",
+   "name": "VTI (미국 전체시장)",
+   "category": "대표 지수",
+   "currency": "USD",
+   "first": "2006-08-16",
+   "last": "2026-07-02",
+   "count": 5000
+  },
+  {
+   "symbol": "QQQ",
+   "name": "QQQ (나스닥100)",
+   "category": "대표 지수",
+   "currency": "USD",
+   "first": "2006-08-16",
+   "last": "2026-07-02",
+   "count": 5000
+  },
+  {
+   "symbol": "DIA",
+   "name": "DIA (다우존스30)",
+   "category": "대표 지수",
+   "currency": "USD",
+   "first": "2006-08-16",
+   "last": "2026-07-02",
+   "count": 5000
+  },
+  {
+   "symbol": "IWM",
+   "name": "IWM (러셀2000)",
+   "category": "대표 지수",
+   "currency": "USD",
+   "first": "2006-08-16",
+   "last": "2026-07-02",
+   "count": 5000
+  },
+  {
+   "symbol": "SCHD",
+   "name": "SCHD (배당성장)",
+   "category": "배당",
+   "currency": "USD",
+   "first": "2011-10-20",
+   "last": "2026-07-02",
+   "count": 3695
+  },
+  {
+   "symbol": "VIG",
+   "name": "VIG (배당성장)",
+   "category": "배당",
+   "currency": "USD",
+   "first": "2006-08-16",
+   "last": "2026-07-02",
+   "count": 5000
+  },
+  {
+   "symbol": "DGRW",
+   "name": "DGRW (배당퀄리티)",
+   "category": "배당",
+   "currency": "USD",
+   "first": "2013-05-22",
+   "last": "2026-07-02",
+   "count": 3298
+  },
+  {
+   "symbol": "DGRO",
+   "name": "DGRO (배당성장)",
+   "category": "배당",
+   "currency": "USD",
+   "first": "2014-06-12",
+   "last": "2026-07-02",
+   "count": 3032
+  },
+  {
+   "symbol": "DIVO",
+   "name": "DIVO (배당 커버드콜)",
+   "category": "배당",
+   "currency": "USD",
+   "first": "2016-12-15",
+   "last": "2026-07-02",
+   "count": 2398
+  },
+  {
+   "symbol": "SCHG",
+   "name": "SCHG (대형성장)",
+   "category": "성장·모멘텀",
+   "currency": "USD",
+   "first": "2010-01-04",
+   "last": "2026-07-02",
+   "count": 4149
+  },
+  {
+   "symbol": "SPMO",
+   "name": "SPMO (S&P500 모멘텀)",
+   "category": "성장·모멘텀",
+   "currency": "USD",
+   "first": "2015-10-12",
+   "last": "2026-07-02",
+   "count": 2696
+  },
+  {
+   "symbol": "MOAT",
+   "name": "MOAT (경제적해자)",
+   "category": "성장·모멘텀",
+   "currency": "USD",
+   "first": "2012-04-25",
+   "last": "2026-07-02",
+   "count": 3567
+  },
+  {
+   "symbol": "VONG",
+   "name": "VONG (러셀1000 성장)",
+   "category": "성장·모멘텀",
+   "currency": "USD",
+   "first": "2010-09-22",
+   "last": "2026-07-02",
+   "count": 3969
+  },
+  {
+   "symbol": "IWF",
+   "name": "IWF (러셀1000 성장)",
+   "category": "성장·모멘텀",
+   "currency": "USD",
+   "first": "2006-08-16",
+   "last": "2026-07-02",
+   "count": 5000
+  },
+  {
+   "symbol": "SMH",
+   "name": "SMH (반도체)",
+   "category": "반도체·레버리지",
+   "currency": "USD",
+   "first": "2006-08-16",
+   "last": "2026-07-02",
+   "count": 5000
+  },
+  {
+   "symbol": "SOXX",
+   "name": "SOXX (반도체)",
+   "category": "반도체·레버리지",
+   "currency": "USD",
+   "first": "2006-08-16",
+   "last": "2026-07-02",
+   "count": 5000
+  },
+  {
+   "symbol": "SOXL",
+   "name": "SOXL (반도체 3배)",
+   "category": "반도체·레버리지",
+   "currency": "USD",
+   "first": "2010-03-11",
+   "last": "2026-07-02",
+   "count": 4103
+  },
+  {
+   "symbol": "QLD",
+   "name": "QLD (나스닥100 2배)",
+   "category": "반도체·레버리지",
+   "currency": "USD",
+   "first": "2006-08-16",
+   "last": "2026-07-02",
+   "count": 5000
+  },
+  {
+   "symbol": "GLD",
+   "name": "GLD (금)",
+   "category": "자산배분",
+   "currency": "USD",
+   "first": "2006-08-16",
+   "last": "2026-07-02",
+   "count": 5000
+  },
+  {
+   "symbol": "TLT",
+   "name": "TLT (미국 장기국채)",
+   "category": "자산배분",
+   "currency": "USD",
+   "first": "2006-08-16",
+   "last": "2026-07-02",
+   "count": 5000
+  }
+ ],
+ "kr": []
+}
