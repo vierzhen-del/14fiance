@@ -96,7 +96,9 @@ def main() -> int:
     manifest = {"updated": time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime()), "us": [], "kr": []}
     failures = []
 
-    for market in ("us", "kr"):
+    # 한국 상장 ETF는 Twelve Data 무료 티어에 없어(404) 매번 재시도만 낭비하므로
+    # 잠정 제외한다. etf_list.json의 kr 목록은 대안 소스가 정해지면 재사용한다.
+    for market in ("us",):
         for etf in etfs[market]:
             symbol = etf["symbol"]
             print(f"fetching {symbol} ({etf['name']}) ...")
@@ -133,7 +135,7 @@ def main() -> int:
     )
     print(f"done. success={len(manifest['us']) + len(manifest['kr'])}, failed={failures or 'none'}")
     # 일부 실패는 허용하되 절반 이상 실패하면 에러로 처리
-    total = len(etfs["us"]) + len(etfs["kr"])
+    total = len(etfs["us"])
     return 1 if len(failures) > total / 2 else 0
 
 
