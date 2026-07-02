@@ -4,6 +4,7 @@
 표준 라이브러리만 사용한다 (GitHub Actions 러너에서 의존성 설치 불필요).
 사용법: python scripts/fetch_data.py
 """
+import http.cookiejar
 import json
 import sys
 import time
@@ -14,10 +15,12 @@ ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data"
 ETF_LIST = ROOT / "scripts" / "etf_list.json"
 
+CONSENT_URL = "https://fc.yahoo.com"
+CRUMB_URL = "https://query1.finance.yahoo.com/v1/test/getcrumb"
 CHART_URL = (
     "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
     "?period1=0&period2=9999999999&interval=1d"
-    "&includeAdjustedClose=true&events=div%7Csplit"
+    "&includeAdjustedClose=true&events=div%7Csplit&crumb={crumb}"
 )
 HEADERS = {
     "User-Agent": (
@@ -27,6 +30,19 @@ HEADERS = {
     "Accept": "application/json",
 }
 
+COOKIE_JAR = http.cookiejar.CookieJar()
+OPENER = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(COOKIE_JAR))
+
+
+def get_crumb() -> str:
+    """Yahoo가 429로 차단하는 것을 피하기 위해 쿠키 동의 + crumb 세션을 미리 받아온다."""
+    req = urllib.request.Request(CONSENT_URL, headers=HEADERS)
+    with OPENER.open(req, timeout=30):
+        pass
+    req = urllib.request.Request(CRUMB_URL, headers=HEADERS)
+    with OPENER.open(req, timeout=30) as resp:
+        return resp.read().decode("utf-8").strip()
+
 
 def http_get_json(url: str, retries: int = 4) -> dict:
     delay = 2.0
@@ -34,7 +50,7 @@ def http_get_json(url: str, retries: int = 4) -> dict:
     for _ in range(retries):
         try:
             req = urllib.request.Request(url, headers=HEADERS)
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            with OPENER.open(req, timeout=30) as resp:
                 return json.loads(resp.read().decode("utf-8"))
         except Exception as err:  # noqa: BLE001
             last_err = err
@@ -43,8 +59,8 @@ def http_get_json(url: str, retries: int = 4) -> dict:
     raise RuntimeError(f"fetch failed: {url}: {last_err}")
 
 
-def fetch_symbol(symbol: str) -> dict | None:
-    payload = http_get_json(CHART_URL.format(symbol=symbol))
+def fetch_symbol(symbol: str, crumb: str) -> dict | None:
+    payload = http_get_json(CHART_URL.format(symbol=symbol, crumb=crumb))
     result = (payload.get("chart") or {}).get("result")
     if not result:
         print(f"  !! no data for {symbol}: {payload.get('chart', {}).get('error')}")
@@ -91,17 +107,21 @@ def main() -> int:
     manifest = {"updated": time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime()), "us": [], "kr": []}
     failures = []
 
+    print("negotiating Yahoo session (cookie + crumb) ...")
+    crumb = get_crumb()
+
     for market in ("us", "kr"):
         for etf in etfs[market]:
             symbol = etf["symbol"]
             print(f"fetching {symbol} ({etf['name']}) ...")
             try:
-                series = fetch_symbol(symbol)
+                series = fetch_symbol(symbol, crumb)
             except RuntimeError as err:
                 print(f"  !! {err}")
                 series = None
             if series is None:
                 failures.append(symbol)
+                time.sleep(1.0)
                 continue
             out = DATA_DIR / f"{symbol}.json"
             out.write_text(
