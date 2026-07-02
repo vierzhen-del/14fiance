@@ -27,9 +27,13 @@ REQUEST_INTERVAL_SEC = 8.0
 
 
 def to_twelvedata_params(symbol: str) -> dict:
-    """Yahoo Finance 표기(SPY, 069500.KS)를 Twelve Data 파라미터로 변환한다."""
+    """Yahoo Finance 표기(SPY, 069500.KS)를 Twelve Data 파라미터로 변환한다.
+
+    Twelve Data는 KRX 상장 종목을 "symbol:KRX" 형태(콜론 결합)로
+    요구한다. symbol/exchange를 별도 파라미터로 보내면 404가 난다.
+    """
     if symbol.endswith(".KS"):
-        return {"symbol": symbol[: -len(".KS")], "exchange": "KRX"}
+        return {"symbol": f"{symbol[: -len('.KS')]}:KRX"}
     return {"symbol": symbol}
 
 
