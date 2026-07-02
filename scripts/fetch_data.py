@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
-"""Stooq에서 ETF 일별 종가를 수집해 data/*.json 으로 저장한다.
+"""Twelve Data에서 ETF 일별 종가를 수집해 data/*.json 으로 저장한다.
 
-Yahoo Finance는 GitHub Actions 러너의 공유 IP 대역을 차단(HTTP 429)해
-데이터를 받아올 수 없어, 클라우드 CI 환경에서도 안정적으로 동작하는
-Stooq CSV API로 전환했다.
+Yahoo Finance와 Stooq 모두 GitHub Actions 러너의 클라우드 IP를
+봇으로 차단해 데이터를 받아올 수 없어, API 키 기반의 Twelve Data
+(twelvedata.com)로 전환했다. 리포지토리 Secrets에 TWELVEDATA_API_KEY를
+등록해야 동작한다 (무료 티어: 분당 8회, 일일 800회).
 표준 라이브러리만 사용한다 (GitHub Actions 러너에서 의존성 설치 불필요).
-사용법: python scripts/fetch_data.py
+사용법: TWELVEDATA_API_KEY=xxx python scripts/fetch_data.py
 """
-import csv
-import io
 import json
+import os
 import sys
 import time
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -19,31 +20,26 @@ ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT / "data"
 ETF_LIST = ROOT / "scripts" / "etf_list.json"
 
-CSV_URL = "https://stooq.com/q/d/l/?s={symbol}&i=d"
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/126.0 Safari/537.36"
-    ),
-}
-CURRENCY_BY_MARKET = {"us": "USD", "kr": "KRW"}
+API_URL = "https://api.twelvedata.com/time_series"
+API_KEY = os.environ.get("TWELVEDATA_API_KEY", "")
+# 무료 티어 레이트리밋(분당 8회)을 지키기 위한 요청 간 최소 대기 시간
+REQUEST_INTERVAL_SEC = 8.0
 
 
-def to_stooq_symbol(symbol: str) -> str:
-    """Yahoo Finance 표기(SPY, 069500.KS)를 Stooq 표기(spy.us, 069500.kr)로 변환한다."""
+def to_twelvedata_params(symbol: str) -> dict:
+    """Yahoo Finance 표기(SPY, 069500.KS)를 Twelve Data 파라미터로 변환한다."""
     if symbol.endswith(".KS"):
-        return symbol[: -len(".KS")].lower() + ".kr"
-    return symbol.lower() + ".us"
+        return {"symbol": symbol[: -len(".KS")], "exchange": "KRX"}
+    return {"symbol": symbol}
 
 
-def http_get_text(url: str, retries: int = 4) -> str:
+def http_get_json(url: str, retries: int = 4) -> dict:
     delay = 2.0
     last_err = None
     for _ in range(retries):
         try:
-            req = urllib.request.Request(url, headers=HEADERS)
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                return resp.read().decode("utf-8")
+            with urllib.request.urlopen(url, timeout=30) as resp:
+                return json.loads(resp.read().decode("utf-8"))
         except Exception as err:  # noqa: BLE001
             last_err = err
             time.sleep(delay)
@@ -51,39 +47,46 @@ def http_get_text(url: str, retries: int = 4) -> str:
     raise RuntimeError(f"fetch failed: {url}: {last_err}")
 
 
-def fetch_symbol(symbol: str, market: str) -> dict | None:
-    stooq_symbol = to_stooq_symbol(symbol)
-    text = http_get_text(CSV_URL.format(symbol=stooq_symbol))
-    reader = csv.DictReader(io.StringIO(text))
-    if not reader.fieldnames or "Close" not in reader.fieldnames:
-        print(f"  !! no data for {symbol} (stooq={stooq_symbol}): {text[:120]!r}")
+def fetch_symbol(symbol: str) -> dict | None:
+    params = to_twelvedata_params(symbol)
+    params.update({
+        "interval": "1day",
+        "outputsize": 5000,
+        "order": "ASC",
+        "apikey": API_KEY,
+    })
+    url = f"{API_URL}?{urllib.parse.urlencode(params)}"
+    payload = http_get_json(url)
+
+    if payload.get("status") == "error":
+        print(f"  !! {symbol}: {payload.get('message')}")
         return None
 
-    dates, values = [], []
-    for row in reader:
-        date, close = row.get("Date"), row.get("Close")
-        if not date or not close:
-            continue
-        dates.append(date)
-        values.append(round(float(close), 4))
-
-    if not dates:
-        print(f"  !! empty series for {symbol} (stooq={stooq_symbol})")
+    values = payload.get("values") or []
+    if not values:
+        print(f"  !! empty series for {symbol}")
         return None
+
+    meta = payload.get("meta") or {}
+    dates = [v["datetime"] for v in values]
+    closes = [round(float(v["close"]), 4) for v in values]
 
     return {
         "symbol": symbol,
-        "stooqSymbol": stooq_symbol,
-        "currency": CURRENCY_BY_MARKET[market],
+        "currency": meta.get("currency") or "",
         "first": dates[0],
         "last": dates[-1],
         "count": len(dates),
         "dates": dates,
-        "closes": values,
+        "closes": closes,
     }
 
 
 def main() -> int:
+    if not API_KEY:
+        print("!! TWELVEDATA_API_KEY 환경변수가 설정되지 않았습니다.")
+        return 1
+
     etfs = json.loads(ETF_LIST.read_text(encoding="utf-8"))
     DATA_DIR.mkdir(exist_ok=True)
     manifest = {"updated": time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime()), "us": [], "kr": []}
@@ -94,13 +97,13 @@ def main() -> int:
             symbol = etf["symbol"]
             print(f"fetching {symbol} ({etf['name']}) ...")
             try:
-                series = fetch_symbol(symbol, market)
+                series = fetch_symbol(symbol)
             except RuntimeError as err:
                 print(f"  !! {err}")
                 series = None
+            time.sleep(REQUEST_INTERVAL_SEC)
             if series is None:
                 failures.append(symbol)
-                time.sleep(1.0)
                 continue
             out = DATA_DIR / f"{symbol}.json"
             out.write_text(
@@ -112,7 +115,6 @@ def main() -> int:
                     "symbol": symbol,
                     "name": etf["name"],
                     "category": etf["category"],
-                    "stooqSymbol": series["stooqSymbol"],
                     "currency": series["currency"],
                     "first": series["first"],
                     "last": series["last"],
@@ -120,7 +122,6 @@ def main() -> int:
                 }
             )
             print(f"  ok: {series['count']} rows {series['first']} ~ {series['last']}")
-            time.sleep(1.0)
 
     (DATA_DIR / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=1),
