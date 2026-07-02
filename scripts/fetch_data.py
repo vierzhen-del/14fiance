@@ -8,6 +8,7 @@ import http.cookiejar
 import json
 import sys
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -35,9 +36,17 @@ OPENER = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(COOKIE_J
 
 
 def get_crumb() -> str:
-    """Yahoo가 429로 차단하는 것을 피하기 위해 쿠키 동의 + crumb 세션을 미리 받아온다."""
+    """Yahoo가 429로 차단하는 것을 피하기 위해 쿠키 동의 + crumb 세션을 미리 받아온다.
+
+    fc.yahoo.com은 의도적으로 404를 응답하지만 필요한 쿠키는 그 응답에
+    실려 온다 (알려진 Yahoo Finance API 동작). 쿠키는 이미 OPENER의
+    쿠키jar에 기록되므로 이 404는 무시하고 넘어간다.
+    """
     req = urllib.request.Request(CONSENT_URL, headers=HEADERS)
-    with OPENER.open(req, timeout=30):
+    try:
+        with OPENER.open(req, timeout=30):
+            pass
+    except urllib.error.HTTPError:
         pass
     req = urllib.request.Request(CRUMB_URL, headers=HEADERS)
     with OPENER.open(req, timeout=30) as resp:
