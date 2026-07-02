@@ -2,6 +2,10 @@ name: Fetch ETF Data
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - "scripts/**"
+      - ".github/workflows/fetch-data.yml"
   schedule:
     # 매주 토요일 06:00 KST (금요일 21:00 UTC), 미국 장 마감 후
     - cron: "0 21 * * 5"
