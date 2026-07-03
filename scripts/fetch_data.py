@@ -24,9 +24,11 @@ DATA_DIR = ROOT / "data"
 ETF_LIST = ROOT / "scripts" / "etf_list.json"
 
 API_URL = "https://api.twelvedata.com/time_series"
+DIVIDENDS_URL = "https://api.twelvedata.com/dividends"
 API_KEY = os.environ.get("TWELVEDATA_API_KEY", "")
 # Twelve Data 무료 티어 레이트리밋(분당 8회)을 지키기 위한 요청 간 최소 대기 시간
 REQUEST_INTERVAL_SEC = 8.0
+DIV_DIR_NAME = "div"
 
 NAVER_URL = (
     "https://api.finance.naver.com/siseJson.naver"
@@ -108,6 +110,55 @@ def fetch_symbol_us(symbol: str) -> dict | None:
     }
 
 
+def fetch_dividends_us(symbol: str) -> dict | None:
+    """미국 ETF의 배당 이력을 받아 {dates(오름차순), amounts}로 반환한다.
+
+    배당이 없거나 엔드포인트가 플랜에서 지원되지 않으면 None을 반환하고
+    수집 전체는 계속 진행한다 (배당은 부가 정보).
+    """
+    params = {"symbol": symbol, "range": "full", "apikey": API_KEY}
+    url = f"{DIVIDENDS_URL}?{urllib.parse.urlencode(params)}"
+    try:
+        payload = http_get_json(url)
+    except RuntimeError as err:
+        print(f"  .. dividends skipped for {symbol}: {err}")
+        return None
+
+    if payload.get("status") == "error":
+        print(f"  .. dividends skipped for {symbol}: {payload.get('message')}")
+        return None
+
+    entries = payload.get("dividends") or []
+    pairs = []
+    for e in entries:
+        day = e.get("ex_date") or ""
+        try:
+            amount = float(e.get("amount"))
+        except (TypeError, ValueError):
+            continue
+        if len(day) == 10 and amount > 0:
+            pairs.append((day, round(amount, 6)))
+    pairs.sort()
+    return {
+        "symbol": symbol,
+        "count": len(pairs),
+        "dates": [p[0] for p in pairs],
+        "amounts": [p[1] for p in pairs],
+    }
+
+
+def ttm_dividend(div: dict | None, last_date: str) -> float:
+    """마지막 거래일 기준 직전 365일간 배당 합계."""
+    if not div or not div["dates"]:
+        return 0.0
+    import datetime
+
+    end = datetime.date.fromisoformat(last_date)
+    start = (end - datetime.timedelta(days=365)).isoformat()
+    total = sum(a for d, a in zip(div["dates"], div["amounts"]) if start < d <= last_date)
+    return round(total, 6)
+
+
 def parse_naver_sise(text: str) -> tuple[list[str], list[float]]:
     """siseJson.naver 응답을 (dates, closes)로 파싱한다.
 
@@ -160,6 +211,8 @@ def main() -> int:
 
     etfs = json.loads(ETF_LIST.read_text(encoding="utf-8"))
     DATA_DIR.mkdir(exist_ok=True)
+    div_dir = DATA_DIR / DIV_DIR_NAME
+    div_dir.mkdir(exist_ok=True)
     manifest = {"updated": time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime()), "us": [], "kr": []}
     failures = []
 
@@ -178,23 +231,39 @@ def main() -> int:
             if series is None:
                 failures.append(symbol)
                 continue
+
+            div = None
+            if market == "us":
+                div = fetch_dividends_us(symbol)
+                time.sleep(interval)
+                if div is not None:
+                    (div_dir / f"{symbol}.json").write_text(
+                        json.dumps(div, ensure_ascii=False, separators=(",", ":")),
+                        encoding="utf-8",
+                    )
+
             out = DATA_DIR / f"{symbol}.json"
             out.write_text(
                 json.dumps(series, ensure_ascii=False, separators=(",", ":")),
                 encoding="utf-8",
             )
-            manifest[market].append(
-                {
-                    "symbol": symbol,
-                    "name": etf["name"],
-                    "category": etf["category"],
-                    "currency": series["currency"],
-                    "first": series["first"],
-                    "last": series["last"],
-                    "count": series["count"],
-                }
-            )
-            print(f"  ok: {series['count']} rows {series['first']} ~ {series['last']}")
+            entry = {
+                "symbol": symbol,
+                "name": etf["name"],
+                "category": etf["category"],
+                "currency": series["currency"],
+                "first": series["first"],
+                "last": series["last"],
+                "count": series["count"],
+            }
+            if market == "us":
+                ttm = ttm_dividend(div, series["last"])
+                entry["ttmDividend"] = ttm
+                last_close = series["closes"][-1]
+                entry["dividendYield"] = round(ttm / last_close, 6) if last_close else 0.0
+            manifest[market].append(entry)
+            div_note = f", div {div['count']}건" if div else ""
+            print(f"  ok: {series['count']} rows {series['first']} ~ {series['last']}{div_note}")
 
     (DATA_DIR / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=1),

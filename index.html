@@ -963,6 +963,9 @@ async function render() {
             : `<span class="badge ongoing">● 미회복 (진행 중)</span><p class="stat-sub">${dates[dates.length - 1]} 기준</p>`}
         </div>
       </div>
+      ${meta && meta.ttmDividend
+        ? `<p class="stat-sub" style="border-top:1px solid var(--gridline); padding-top:12px; margin-top:0;">💰 최근 12개월 배당 <b style="color:var(--text-primary)">${fmtPrice(meta.ttmDividend, full.currency)}</b>/주 · 배당수익률 <b style="color:var(--text-primary)">${(meta.dividendYield * 100).toFixed(2)}%</b> <span style="color:var(--text-muted)">(현재가 기준)</span></p>`
+        : ""}
     </div>
 
     <div class="card">
