@@ -22,7 +22,6 @@
     { "symbol": "QLD",  "name": "QLD (나스닥100 2배)",      "category": "반도체·레버리지" },
     { "symbol": "GLD",  "name": "GLD (금)",                 "category": "자산배분" },
     { "symbol": "TLT",  "name": "TLT (미국 장기국채)",      "category": "자산배분" },
-    { "symbol": "DISC", "name": "DISC (메모리 배당)",       "category": "메모리 배당" },
     { "symbol": "DRAM", "name": "DRAM (메모리 배당)",       "category": "메모리 배당" },
     { "symbol": "RAM",  "name": "RAM (메모리 배당)",        "category": "메모리 배당" },
     { "symbol": "CYPH", "name": "CYPH (메모리 배당)",       "category": "메모리 배당" }

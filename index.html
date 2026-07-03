@@ -761,7 +761,7 @@ let portfolioRowSeq = 0;
 
 function etfOptionsHTML(selectedSymbol) {
   const byCategory = new Map();
-  for (const etf of state.manifest.us) {
+  for (const etf of state.listedEtfs) {
     if (!byCategory.has(etf.category)) byCategory.set(etf.category, []);
     byCategory.get(etf.category).push(etf);
   }
@@ -1007,15 +1007,15 @@ async function init() {
     return;
   }
 
-  state.allSymbols = [...state.manifest.us.map((e) => e.symbol), ...BLENDS.map((b) => b.id)];
+  state.listedEtfs = [...state.manifest.us, ...state.manifest.kr];
+  state.allSymbols = [...state.listedEtfs.map((e) => e.symbol), ...BLENDS.map((b) => b.id)];
   state.metaBySymbol = new Map([
-    ...state.manifest.us.map((e) => [e.symbol, e]),
-    ...state.manifest.kr.map((e) => [e.symbol, e]),
+    ...state.listedEtfs.map((e) => [e.symbol, e]),
     ...BLENDS.map((b) => [b.id, { symbol: b.id, name: b.name, category: b.category }]),
   ]);
 
   const byCategory = new Map();
-  for (const etf of state.manifest.us) {
+  for (const etf of state.listedEtfs) {
     if (!byCategory.has(etf.category)) byCategory.set(etf.category, []);
     byCategory.get(etf.category).push(etf);
   }
@@ -1070,14 +1070,17 @@ async function init() {
   addPortfolioRow("VOO", 25);
   document.getElementById("addPortfolioRow").addEventListener("click", () => {
     const used = new Set([...document.querySelectorAll(".portfolio-symbol")].map((el) => el.value));
-    const next = state.manifest.us.find((e) => !used.has(e.symbol)) || state.manifest.us[0];
+    const next = state.listedEtfs.find((e) => !used.has(e.symbol)) || state.listedEtfs[0];
     addPortfolioRow(next.symbol, 0);
     renderPortfolio();
   });
 
+  const krNote = state.manifest.kr.length
+    ? ""
+    : " 한국 상장 ETF는 현재 데이터 준비 중입니다.";
   document.getElementById("footerNote").innerHTML =
-    `데이터 출처: Twelve Data · 마지막 갱신: <b>${state.manifest.updated}</b> · ` +
-    `종가는 분할(split) 조정만 반영되며 배당 재투자는 반영되지 않을 수 있습니다. 한국 상장 ETF는 현재 데이터 소스 제약으로 준비 중입니다.`;
+    `데이터 출처: Twelve Data(미국) · 네이버 금융(국내) · 마지막 갱신: <b>${state.manifest.updated}</b> · ` +
+    `종가는 분할(split) 조정만 반영되며 배당 재투자는 반영되지 않을 수 있습니다.${krNote}`;
 
   select.addEventListener("change", render);
   document.getElementById("periodSelect").addEventListener("change", () => { render(); renderCompare(); renderPortfolio(); });

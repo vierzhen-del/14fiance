@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""Twelve Data에서 ETF 일별 종가를 수집해 data/*.json 으로 저장한다.
+"""ETF 일별 종가를 수집해 data/*.json 으로 저장한다.
 
-Yahoo Finance와 Stooq 모두 GitHub Actions 러너의 클라우드 IP를
-봇으로 차단해 데이터를 받아올 수 없어, API 키 기반의 Twelve Data
-(twelvedata.com)로 전환했다. 리포지토리 Secrets에 TWELVEDATA_API_KEY를
-등록해야 동작한다 (무료 티어: 분당 8회, 일일 800회).
+- 미국 상장 ETF: Twelve Data API (twelvedata.com). 리포지토리 Secrets에
+  TWELVEDATA_API_KEY 등록 필요 (무료 티어: 분당 8회, 일일 800회).
+  Yahoo Finance·Stooq는 GitHub Actions 러너의 클라우드 IP를 차단해 사용 불가.
+- 국내 상장 ETF: 네이버 금융 시세 API (siseJson.naver). 키 불필요.
+
 표준 라이브러리만 사용한다 (GitHub Actions 러너에서 의존성 설치 불필요).
 사용법: TWELVEDATA_API_KEY=xxx python scripts/fetch_data.py
 """
+import ast
 import json
 import os
 import sys
@@ -23,28 +25,35 @@ ETF_LIST = ROOT / "scripts" / "etf_list.json"
 
 API_URL = "https://api.twelvedata.com/time_series"
 API_KEY = os.environ.get("TWELVEDATA_API_KEY", "")
-# 무료 티어 레이트리밋(분당 8회)을 지키기 위한 요청 간 최소 대기 시간
+# Twelve Data 무료 티어 레이트리밋(분당 8회)을 지키기 위한 요청 간 최소 대기 시간
 REQUEST_INTERVAL_SEC = 8.0
 
+NAVER_URL = (
+    "https://api.finance.naver.com/siseJson.naver"
+    "?symbol={code}&requestType=1&startTime=19900101&endTime={end}&timeframe=day"
+)
+NAVER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/126.0 Safari/537.36"
+    ),
+    "Referer": "https://finance.naver.com/",
+}
+NAVER_INTERVAL_SEC = 1.0
 
-def to_twelvedata_params(symbol: str) -> dict:
-    """Yahoo Finance 표기(SPY, 069500.KS)를 Twelve Data 파라미터로 변환한다.
 
-    Twelve Data는 KRX 상장 종목을 "symbol:KRX" 형태(콜론 결합)로
-    요구한다. symbol/exchange를 별도 파라미터로 보내면 404가 난다.
-    """
-    if symbol.endswith(".KS"):
-        return {"symbol": f"{symbol[: -len('.KS')]}:KRX"}
-    return {"symbol": symbol}
-
-
-def http_get_json(url: str, retries: int = 4) -> dict:
+def http_get_text(url: str, headers: dict | None = None, retries: int = 4) -> str:
     delay = 2.0
     last_err = None
     for attempt in range(retries):
         try:
-            with urllib.request.urlopen(url, timeout=30) as resp:
-                return json.loads(resp.read().decode("utf-8"))
+            req = urllib.request.Request(url, headers=headers or {})
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                raw = resp.read()
+                try:
+                    return raw.decode("utf-8")
+                except UnicodeDecodeError:
+                    return raw.decode("cp949", errors="replace")
         except urllib.error.HTTPError as err:
             # 404/400 같은 클라이언트 오류(4xx)는 재시도해도 성공하지 못하므로
             # 즉시 실패시킨다. 다만 429(레이트리밋)는 기다리면 풀리므로 재시도한다.
@@ -60,14 +69,18 @@ def http_get_json(url: str, retries: int = 4) -> dict:
     raise RuntimeError(f"fetch failed: {url}: {last_err}")
 
 
-def fetch_symbol(symbol: str) -> dict | None:
-    params = to_twelvedata_params(symbol)
-    params.update({
+def http_get_json(url: str) -> dict:
+    return json.loads(http_get_text(url))
+
+
+def fetch_symbol_us(symbol: str) -> dict | None:
+    params = {
+        "symbol": symbol,
         "interval": "1day",
         "outputsize": 5000,
         "order": "ASC",
         "apikey": API_KEY,
-    })
+    }
     url = f"{API_URL}?{urllib.parse.urlencode(params)}"
     payload = http_get_json(url)
 
@@ -86,7 +99,52 @@ def fetch_symbol(symbol: str) -> dict | None:
 
     return {
         "symbol": symbol,
-        "currency": meta.get("currency") or "",
+        "currency": meta.get("currency") or "USD",
+        "first": dates[0],
+        "last": dates[-1],
+        "count": len(dates),
+        "dates": dates,
+        "closes": closes,
+    }
+
+
+def parse_naver_sise(text: str) -> tuple[list[str], list[float]]:
+    """siseJson.naver 응답을 (dates, closes)로 파싱한다.
+
+    응답은 작은따옴표를 쓰는 파이썬 리터럴 형태의 2차원 배열이다:
+    [['날짜','시가','고가','저가','종가','거래량','외국인소진율'],
+     ["20250102", 60000, ..., 60500, ...], ...]
+    """
+    rows = ast.literal_eval(text.strip())
+    dates: list[str] = []
+    closes: list[float] = []
+    for row in rows[1:]:  # 첫 행은 헤더
+        if not isinstance(row, (list, tuple)) or len(row) < 5:
+            continue
+        day, close = str(row[0]), row[4]
+        if not isinstance(close, (int, float)) or len(day) != 8 or not day.isdigit():
+            continue
+        dates.append(f"{day[0:4]}-{day[4:6]}-{day[6:8]}")
+        closes.append(round(float(close), 4))
+    return dates, closes
+
+
+def fetch_symbol_kr(symbol: str) -> dict | None:
+    code = symbol[: -len(".KS")] if symbol.endswith(".KS") else symbol
+    url = NAVER_URL.format(code=code, end=time.strftime("%Y%m%d", time.gmtime()))
+    text = http_get_text(url, headers=NAVER_HEADERS)
+    try:
+        dates, closes = parse_naver_sise(text)
+    except (ValueError, SyntaxError) as err:
+        print(f"  !! parse failed for {symbol}: {err}: {text[:120]!r}")
+        return None
+    if len(dates) < 2:
+        print(f"  !! empty series for {symbol}: {text[:120]!r}")
+        return None
+
+    return {
+        "symbol": symbol,
+        "currency": "KRW",
         "first": dates[0],
         "last": dates[-1],
         "count": len(dates),
@@ -105,18 +163,18 @@ def main() -> int:
     manifest = {"updated": time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime()), "us": [], "kr": []}
     failures = []
 
-    # 한국 상장 ETF는 Twelve Data 무료 티어에 없어(404) 매번 재시도만 낭비하므로
-    # 잠정 제외한다. etf_list.json의 kr 목록은 대안 소스가 정해지면 재사용한다.
-    for market in ("us",):
+    fetchers = {"us": (fetch_symbol_us, REQUEST_INTERVAL_SEC), "kr": (fetch_symbol_kr, NAVER_INTERVAL_SEC)}
+    for market in ("us", "kr"):
+        fetch, interval = fetchers[market]
         for etf in etfs[market]:
             symbol = etf["symbol"]
             print(f"fetching {symbol} ({etf['name']}) ...")
             try:
-                series = fetch_symbol(symbol)
+                series = fetch(symbol)
             except RuntimeError as err:
                 print(f"  !! {err}")
                 series = None
-            time.sleep(REQUEST_INTERVAL_SEC)
+            time.sleep(interval)
             if series is None:
                 failures.append(symbol)
                 continue
@@ -144,7 +202,7 @@ def main() -> int:
     )
     print(f"done. success={len(manifest['us']) + len(manifest['kr'])}, failed={failures or 'none'}")
     # 일부 실패는 허용하되 절반 이상 실패하면 에러로 처리
-    total = len(etfs["us"])
+    total = len(etfs["us"]) + len(etfs["kr"])
     return 1 if len(failures) > total / 2 else 0
 
 
