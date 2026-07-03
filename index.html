@@ -214,6 +214,20 @@
 const DATA_DIR = "data";
 const state = { manifest: null, cache: new Map() };
 
+/* 합성 포트폴리오: 실제 종목 데이터를 정해진 비중으로 섞어 만든 가상 종목 */
+const BLENDS = [
+  {
+    id: "DIVO75_VOO25",
+    name: "DIVO 75% + VOO 25%",
+    category: "합성 포트폴리오",
+    weights: [
+      { symbol: "DIVO", weight: 0.75 },
+      { symbol: "VOO", weight: 0.25 },
+    ],
+  },
+];
+function isBlend(id) { return BLENDS.some((b) => b.id === id); }
+
 async function fetchJSON(path) {
   const res = await fetch(path);
   if (!res.ok) throw new Error(`${path} 불러오기 실패 (${res.status})`);
@@ -533,11 +547,10 @@ async function renderCompare() {
   }
   result.innerHTML = `<p class="compare-empty">불러오는 중…</p>`;
 
-  const metaBySymbol = new Map([...state.manifest.us, ...state.manifest.kr].map((e) => [e.symbol, e]));
   const fulls = [];
   for (const symbol of checked) {
     try {
-      fulls.push({ symbol, full: await loadSymbol(symbol) });
+      fulls.push({ symbol, full: await loadEntry(symbol) });
     } catch (err) {
       continue;
     }
@@ -568,7 +581,7 @@ async function renderCompare() {
     if (sliced.dates.length < 2) continue;
     const { mdd, peakIdx, troughIdx, recoveryIdx, ddSeries } = calcMDD(sliced.dates, sliced.closes);
     rows.push({
-      symbol, meta: metaBySymbol.get(symbol), color: symbolColor(symbol),
+      symbol, meta: state.metaBySymbol.get(symbol), color: symbolColor(symbol),
       dates: sliced.dates, closes: sliced.closes, mdd, peakIdx, troughIdx, recoveryIdx, ddSeries,
       recovered: recoveryIdx !== -1,
     });
@@ -644,6 +657,69 @@ async function loadSymbol(symbol) {
   return d;
 }
 
+/* 구성 종목들의 일별 수익률을 비중대로 섞어 합성 지수(시작값 100)를 만든다.
+   구성 종목 데이터가 모두 존재하는 날짜(교집합)만 사용하고, 매일 비중을
+   다시 맞춘다(daily rebalance)고 가정한다. */
+function computeBlend(weights, dataBySymbol) {
+  const priceMaps = weights.map((w) => {
+    const d = dataBySymbol.get(w.symbol);
+    const m = new Map();
+    for (let i = 0; i < d.dates.length; i++) m.set(d.dates[i], d.closes[i]);
+    return m;
+  });
+
+  let commonDates = [...priceMaps[0].keys()];
+  for (let i = 1; i < priceMaps.length; i++) {
+    commonDates = commonDates.filter((d) => priceMaps[i].has(d));
+  }
+  commonDates.sort();
+
+  const dates = [];
+  const closes = [];
+  let nav = 100;
+  let prevPrices = null;
+  for (const date of commonDates) {
+    const prices = priceMaps.map((m) => m.get(date));
+    if (prevPrices) {
+      let blendedReturn = 0;
+      for (let i = 0; i < weights.length; i++) {
+        blendedReturn += weights[i].weight * (prices[i] / prevPrices[i] - 1);
+      }
+      nav *= 1 + blendedReturn;
+    }
+    dates.push(date);
+    closes.push(Math.round(nav * 10000) / 10000);
+    prevPrices = prices;
+  }
+  return { dates, closes };
+}
+
+async function loadBlend(blendDef) {
+  if (state.cache.has(blendDef.id)) return state.cache.get(blendDef.id);
+  const dataBySymbol = new Map();
+  for (const w of blendDef.weights) {
+    dataBySymbol.set(w.symbol, await loadSymbol(w.symbol));
+  }
+  const { dates, closes } = computeBlend(blendDef.weights, dataBySymbol);
+  const result = {
+    symbol: blendDef.id,
+    currency: "USD",
+    first: dates[0],
+    last: dates[dates.length - 1],
+    count: dates.length,
+    dates,
+    closes,
+    isBlend: true,
+  };
+  state.cache.set(blendDef.id, result);
+  return result;
+}
+
+function loadEntry(id) {
+  const blend = BLENDS.find((b) => b.id === id);
+  return blend ? loadBlend(blend) : loadSymbol(id);
+}
+
 async function render() {
   const symbol = document.getElementById("etfSelect").value;
   const months = Number(document.getElementById("periodSelect").value);
@@ -652,13 +728,13 @@ async function render() {
 
   let full;
   try {
-    full = await loadSymbol(symbol);
+    full = await loadEntry(symbol);
   } catch (err) {
     app.innerHTML = `<p style="color:var(--critical); font-size:13px;">${err.message}</p>`;
     return;
   }
 
-  const meta = [...state.manifest.us, ...state.manifest.kr].find((e) => e.symbol === symbol);
+  const meta = state.metaBySymbol.get(symbol);
   const { dates, closes } = sliceByPeriod(full.dates, full.closes, months);
   if (dates.length < 2) {
     app.innerHTML = `<p style="color:var(--text-muted); font-size:13px;">선택한 기간에 데이터가 부족합니다.</p>`;
@@ -700,6 +776,7 @@ async function render() {
 
     <div class="card">
       <p class="chart-title">가격 추이 — ${meta ? meta.name : symbol}</p>
+      ${full.isBlend ? `<p class="stat-sub" style="margin:-8px 0 12px;">합성 포트폴리오: 최초 100 투자·일별 리밸런싱 가정 지수(실제 가격 아님)</p>` : ""}
       <div id="priceChart"></div>
     </div>
 
@@ -739,12 +816,20 @@ async function init() {
     return;
   }
 
-  state.allSymbols = state.manifest.us.map((e) => e.symbol);
+  state.allSymbols = [...state.manifest.us.map((e) => e.symbol), ...BLENDS.map((b) => b.id)];
+  state.metaBySymbol = new Map([
+    ...state.manifest.us.map((e) => [e.symbol, e]),
+    ...state.manifest.kr.map((e) => [e.symbol, e]),
+    ...BLENDS.map((b) => [b.id, { symbol: b.id, name: b.name, category: b.category }]),
+  ]);
 
   const byCategory = new Map();
   for (const etf of state.manifest.us) {
     if (!byCategory.has(etf.category)) byCategory.set(etf.category, []);
     byCategory.get(etf.category).push(etf);
+  }
+  if (BLENDS.length) {
+    byCategory.set("합성 포트폴리오", BLENDS.map((b) => ({ symbol: b.id, name: b.name })));
   }
 
   const select = document.getElementById("etfSelect");
