@@ -1,5 +1,5 @@
 {
- "updated": "2026-07-03 04:13 UTC",
+ "updated": "2026-07-03 04:29 UTC",
  "us": [
   {
    "symbol": "SPY",
@@ -227,5 +227,96 @@
    "count": 2372
   }
  ],
- "kr": []
+ "kr": [
+  {
+   "symbol": "069500.KS",
+   "name": "KODEX 200",
+   "category": "국내 지수",
+   "currency": "KRW",
+   "first": "2002-10-14",
+   "last": "2026-07-03",
+   "count": 5855
+  },
+  {
+   "symbol": "102110.KS",
+   "name": "TIGER 200",
+   "category": "국내 지수",
+   "currency": "KRW",
+   "first": "2008-04-03",
+   "last": "2026-07-03",
+   "count": 4500
+  },
+  {
+   "symbol": "229200.KS",
+   "name": "KODEX 코스닥150",
+   "category": "국내 지수",
+   "currency": "KRW",
+   "first": "2015-10-01",
+   "last": "2026-07-03",
+   "count": 2638
+  },
+  {
+   "symbol": "360750.KS",
+   "name": "TIGER 미국S&P500",
+   "category": "미국 지수(국내상장)",
+   "currency": "KRW",
+   "first": "2020-08-07",
+   "last": "2026-07-03",
+   "count": 1446
+  },
+  {
+   "symbol": "133690.KS",
+   "name": "TIGER 미국나스닥100",
+   "category": "미국 지수(국내상장)",
+   "currency": "KRW",
+   "first": "2010-10-18",
+   "last": "2026-07-03",
+   "count": 3865
+  },
+  {
+   "symbol": "379800.KS",
+   "name": "KODEX 미국S&P500",
+   "category": "미국 지수(국내상장)",
+   "currency": "KRW",
+   "first": "2021-04-09",
+   "last": "2026-07-03",
+   "count": 1282
+  },
+  {
+   "symbol": "379810.KS",
+   "name": "KODEX 미국나스닥100",
+   "category": "미국 지수(국내상장)",
+   "currency": "KRW",
+   "first": "2021-04-09",
+   "last": "2026-07-03",
+   "count": 1282
+  },
+  {
+   "symbol": "458730.KS",
+   "name": "TIGER 미국배당다우존스",
+   "category": "배당·반도체(국내상장)",
+   "currency": "KRW",
+   "first": "2023-06-20",
+   "last": "2026-07-03",
+   "count": 740
+  },
+  {
+   "symbol": "381180.KS",
+   "name": "TIGER 미국필라델피아반도체나스닥",
+   "category": "배당·반도체(국내상장)",
+   "currency": "KRW",
+   "first": "2021-04-09",
+   "last": "2026-07-03",
+   "count": 1282
+  },
+  {
+   "symbol": "390390.KS",
+   "name": "KODEX 미국반도체",
+   "category": "배당·반도체(국내상장)",
+   "currency": "KRW",
+   "first": "2021-06-30",
+   "last": "2026-07-03",
+   "count": 1226
+  }
+ ]
 }
