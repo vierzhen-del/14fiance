@@ -1,5 +1,5 @@
 {
- "updated": "2026-07-02 23:06 UTC",
+ "updated": "2026-07-03 04:13 UTC",
  "us": [
   {
    "symbol": "SPY",
@@ -198,6 +198,33 @@
    "first": "2006-08-16",
    "last": "2026-07-02",
    "count": 5000
+  },
+  {
+   "symbol": "DRAM",
+   "name": "DRAM (메모리 배당)",
+   "category": "메모리 배당",
+   "currency": "USD",
+   "first": "2026-04-02",
+   "last": "2026-07-02",
+   "count": 63
+  },
+  {
+   "symbol": "RAM",
+   "name": "RAM (메모리 배당)",
+   "category": "메모리 배당",
+   "currency": "USD",
+   "first": "2021-07-09",
+   "last": "2026-07-02",
+   "count": 447
+  },
+  {
+   "symbol": "CYPH",
+   "name": "CYPH (메모리 배당)",
+   "category": "메모리 배당",
+   "currency": "USD",
+   "first": "2017-01-25",
+   "last": "2026-07-02",
+   "count": 2372
   }
  ],
  "kr": []
