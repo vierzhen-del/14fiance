@@ -168,6 +168,32 @@
   .legend-row { display: flex; flex-wrap: wrap; gap: 14px; margin: 4px 0 14px; }
   .legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-secondary); }
   .legend-item .line-key { width: 14px; height: 2px; border-radius: 1px; }
+
+  /* ---- 커스텀 포트폴리오 빌더 ---- */
+  .portfolio-rows { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+  .portfolio-row { display: flex; align-items: center; gap: 8px; }
+  .portfolio-row select { min-width: 0; flex: 1 1 auto; }
+  .portfolio-weight-wrap { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+  .portfolio-weight {
+    font: inherit; font-size: 13.5px; width: 64px;
+    padding: 9px 8px; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--surface-1); color: var(--text-primary); text-align: right;
+  }
+  .portfolio-remove {
+    flex: 0 0 auto; width: 32px; height: 32px; border-radius: 10px;
+    border: 1px solid var(--border); background: var(--surface-1); color: var(--text-muted);
+    font-size: 15px; line-height: 1; cursor: pointer;
+  }
+  .portfolio-remove:hover { color: var(--critical); }
+  .btn-add {
+    font: inherit; font-size: 13px; font-weight: 600;
+    padding: 8px 14px; border-radius: 10px; border: 1px dashed var(--border);
+    background: transparent; color: var(--text-secondary); cursor: pointer;
+    margin-bottom: 14px;
+  }
+  .btn-add:hover { color: var(--text-primary); border-color: var(--text-muted); }
+  .portfolio-sum { font-size: 12px; color: var(--text-muted); margin: 0 0 16px; }
+  .portfolio-sum.ok { color: var(--good); }
 </style>
 </head>
 <body>
@@ -203,6 +229,16 @@
       가장 늦게 상장한 종목 기준으로 시작일 맞추기
     </label>
     <div id="compareResult"></div>
+  </div>
+
+  <p class="section-title">커스텀 포트폴리오</p>
+  <p class="section-lede">ETF를 원하는 비율로 섞어서 그 조합의 최대낙폭을 계산합니다. 비율 합이 100%가 아니어도 자동으로 정규화됩니다. 위에서 고른 기간이 적용됩니다.</p>
+
+  <div class="card">
+    <div id="portfolioRows" class="portfolio-rows"></div>
+    <button type="button" id="addPortfolioRow" class="btn-add">+ 종목 추가</button>
+    <p id="portfolioSum" class="portfolio-sum"></p>
+    <div id="portfolioResult"></div>
   </div>
 
   <footer id="footerNote"></footer>
@@ -720,6 +756,161 @@ function loadEntry(id) {
   return blend ? loadBlend(blend) : loadSymbol(id);
 }
 
+/* ---------- 커스텀 포트폴리오 빌더 ---------- */
+let portfolioRowSeq = 0;
+
+function etfOptionsHTML(selectedSymbol) {
+  const byCategory = new Map();
+  for (const etf of state.manifest.us) {
+    if (!byCategory.has(etf.category)) byCategory.set(etf.category, []);
+    byCategory.get(etf.category).push(etf);
+  }
+  let html = "";
+  for (const [category, list] of byCategory) {
+    html += `<optgroup label="${category}">`;
+    for (const etf of list) {
+      html += `<option value="${etf.symbol}" ${etf.symbol === selectedSymbol ? "selected" : ""}>${etf.name}</option>`;
+    }
+    html += `</optgroup>`;
+  }
+  return html;
+}
+
+function addPortfolioRow(defaultSymbol, defaultWeight) {
+  const rowId = "prow_" + (portfolioRowSeq++);
+  const row = document.createElement("div");
+  row.className = "portfolio-row";
+  row.dataset.rowId = rowId;
+  row.innerHTML = `
+    <select class="portfolio-symbol" aria-label="종목 선택">${etfOptionsHTML(defaultSymbol)}</select>
+    <div class="portfolio-weight-wrap">
+      <input type="number" class="portfolio-weight" min="0" step="1" value="${defaultWeight}"> %
+    </div>
+    <button type="button" class="portfolio-remove" aria-label="종목 제거">×</button>
+  `;
+  document.getElementById("portfolioRows").appendChild(row);
+
+  row.querySelector(".portfolio-symbol").addEventListener("change", renderPortfolio);
+  row.querySelector(".portfolio-weight").addEventListener("input", renderPortfolio);
+  row.querySelector(".portfolio-remove").addEventListener("click", () => {
+    row.remove();
+    renderPortfolio();
+  });
+}
+
+async function renderPortfolio() {
+  const rowEls = [...document.querySelectorAll("#portfolioRows .portfolio-row")];
+  const months = Number(document.getElementById("periodSelect").value);
+  const sumEl = document.getElementById("portfolioSum");
+  const result = document.getElementById("portfolioResult");
+
+  const entries = rowEls
+    .map((el) => ({
+      symbol: el.querySelector(".portfolio-symbol").value,
+      weight: parseFloat(el.querySelector(".portfolio-weight").value) || 0,
+    }))
+    .filter((e) => e.weight > 0);
+
+  const sum = entries.reduce((s, e) => s + e.weight, 0);
+  if (rowEls.length > 0) {
+    sumEl.textContent = `합계 ${sum.toFixed(0)}%` + (Math.abs(sum - 100) < 0.5 ? " ✓" : " — 자동으로 100%에 맞춰 계산됩니다");
+    sumEl.classList.toggle("ok", Math.abs(sum - 100) < 0.5);
+  } else {
+    sumEl.textContent = "";
+  }
+
+  if (entries.length < 2 || sum <= 0) {
+    result.innerHTML = `<p class="compare-empty">최소 2개 종목에 비율을 입력해주세요.</p>`;
+    return;
+  }
+  result.innerHTML = `<p class="compare-empty">계산 중…</p>`;
+
+  const weights = entries.map((e) => ({ symbol: e.symbol, weight: e.weight / sum }));
+  const dataBySymbol = new Map();
+  try {
+    for (const w of weights) {
+      if (!dataBySymbol.has(w.symbol)) dataBySymbol.set(w.symbol, await loadSymbol(w.symbol));
+    }
+  } catch (err) {
+    result.innerHTML = `<p class="compare-empty" style="color:var(--critical)">${err.message}</p>`;
+    return;
+  }
+
+  const blended = computeBlend(weights, dataBySymbol);
+  if (blended.dates.length < 2) {
+    result.innerHTML = `<p class="compare-empty">선택한 종목들의 겹치는 데이터 기간이 없습니다.</p>`;
+    return;
+  }
+  const { dates, closes } = sliceByPeriod(blended.dates, blended.closes, months);
+  if (dates.length < 2) {
+    result.innerHTML = `<p class="compare-empty">선택한 기간에 데이터가 부족합니다.</p>`;
+    return;
+  }
+  const { mdd, peakIdx, troughIdx, recoveryIdx, ddSeries } = calcMDD(dates, closes);
+
+  const peakDate = dates[peakIdx], troughDate = dates[troughIdx];
+  const fallDays = daysBetween(peakDate, troughDate);
+  const recovered = recoveryIdx !== -1;
+  const recoveryDate = recovered ? dates[recoveryIdx] : null;
+  const recoveryDays = recovered ? daysBetween(troughDate, recoveryDate) : null;
+
+  const mixLabel = weights
+    .map((w) => `${w.symbol} ${(w.weight * 100).toFixed(0)}%`)
+    .join(" + ");
+
+  result.innerHTML = `
+    <div class="stat-row">
+      <div class="stat">
+        <p class="stat-label">최대낙폭 (MDD)</p>
+        <p class="stat-hero" style="color:var(--critical)">-${(Math.abs(mdd) * 100).toFixed(1)}%</p>
+      </div>
+      <div class="stat">
+        <p class="stat-label">고점</p>
+        <p class="stat-value">${fmtPrice(closes[peakIdx], "USD")}</p>
+        <p class="stat-sub">${peakDate}</p>
+      </div>
+      <div class="stat">
+        <p class="stat-label">저점</p>
+        <p class="stat-value">${fmtPrice(closes[troughIdx], "USD")}</p>
+        <p class="stat-sub">${troughDate} · 고점 후 ${fallDays}일</p>
+      </div>
+      <div class="stat">
+        <p class="stat-label">회복 상태</p>
+        ${recovered
+          ? `<span class="badge recovered">✓ 회복 완료</span><p class="stat-sub">${recoveryDate} · ${recoveryDays}일 소요</p>`
+          : `<span class="badge ongoing">● 미회복 (진행 중)</span><p class="stat-sub">${dates[dates.length - 1]} 기준</p>`}
+      </div>
+    </div>
+
+    <p class="chart-title" style="margin-top:20px;">가격 추이 — ${mixLabel}</p>
+    <p class="stat-sub" style="margin:-8px 0 12px;">합성 포트폴리오: 최초 100 투자·일별 리밸런싱 가정 지수(실제 가격 아님)</p>
+    <div id="portfolioChart"></div>
+
+    <p class="chart-title" style="margin-top:20px;">낙폭 추이 (Underwater)</p>
+    <div id="portfolioDdChart"></div>
+  `;
+
+  const priceColor = cssVar("--series-price");
+  buildChart(document.getElementById("portfolioChart"), {
+    dates, values: closes, color: priceColor,
+    mode: "price",
+    markers: [
+      { idx: peakIdx, cls: "peak", label: "고점" },
+      { idx: troughIdx, cls: "trough", label: `−${(Math.abs(mdd) * 100).toFixed(1)}%` },
+    ],
+    valueFmt: (v) => fmtPrice(v, "USD"),
+    seriesLabel: "지수",
+  });
+
+  buildChart(document.getElementById("portfolioDdChart"), {
+    dates, values: ddSeries, color: cssVar("--series-dd"),
+    mode: "drawdown",
+    markers: [{ idx: troughIdx, cls: "trough", label: `−${(Math.abs(mdd) * 100).toFixed(1)}%` }],
+    valueFmt: (v) => (v * 100).toFixed(1) + "%",
+    seriesLabel: "낙폭",
+  });
+}
+
 async function render() {
   const symbol = document.getElementById("etfSelect").value;
   const months = Number(document.getElementById("periodSelect").value);
@@ -875,14 +1066,24 @@ async function init() {
   });
   document.getElementById("alignStartToggle").addEventListener("change", renderCompare);
 
+  addPortfolioRow("DIVO", 75);
+  addPortfolioRow("VOO", 25);
+  document.getElementById("addPortfolioRow").addEventListener("click", () => {
+    const used = new Set([...document.querySelectorAll(".portfolio-symbol")].map((el) => el.value));
+    const next = state.manifest.us.find((e) => !used.has(e.symbol)) || state.manifest.us[0];
+    addPortfolioRow(next.symbol, 0);
+    renderPortfolio();
+  });
+
   document.getElementById("footerNote").innerHTML =
     `데이터 출처: Twelve Data · 마지막 갱신: <b>${state.manifest.updated}</b> · ` +
     `종가는 분할(split) 조정만 반영되며 배당 재투자는 반영되지 않을 수 있습니다. 한국 상장 ETF는 현재 데이터 소스 제약으로 준비 중입니다.`;
 
   select.addEventListener("change", render);
-  document.getElementById("periodSelect").addEventListener("change", () => { render(); renderCompare(); });
+  document.getElementById("periodSelect").addEventListener("change", () => { render(); renderCompare(); renderPortfolio(); });
   render();
   renderCompare();
+  renderPortfolio();
 }
 
 init();
