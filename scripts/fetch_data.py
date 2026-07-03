@@ -26,6 +26,9 @@ ETF_LIST = ROOT / "scripts" / "etf_list.json"
 API_URL = "https://api.twelvedata.com/time_series"
 DIVIDENDS_URL = "https://api.twelvedata.com/dividends"
 API_KEY = os.environ.get("TWELVEDATA_API_KEY", "")
+# 배당 폴백: Financial Modeling Prep (Secrets에 FMP_API_KEY 등록 시 활성화)
+FMP_API_KEY = os.environ.get("FMP_API_KEY", "")
+FMP_DIV_URL = "https://financialmodelingprep.com/stable/dividends"
 # Twelve Data 무료 티어 레이트리밋(분당 8회)을 지키기 위한 요청 간 최소 대기 시간
 REQUEST_INTERVAL_SEC = 8.0
 DIV_DIR_NAME = "div"
@@ -113,9 +116,47 @@ def fetch_symbol_us(symbol: str) -> dict | None:
 def fetch_dividends_us(symbol: str) -> dict | None:
     """미국 ETF의 배당 이력을 받아 {dates(오름차순), amounts}로 반환한다.
 
-    배당이 없거나 엔드포인트가 플랜에서 지원되지 않으면 None을 반환하고
-    수집 전체는 계속 진행한다 (배당은 부가 정보).
+    1차: Twelve Data /dividends (무료 플랜에서는 403으로 막히는 경우 있음)
+    2차: FMP_API_KEY가 설정돼 있으면 Financial Modeling Prep으로 폴백.
+    둘 다 실패하면 None을 반환하고 수집 전체는 계속 진행한다 (배당은 부가 정보).
     """
+    div = _dividends_twelvedata(symbol)
+    if div is None and FMP_API_KEY:
+        div = _dividends_fmp(symbol)
+    return div
+
+
+def _dividends_fmp(symbol: str) -> dict | None:
+    url = f"{FMP_DIV_URL}?{urllib.parse.urlencode({'symbol': symbol, 'apikey': FMP_API_KEY})}"
+    try:
+        payload = http_get_json(url)
+    except RuntimeError as err:
+        print(f"  .. FMP dividends skipped for {symbol}: {err}")
+        return None
+    if not isinstance(payload, list):
+        print(f"  .. FMP dividends skipped for {symbol}: {str(payload)[:120]}")
+        return None
+    pairs = []
+    for e in payload:
+        day = e.get("date") or ""
+        try:
+            amount = float(e.get("adjDividend") or e.get("dividend") or 0)
+        except (TypeError, ValueError):
+            continue
+        if len(day) == 10 and amount > 0:
+            pairs.append((day, round(amount, 6)))
+    pairs.sort()
+    if not pairs:
+        return None
+    return {
+        "symbol": symbol,
+        "count": len(pairs),
+        "dates": [p[0] for p in pairs],
+        "amounts": [p[1] for p in pairs],
+    }
+
+
+def _dividends_twelvedata(symbol: str) -> dict | None:
     params = {"symbol": symbol, "range": "full", "apikey": API_KEY}
     url = f"{DIVIDENDS_URL}?{urllib.parse.urlencode(params)}"
     try:

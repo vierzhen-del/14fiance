@@ -194,6 +194,16 @@
   .btn-add:hover { color: var(--text-primary); border-color: var(--text-muted); }
   .portfolio-sum { font-size: 12px; color: var(--text-muted); margin: 0 0 16px; }
   .portfolio-sum.ok { color: var(--good); }
+
+  /* ---- 시장 구분 선택 ---- */
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .seg button {
+    font: inherit; font-size: 13px; padding: 9px 16px;
+    background: var(--surface-1); color: var(--text-muted);
+    border: none; cursor: pointer;
+  }
+  .seg button + button { border-left: 1px solid var(--border); }
+  .seg button.active { background: var(--text-primary); color: var(--surface-1); font-weight: 600; }
 </style>
 </head>
 <body>
@@ -202,6 +212,11 @@
   <p class="lede">종목을 고르면 선택한 기간 동안의 최대낙폭(고점 대비 최대 하락폭)을 계산해서 보여줍니다.</p>
 
   <div class="controls">
+    <div class="seg" id="marketSeg" role="group" aria-label="시장 구분">
+      <button type="button" data-market="all" class="active">전체</button>
+      <button type="button" data-market="us">미국</button>
+      <button type="button" data-market="kr">국내</button>
+    </div>
     <select id="etfSelect" aria-label="ETF 선택"></select>
     <select id="periodSelect" aria-label="기간 선택">
       <option value="0">전체 기간</option>
@@ -239,6 +254,30 @@
     <button type="button" id="addPortfolioRow" class="btn-add">+ 종목 추가</button>
     <p id="portfolioSum" class="portfolio-sum"></p>
     <div id="portfolioResult"></div>
+  </div>
+
+  <p class="section-title">투자 시뮬레이터</p>
+  <p class="section-lede">과거 데이터로 "그때 투자했다면 지금 얼마"를 계산하고(백테스트), 그 실적을 바탕으로 한 미래 추정치도 보여줍니다. 위에서 고른 기간이 백테스트 기간으로 적용됩니다.</p>
+
+  <div class="card">
+    <div class="controls" style="margin-bottom:6px;">
+      <select id="simTarget" aria-label="시뮬레이션 대상"></select>
+      <select id="simMode" aria-label="투자 방식" style="min-width:150px;">
+        <option value="dca" selected>월적립식 (매월 매수)</option>
+        <option value="lump">거치식 (한 번에 투자)</option>
+      </select>
+      <div class="portfolio-weight-wrap">
+        <input type="number" id="simAmount" class="portfolio-weight" style="width:110px" min="1" step="1" value="1000">
+        <span id="simAmountUnit" style="font-size:12.5px; color:var(--text-muted);">$/월</span>
+      </div>
+      <select id="simFutureYears" aria-label="미래 추정 기간" style="min-width:120px;">
+        <option value="5">향후 5년</option>
+        <option value="10" selected>향후 10년</option>
+        <option value="20">향후 20년</option>
+        <option value="30">향후 30년</option>
+      </select>
+    </div>
+    <div id="simResult"></div>
   </div>
 
   <footer id="footerNote"></footer>
@@ -350,6 +389,7 @@ function niceTicks(min, max, count) {
 
 function buildChart(container, opts) {
   const { dates, values, color, mode, markers, valueFmt, seriesLabel } = opts;
+  const axisPrefix = opts.currency === "KRW" ? "₩" : "$";
   const n = values.length;
   const xAt = (i) => PAD_L + (i / (n - 1)) * (CHART_W - PAD_L - PAD_R);
 
@@ -371,7 +411,7 @@ function buildChart(container, opts) {
   const gridSvg = ticks
     .map((t) => {
       const y = yAt(t).toFixed(2);
-      const label = mode === "drawdown" ? (t * 100).toFixed(0) + "%" : "$" + t.toLocaleString();
+      const label = mode === "drawdown" ? (t * 100).toFixed(0) + "%" : axisPrefix + t.toLocaleString();
       return `<line class="gridline" x1="${PAD_L}" x2="${CHART_W - PAD_R}" y1="${y}" y2="${y}"/>` +
              `<text class="axis-label" x="${PAD_L - 6}" y="${Number(y) + 3}" text-anchor="end">${label}</text>`;
     })
@@ -563,13 +603,13 @@ function buildCompareChart(container, seriesList) {
 }
 
 async function renderCompare() {
-  const checked = [...document.querySelectorAll("#compareChecklist input:checked")].map((el) => el.value);
+  const checked = [...(state.compareChecked || new Set())];
   const months = Number(document.getElementById("periodSelect").value);
   const alignStart = document.getElementById("alignStartToggle").checked;
   const result = document.getElementById("compareResult");
   document.getElementById("chkCount").textContent = String(checked.length);
 
-  // 5개 넘게 못 고르도록: 이미 5개면 나머지는 비활성화
+  // 5개 넘게 못 고르도록: 이미 5개면 (보이는) 나머지는 비활성화
   document.querySelectorAll("#compareChecklist input").forEach((el) => {
     const item = el.closest(".chk-item");
     if (!el.checked && checked.length >= MAX_COMPARE) item.classList.add("disabled");
@@ -909,6 +949,284 @@ async function renderPortfolio() {
     valueFmt: (v) => (v * 100).toFixed(1) + "%",
     seriesLabel: "낙폭",
   });
+
+  // 시뮬레이터가 이 조합을 대상으로 쓰고 있으면 함께 갱신
+  const simTargetEl = document.getElementById("simTarget");
+  if (simTargetEl && simTargetEl.value === "__CUSTOM__") renderSimulator();
+}
+
+/* ---------- 투자 시뮬레이터 ---------- */
+async function loadDividends(symbol) {
+  const key = "div:" + symbol;
+  if (state.cache.has(key)) return state.cache.get(key);
+  let div = null;
+  try {
+    div = await fetchJSON(`${DATA_DIR}/div/${symbol}.json`);
+  } catch (err) {
+    div = null; // 배당 데이터 없는 종목 (국내·합성 등)
+  }
+  state.cache.set(key, div);
+  return div;
+}
+
+/* 월 단위 현금흐름의 내부수익률(IRR)을 이분법으로 풀어 연환산한다.
+   cashflows: [{t(개월), amount}] — 투자금은 음수, 마지막에 회수액 양수 */
+function solveAnnualIRR(cashflows) {
+  const npv = (rm) => cashflows.reduce((s, c) => s + c.amount / Math.pow(1 + rm, c.t), 0);
+  let lo = -0.5, hi = 1.0;
+  let flo = npv(lo), fhi = npv(hi);
+  if (isNaN(flo) || isNaN(fhi) || flo * fhi > 0) return null;
+  for (let iter = 0; iter < 100; iter++) {
+    const mid = (lo + hi) / 2;
+    const fm = npv(mid);
+    if (flo * fm <= 0) { hi = mid; fhi = fm; } else { lo = mid; flo = fm; }
+  }
+  const rm = (lo + hi) / 2;
+  return Math.pow(1 + rm, 12) - 1;
+}
+
+/* 백테스트: 거치식/월적립식으로 기간 동안 투자했을 때의 평가액 시계열과 배당 수령액 */
+function runBacktest(dates, closes, mode, amount, div) {
+  const n = dates.length;
+  const values = new Array(n);
+  const flows = [];
+  const startTs = Date.parse(dates[0]);
+  const monthsAt = (dateStr) => (Date.parse(dateStr) - startTs) / (86400000 * 30.4375);
+
+  let shares = 0, contributed = 0, divCash = 0;
+  const divDates = div ? div.dates : [];
+  const divAmts = div ? div.amounts : [];
+  let di = 0;
+  while (di < divDates.length && divDates[di] < dates[0]) di++;
+  const divEvents = [];
+
+  let lastMonth = "";
+  for (let i = 0; i < n; i++) {
+    const month = dates[i].slice(0, 7);
+    if (mode === "lump") {
+      if (i === 0) {
+        shares = amount / closes[0];
+        contributed = amount;
+        flows.push({ t: 0, amount: -amount });
+      }
+    } else if (month !== lastMonth) {
+      shares += amount / closes[i];
+      contributed += amount;
+      flows.push({ t: monthsAt(dates[i]), amount: -amount });
+    }
+    lastMonth = month;
+    while (di < divDates.length && divDates[di] <= dates[i]) {
+      const cash = shares * divAmts[di];
+      divCash += cash;
+      divEvents.push({ date: divDates[di], cash });
+      di++;
+    }
+    values[i] = shares * closes[i];
+  }
+
+  const finalValue = values[n - 1];
+  flows.push({ t: monthsAt(dates[n - 1]), amount: finalValue + divCash });
+  const irr = solveAnnualIRR(flows);
+
+  // 백테스트 마지막 12개월간 실제 수령 배당
+  const lastYearStart = new Date(Date.parse(dates[n - 1]) - 365 * 86400000).toISOString().slice(0, 10);
+  const ttmDivCash = divEvents.filter((e) => e.date > lastYearStart).reduce((s, e) => s + e.cash, 0);
+
+  return { values, contributed, finalValue, divCash, ttmDivCash, irr, shares };
+}
+
+/* 과거 실적 기반 미래 추정 (보장 아님) */
+function estimateFuture(mode, amount, years, priceCAGR, divYield, divGrowth) {
+  const months = years * 12;
+  const rm = Math.pow(1 + priceCAGR, 1 / 12) - 1;
+  let fv, contributed;
+  if (mode === "lump") {
+    fv = amount * Math.pow(1 + priceCAGR, years);
+    contributed = amount;
+  } else {
+    fv = Math.abs(rm) < 1e-9 ? amount * months : amount * ((Math.pow(1 + rm, months) - 1) / rm);
+    contributed = amount * months;
+  }
+  const monthlyDiv = divYield != null ? (fv * divYield * Math.pow(1 + (divGrowth || 0), years)) / 12 : null;
+  return { fv, contributed, monthlyDiv };
+}
+
+/* 배당 이력에서 연간 배당 성장률 추정 (완전한 연도 3개 이상일 때만, ±범위 제한) */
+function estimateDivGrowth(div) {
+  if (!div || div.dates.length < 4) return 0;
+  const byYear = new Map();
+  for (let i = 0; i < div.dates.length; i++) {
+    const y = div.dates[i].slice(0, 4);
+    byYear.set(y, (byYear.get(y) || 0) + div.amounts[i]);
+  }
+  const years = [...byYear.keys()].sort();
+  // 마지막 연도는 진행 중일 수 있어 제외
+  const full = years.slice(0, -1);
+  if (full.length < 3) return 0;
+  const first = byYear.get(full[0]), last = byYear.get(full[full.length - 1]);
+  if (first <= 0 || last <= 0) return 0;
+  const g = Math.pow(last / first, 1 / (full.length - 1)) - 1;
+  return Math.max(-0.2, Math.min(0.3, g));
+}
+
+async function getSimTargetSeries(targetId) {
+  if (targetId === "__CUSTOM__") {
+    const rowEls = [...document.querySelectorAll("#portfolioRows .portfolio-row")];
+    const entries = rowEls
+      .map((el) => ({
+        symbol: el.querySelector(".portfolio-symbol").value,
+        weight: parseFloat(el.querySelector(".portfolio-weight").value) || 0,
+      }))
+      .filter((e) => e.weight > 0);
+    const sum = entries.reduce((s, e) => s + e.weight, 0);
+    if (entries.length < 2 || sum <= 0) return null;
+    const weights = entries.map((e) => ({ symbol: e.symbol, weight: e.weight / sum }));
+    const dataBySymbol = new Map();
+    for (const w of weights) {
+      if (!dataBySymbol.has(w.symbol)) dataBySymbol.set(w.symbol, await loadSymbol(w.symbol));
+    }
+    const blended = computeBlend(weights, dataBySymbol);
+    const label = weights.map((w) => `${w.symbol} ${(w.weight * 100).toFixed(0)}%`).join(" + ");
+    return { dates: blended.dates, closes: blended.closes, currency: "USD", label, plainSymbol: null };
+  }
+  const full = await loadEntry(targetId);
+  const meta = state.metaBySymbol.get(targetId);
+  return {
+    dates: full.dates,
+    closes: full.closes,
+    currency: full.currency || "USD",
+    label: meta ? meta.name : targetId,
+    plainSymbol: isBlend(targetId) ? null : targetId,
+  };
+}
+
+async function renderSimulator() {
+  const targetId = document.getElementById("simTarget").value;
+  const mode = document.getElementById("simMode").value;
+  const amount = parseFloat(document.getElementById("simAmount").value) || 0;
+  const futureYears = Number(document.getElementById("simFutureYears").value);
+  const months = Number(document.getElementById("periodSelect").value);
+  const result = document.getElementById("simResult");
+
+  if (amount <= 0) {
+    result.innerHTML = `<p class="compare-empty">금액을 입력해주세요.</p>`;
+    return;
+  }
+  result.innerHTML = `<p class="compare-empty">계산 중…</p>`;
+
+  let target;
+  try {
+    target = await getSimTargetSeries(targetId);
+  } catch (err) {
+    result.innerHTML = `<p class="compare-empty" style="color:var(--critical)">${err.message}</p>`;
+    return;
+  }
+  if (!target) {
+    result.innerHTML = `<p class="compare-empty">커스텀 포트폴리오에 최소 2개 종목·비율을 입력해주세요.</p>`;
+    return;
+  }
+
+  const unitEl = document.getElementById("simAmountUnit");
+  const curSym = target.currency === "KRW" ? "₩" : "$";
+  unitEl.textContent = mode === "dca" ? `${curSym}/월` : `${curSym} 총액`;
+
+  const { dates, closes } = sliceByPeriod(target.dates, target.closes, months);
+  if (dates.length < 30) {
+    result.innerHTML = `<p class="compare-empty">선택한 기간에 데이터가 부족합니다.</p>`;
+    return;
+  }
+
+  const div = target.plainSymbol ? await loadDividends(target.plainSymbol) : null;
+  const bt = runBacktest(dates, closes, mode, amount, div);
+  const { mdd, troughIdx } = calcMDD(dates, bt.values);
+  const totalReturn = (bt.finalValue + bt.divCash) / bt.contributed - 1;
+  const fmt = (v) => fmtPrice(v, target.currency);
+
+  // 미래 추정 입력값: 백테스트 기간의 가격 CAGR + 현재 배당수익률 + 배당성장률
+  const days = daysBetween(dates[0], dates[dates.length - 1]);
+  const priceCAGR = days > 0 ? Math.pow(closes[closes.length - 1] / closes[0], 365.25 / days) - 1 : 0;
+  const meta = target.plainSymbol ? state.metaBySymbol.get(target.plainSymbol) : null;
+  const divYield = meta && meta.ttmDividend && closes[closes.length - 1]
+    ? meta.ttmDividend / closes[closes.length - 1]
+    : null;
+  const divGrowth = estimateDivGrowth(div);
+  const fut = estimateFuture(mode, amount, futureYears, priceCAGR, divYield, divGrowth);
+
+  const divLine = div
+    ? `누적 배당 수령 <b style="color:var(--text-primary)">${fmt(bt.divCash)}</b> · 최근 1년 월평균 배당 <b style="color:var(--text-primary)">${fmt(bt.ttmDivCash / 12)}</b> <span style="color:var(--text-muted)">(현금 수령 가정, 재투자 안 함)</span>`
+    : `<span style="color:var(--text-muted)">배당 데이터 없음 (합성 조합·국내 종목은 배당 계산 미지원)</span>`;
+
+  result.innerHTML = `
+    <p class="chart-title" style="margin-top:8px;">📊 백테스트 — ${target.label} · ${mode === "dca" ? `매월 ${fmt(amount)}` : `${fmt(amount)} 거치`} · ${dates[0]} ~ ${dates[dates.length - 1]}</p>
+    <div class="stat-row">
+      <div class="stat">
+        <p class="stat-label">최종 평가액 (배당 별도)</p>
+        <p class="stat-hero" style="font-size:32px;">${fmt(bt.finalValue)}</p>
+        <p class="stat-sub">납입원금 ${fmt(bt.contributed)}</p>
+      </div>
+      <div class="stat">
+        <p class="stat-label">총수익률 (배당 포함)</p>
+        <p class="stat-value" style="color:${totalReturn >= 0 ? "var(--good)" : "var(--critical)"}">${totalReturn >= 0 ? "+" : ""}${(totalReturn * 100).toFixed(1)}%</p>
+        <p class="stat-sub">연 수익률(IRR) ${bt.irr != null ? (bt.irr * 100).toFixed(1) + "%" : "—"}</p>
+      </div>
+      <div class="stat">
+        <p class="stat-label">기간 중 최대낙폭</p>
+        <p class="stat-value" style="color:var(--critical)">-${(Math.abs(mdd) * 100).toFixed(1)}%</p>
+        <p class="stat-sub">${dates[troughIdx]} 저점</p>
+      </div>
+      <div class="stat">
+        <p class="stat-label">보유 수량</p>
+        <p class="stat-value">${bt.shares.toLocaleString(undefined, { maximumFractionDigits: 2 })}주</p>
+      </div>
+    </div>
+    <p class="stat-sub" style="border-top:1px solid var(--gridline); padding-top:12px;">💰 ${divLine}</p>
+
+    <p class="chart-title" style="margin-top:20px;">평가액 추이</p>
+    <div id="simValueChart"></div>
+    <p class="chart-title" style="margin-top:20px;">평가액 낙폭 추이</p>
+    <div id="simDdChart"></div>
+
+    <p class="chart-title" style="margin-top:24px;">🔮 향후 ${futureYears}년 추정 (과거 실적 기반)</p>
+    <div class="stat-row">
+      <div class="stat">
+        <p class="stat-label">예상 평가액</p>
+        <p class="stat-value">${fmt(fut.fv)}</p>
+        <p class="stat-sub">납입 예정 원금 ${fmt(fut.contributed)}</p>
+      </div>
+      <div class="stat">
+        <p class="stat-label">적용 연 수익률</p>
+        <p class="stat-value">${(priceCAGR * 100).toFixed(1)}%</p>
+        <p class="stat-sub">백테스트 기간 가격 CAGR</p>
+      </div>
+      <div class="stat">
+        <p class="stat-label">예상 월배당 (${futureYears}년 후)</p>
+        <p class="stat-value">${fut.monthlyDiv != null ? fmt(fut.monthlyDiv) : "—"}</p>
+        <p class="stat-sub">${fut.monthlyDiv != null ? `현 수익률 ${(divYield * 100).toFixed(2)}% · 배당성장 연 ${(divGrowth * 100).toFixed(1)}% 가정` : "배당 데이터 없음"}</p>
+      </div>
+      <div class="stat">
+        <p class="stat-label">참고 최대낙폭</p>
+        <p class="stat-value" style="color:var(--critical)">-${(Math.abs(mdd) * 100).toFixed(1)}%</p>
+        <p class="stat-sub">과거 기간 실측치</p>
+      </div>
+    </div>
+    <p class="stat-sub" style="color:var(--critical);">⚠️ 미래 추정은 과거 실적을 그대로 연장한 참고치일 뿐이며, 실제 수익률·배당·낙폭을 보장하지 않습니다.</p>
+  `;
+
+  const { ddSeries } = calcMDD(dates, bt.values);
+  buildChart(document.getElementById("simValueChart"), {
+    dates, values: bt.values, color: cssVar("--series-price"),
+    mode: "price", currency: target.currency,
+    markers: [{ idx: troughIdx, cls: "trough", label: `−${(Math.abs(mdd) * 100).toFixed(1)}%` }],
+    valueFmt: (v) => fmt(v),
+    seriesLabel: "평가액",
+  });
+  buildChart(document.getElementById("simDdChart"), {
+    dates, values: ddSeries, color: cssVar("--series-dd"),
+    mode: "drawdown",
+    markers: [{ idx: troughIdx, cls: "trough", label: `−${(Math.abs(mdd) * 100).toFixed(1)}%` }],
+    valueFmt: (v) => (v * 100).toFixed(1) + "%",
+    seriesLabel: "낙폭",
+  });
 }
 
 async function render() {
@@ -983,7 +1301,7 @@ async function render() {
   const priceColor = getComputedStyle(document.documentElement).getPropertyValue("--series-price").trim();
   buildChart(document.getElementById("priceChart"), {
     dates, values: closes, color: priceColor,
-    mode: "price",
+    mode: "price", currency: full.currency,
     markers: [
       { idx: peakIdx, cls: "peak", label: "고점" },
       { idx: troughIdx, cls: "trough", label: `−${(Math.abs(mdd) * 100).toFixed(1)}%` },
@@ -1010,62 +1328,94 @@ async function init() {
     return;
   }
 
-  state.listedEtfs = [...state.manifest.us, ...state.manifest.kr];
+  state.listedEtfs = [
+    ...state.manifest.us.map((e) => ({ ...e, market: "us" })),
+    ...state.manifest.kr.map((e) => ({ ...e, market: "kr" })),
+  ];
   state.allSymbols = [...state.listedEtfs.map((e) => e.symbol), ...BLENDS.map((b) => b.id)];
   state.metaBySymbol = new Map([
     ...state.listedEtfs.map((e) => [e.symbol, e]),
     ...BLENDS.map((b) => [b.id, { symbol: b.id, name: b.name, category: b.category }]),
   ]);
-
-  const byCategory = new Map();
-  for (const etf of state.listedEtfs) {
-    if (!byCategory.has(etf.category)) byCategory.set(etf.category, []);
-    byCategory.get(etf.category).push(etf);
-  }
-  if (BLENDS.length) {
-    byCategory.set("합성 포트폴리오", BLENDS.map((b) => ({ symbol: b.id, name: b.name })));
-  }
+  state.marketFilter = "all";
+  state.compareChecked = new Set(["SPY", "QQQ", "SCHD", "GLD", "TLT"]);
 
   const select = document.getElementById("etfSelect");
-  for (const [category, list] of byCategory) {
-    const group = document.createElement("optgroup");
-    group.label = category;
-    for (const etf of list) {
-      const opt = document.createElement("option");
-      opt.value = etf.symbol;
-      opt.textContent = etf.name;
-      group.appendChild(opt);
-    }
-    select.appendChild(group);
-  }
-
-  const DEFAULT_COMPARE = new Set(["SPY", "QQQ", "SCHD", "GLD", "TLT"]);
   const checklist = document.getElementById("compareChecklist");
-  for (const [category, list] of byCategory) {
-    const wrap = document.createElement("div");
-    const label = document.createElement("p");
-    label.className = "checklist-group-label";
-    label.textContent = category;
-    const items = document.createElement("div");
-    items.className = "checklist-items";
-    for (const etf of list) {
-      const id = "cmp_" + etf.symbol;
-      const color = symbolColor(etf.symbol);
-      const lbl = document.createElement("label");
-      lbl.className = "chk-item";
-      lbl.setAttribute("for", id);
-      lbl.innerHTML =
-        `<span class="swatch" style="background:${color}"></span>` +
-        `<input type="checkbox" id="${id}" value="${etf.symbol}" ${DEFAULT_COMPARE.has(etf.symbol) ? "checked" : ""}>` +
-        `${etf.name}`;
-      items.appendChild(lbl);
+
+  // 시장 필터(전체/미국/국내)에 맞춰 드롭다운과 비교 체크리스트를 다시 그린다.
+  // 필터에 안 보이는 종목이라도 비교 선택(state.compareChecked)은 유지된다.
+  function rebuildSelectors() {
+    const filter = state.marketFilter;
+    const visible = state.listedEtfs.filter((e) => filter === "all" || e.market === filter);
+    const byCategory = new Map();
+    for (const etf of visible) {
+      if (!byCategory.has(etf.category)) byCategory.set(etf.category, []);
+      byCategory.get(etf.category).push(etf);
     }
-    wrap.appendChild(label);
-    wrap.appendChild(items);
-    checklist.appendChild(wrap);
+    if (BLENDS.length && filter !== "kr") {
+      byCategory.set("합성 포트폴리오", BLENDS.map((b) => ({ symbol: b.id, name: b.name })));
+    }
+
+    const prevSelected = select.value;
+    select.innerHTML = "";
+    for (const [category, list] of byCategory) {
+      const group = document.createElement("optgroup");
+      group.label = category;
+      for (const etf of list) {
+        const opt = document.createElement("option");
+        opt.value = etf.symbol;
+        opt.textContent = etf.name;
+        group.appendChild(opt);
+      }
+      select.appendChild(group);
+    }
+    if ([...select.options].some((o) => o.value === prevSelected)) select.value = prevSelected;
+
+    checklist.innerHTML = "";
+    for (const [category, list] of byCategory) {
+      if (category === "합성 포트폴리오") continue; // 비교는 실제 상장 종목만
+      const wrap = document.createElement("div");
+      const label = document.createElement("p");
+      label.className = "checklist-group-label";
+      label.textContent = category;
+      const items = document.createElement("div");
+      items.className = "checklist-items";
+      for (const etf of list) {
+        const id = "cmp_" + etf.symbol;
+        const color = symbolColor(etf.symbol);
+        const lbl = document.createElement("label");
+        lbl.className = "chk-item";
+        lbl.setAttribute("for", id);
+        lbl.innerHTML =
+          `<span class="swatch" style="background:${color}"></span>` +
+          `<input type="checkbox" id="${id}" value="${etf.symbol}" ${state.compareChecked.has(etf.symbol) ? "checked" : ""}>` +
+          `${etf.name}`;
+        items.appendChild(lbl);
+      }
+      wrap.appendChild(label);
+      wrap.appendChild(items);
+      checklist.appendChild(wrap);
+    }
   }
+  rebuildSelectors();
+
+  document.querySelectorAll("#marketSeg button").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.marketFilter = btn.dataset.market;
+      document.querySelectorAll("#marketSeg button").forEach((b) => b.classList.toggle("active", b === btn));
+      const prev = select.value;
+      rebuildSelectors();
+      if (select.value !== prev) render(); // 필터로 인해 선택 종목이 바뀐 경우만 다시 그림
+      renderCompare(); // 5개 제한 비활성화 상태 재적용
+    });
+  });
+
   checklist.addEventListener("change", (evt) => {
-    if (evt.target.matches('input[type="checkbox"]')) renderCompare();
+    if (!evt.target.matches('input[type="checkbox"]')) return;
+    if (evt.target.checked) state.compareChecked.add(evt.target.value);
+    else state.compareChecked.delete(evt.target.value);
+    renderCompare();
   });
   document.getElementById("alignStartToggle").addEventListener("change", renderCompare);
 
@@ -1078,6 +1428,19 @@ async function init() {
     renderPortfolio();
   });
 
+  // 시뮬레이터 대상: 전체 ETF + 고정 합성 + 커스텀 조합
+  const simTarget = document.getElementById("simTarget");
+  simTarget.innerHTML =
+    etfOptionsHTML("SPY") +
+    (BLENDS.length
+      ? `<optgroup label="합성 포트폴리오">${BLENDS.map((b) => `<option value="${b.id}">${b.name}</option>`).join("")}</optgroup>`
+      : "") +
+    `<optgroup label="직접 조합"><option value="__CUSTOM__">커스텀 포트폴리오 (위 조합 사용)</option></optgroup>`;
+  simTarget.addEventListener("change", renderSimulator);
+  document.getElementById("simMode").addEventListener("change", renderSimulator);
+  document.getElementById("simFutureYears").addEventListener("change", renderSimulator);
+  document.getElementById("simAmount").addEventListener("input", renderSimulator);
+
   const krNote = state.manifest.kr.length
     ? ""
     : " 한국 상장 ETF는 현재 데이터 준비 중입니다.";
@@ -1086,10 +1449,11 @@ async function init() {
     `종가는 분할(split) 조정만 반영되며 배당 재투자는 반영되지 않을 수 있습니다.${krNote}`;
 
   select.addEventListener("change", render);
-  document.getElementById("periodSelect").addEventListener("change", () => { render(); renderCompare(); renderPortfolio(); });
+  document.getElementById("periodSelect").addEventListener("change", () => { render(); renderCompare(); renderPortfolio(); renderSimulator(); });
   render();
   renderCompare();
   renderPortfolio();
+  renderSimulator();
 }
 
 init();

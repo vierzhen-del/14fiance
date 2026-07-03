@@ -28,6 +28,7 @@ jobs:
       - name: Fetch ETF price data
         env:
           TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
         run: python scripts/fetch_data.py
 
       - name: Commit and push data

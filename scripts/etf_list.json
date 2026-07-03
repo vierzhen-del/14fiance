@@ -36,6 +36,17 @@
     { "symbol": "379810.KS", "name": "KODEX 미국나스닥100",                "category": "미국 지수(국내상장)" },
     { "symbol": "458730.KS", "name": "TIGER 미국배당다우존스",             "category": "배당·반도체(국내상장)" },
     { "symbol": "381180.KS", "name": "TIGER 미국필라델피아반도체나스닥",   "category": "배당·반도체(국내상장)" },
-    { "symbol": "390390.KS", "name": "KODEX 미국반도체",                   "category": "배당·반도체(국내상장)" }
+    { "symbol": "390390.KS", "name": "KODEX 미국반도체",                   "category": "배당·반도체(국내상장)" },
+    { "symbol": "472150.KS", "name": "TIGER 배당커버드콜액티브",           "category": "커버드콜(국내)" },
+    { "symbol": "0167B0.KS", "name": "SOL 200타겟위클리커버드콜",          "category": "커버드콜(국내)" },
+    { "symbol": "498400.KS", "name": "KODEX 200타겟위클리커버드콜",        "category": "커버드콜(국내)" },
+    { "symbol": "0177R0.KS", "name": "TIGER 반도체TOP10커버드콜액티브",    "category": "커버드콜(국내)" },
+    { "symbol": "480040.KS", "name": "ACE 미국반도체데일리타겟커버드콜(합성)", "category": "커버드콜(국내)" },
+    { "symbol": "441640.KS", "name": "KODEX 미국배당커버드콜액티브",       "category": "커버드콜(국내)" },
+    { "symbol": "490590.KS", "name": "RISE 미국AI밸류체인데일리고정커버드콜", "category": "커버드콜(국내)" },
+    { "symbol": "402970.KS", "name": "ACE 미국배당다우존스",               "category": "배당·혼합(국내)" },
+    { "symbol": "284430.KS", "name": "KODEX 200미국채혼합",                "category": "배당·혼합(국내)" },
+    { "symbol": "0183V0.KS", "name": "KIWOOM 삼성전자&SK하이닉스채권혼합50", "category": "배당·혼합(국내)" },
+    { "symbol": "329200.KS", "name": "TIGER 리츠부동산인프라",             "category": "배당·혼합(국내)" }
   ]
 }
