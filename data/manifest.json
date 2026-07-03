@@ -1,5 +1,5 @@
 {
- "updated": "2026-07-03 04:29 UTC",
+ "updated": "2026-07-03 04:38 UTC",
  "us": [
   {
    "symbol": "SPY",
@@ -8,7 +8,9 @@
    "currency": "USD",
    "first": "2006-08-17",
    "last": "2026-07-02",
-   "count": 5000
+   "count": 5000,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
   },
   {
    "symbol": "VOO",
@@ -17,7 +19,9 @@
    "currency": "USD",
    "first": "2010-09-09",
    "last": "2026-07-02",
-   "count": 3977
+   "count": 3977,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
   },
   {
    "symbol": "VTI",
@@ -26,7 +30,9 @@
    "currency": "USD",
    "first": "2006-08-16",
    "last": "2026-07-02",
-   "count": 5000
+   "count": 5000,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
   },
   {
    "symbol": "QQQ",
@@ -35,7 +41,9 @@
    "currency": "USD",
    "first": "2006-08-16",
    "last": "2026-07-02",
-   "count": 5000
+   "count": 5000,
+   "ttmDividend": 3.03434,
+   "dividendYield": 0.004257
   },
   {
    "symbol": "DIA",
@@ -44,7 +52,9 @@
    "currency": "USD",
    "first": "2006-08-16",
    "last": "2026-07-02",
-   "count": 5000
+   "count": 5000,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
   },
   {
    "symbol": "IWM",
@@ -53,7 +63,9 @@
    "currency": "USD",
    "first": "2006-08-16",
    "last": "2026-07-02",
-   "count": 5000
+   "count": 5000,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
   },
   {
    "symbol": "SCHD",
@@ -62,7 +74,9 @@
    "currency": "USD",
    "first": "2011-10-20",
    "last": "2026-07-02",
-   "count": 3695
+   "count": 3695,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
   },
   {
    "symbol": "VIG",
@@ -71,7 +85,9 @@
    "currency": "USD",
    "first": "2006-08-16",
    "last": "2026-07-02",
-   "count": 5000
+   "count": 5000,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
   },
   {
    "symbol": "DGRW",
@@ -80,7 +96,9 @@
    "currency": "USD",
    "first": "2013-05-22",
    "last": "2026-07-02",
-   "count": 3298
+   "count": 3298,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
   },
   {
    "symbol": "DGRO",
@@ -89,7 +107,9 @@
    "currency": "USD",
    "first": "2014-06-12",
    "last": "2026-07-02",
-   "count": 3032
+   "count": 3032,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
   },
   {
    "symbol": "DIVO",
@@ -98,7 +118,9 @@
    "currency": "USD",
    "first": "2016-12-15",
    "last": "2026-07-02",
-   "count": 2398
+   "count": 2398,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
   },
   {
    "symbol": "SCHG",
@@ -107,7 +129,9 @@
    "currency": "USD",
    "first": "2010-01-04",
    "last": "2026-07-02",
-   "count": 4149
+   "count": 4149,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
   },
   {
    "symbol": "SPMO",
@@ -116,7 +140,9 @@
    "currency": "USD",
    "first": "2015-10-12",
    "last": "2026-07-02",
-   "count": 2696
+   "count": 2696,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
   },
   {
    "symbol": "MOAT",
@@ -125,7 +151,9 @@
    "currency": "USD",
    "first": "2012-04-25",
    "last": "2026-07-02",
-   "count": 3567
+   "count": 3567,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
   },
   {
    "symbol": "VONG",
@@ -134,7 +162,9 @@
    "currency": "USD",
    "first": "2010-09-22",
    "last": "2026-07-02",
-   "count": 3969
+   "count": 3969,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
   },
   {
    "symbol": "IWF",
@@ -143,7 +173,9 @@
    "currency": "USD",
    "first": "2006-08-16",
    "last": "2026-07-02",
-   "count": 5000
+   "count": 5000,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
   },
   {
    "symbol": "SMH",
@@ -152,7 +184,9 @@
    "currency": "USD",
    "first": "2006-08-16",
    "last": "2026-07-02",
-   "count": 5000
+   "count": 5000,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
   },
   {
    "symbol": "SOXX",
@@ -161,7 +195,9 @@
    "currency": "USD",
    "first": "2006-08-16",
    "last": "2026-07-02",
-   "count": 5000
+   "count": 5000,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
   },
   {
    "symbol": "SOXL",
@@ -170,7 +206,9 @@
    "currency": "USD",
    "first": "2010-03-11",
    "last": "2026-07-02",
-   "count": 4103
+   "count": 4103,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
   },
   {
    "symbol": "QLD",
@@ -179,7 +217,9 @@
    "currency": "USD",
    "first": "2006-08-16",
    "last": "2026-07-02",
-   "count": 5000
+   "count": 5000,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
   },
   {
    "symbol": "GLD",
@@ -188,7 +228,9 @@
    "currency": "USD",
    "first": "2006-08-16",
    "last": "2026-07-02",
-   "count": 5000
+   "count": 5000,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
   },
   {
    "symbol": "TLT",
@@ -197,7 +239,9 @@
    "currency": "USD",
    "first": "2006-08-16",
    "last": "2026-07-02",
-   "count": 5000
+   "count": 5000,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
   },
   {
    "symbol": "DRAM",
@@ -206,7 +250,9 @@
    "currency": "USD",
    "first": "2026-04-02",
    "last": "2026-07-02",
-   "count": 63
+   "count": 63,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
   },
   {
    "symbol": "RAM",
@@ -215,7 +261,9 @@
    "currency": "USD",
    "first": "2021-07-09",
    "last": "2026-07-02",
-   "count": 447
+   "count": 447,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
   },
   {
    "symbol": "CYPH",
@@ -224,7 +272,9 @@
    "currency": "USD",
    "first": "2017-01-25",
    "last": "2026-07-02",
-   "count": 2372
+   "count": 2372,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
   }
  ],
  "kr": [
