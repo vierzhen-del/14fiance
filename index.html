@@ -1940,7 +1940,12 @@ async function renderSimulator() {
   }
   const sim = simulatePerAsset(bt0.dates, bt0.conv, assets, cur, fx, months, dateRange, state.simFxMode, bt0.raw);
   if (!sim) {
-    result.innerHTML = `<p class="compare-empty">선택한 기간에 데이터가 부족합니다.</p>`;
+    const lastDataDate = bt0.dates[bt0.dates.length - 1];
+    const msg =
+      dateRange && dateRange.end > lastDataDate
+        ? `종료일이 실제 시세 데이터의 마지막 날짜(${lastDataDate})보다 뒤에 있습니다. 그 이전 날짜로 종료일을 다시 선택해주세요.`
+        : "선택한 기간에 데이터가 부족합니다 (최소 30 거래일 필요).";
+    result.innerHTML = `<p class="compare-empty" style="color:var(--critical)">${msg}</p>`;
     return;
   }
 
@@ -2429,8 +2434,8 @@ async function init() {
   });
   document.getElementById("portfolioKakaoBtn").addEventListener("click", () => {
     if (!state.portfolioSnapshotData) { flashStatus("portfolioExportStatus", "먼저 계산 결과가 나온 뒤 눌러주세요"); return; }
-    const rows = serializePortfolioRows();
-    const url = `${location.origin}${location.pathname}#${encodeConfigToHash("portfolio", rows)}`;
+    // 카카오톡 메시지는 10KB 용량 제한이 있어 설정을 통째로 담은 긴 링크 대신 사이트 기본 주소만 보낸다
+    const url = `${location.origin}${location.pathname}`;
     shareToKakao(state.portfolioSnapshotData, url, "portfolioExportStatus");
   });
   document.getElementById("portfolioClaudeBtn").addEventListener("click", () => {
@@ -2476,6 +2481,9 @@ async function init() {
   document.getElementById("simMode").addEventListener("change", renderSimulator);
   document.getElementById("simFutureYears").addEventListener("change", renderSimulator);
   document.getElementById("simAmount").addEventListener("input", renderSimulator);
+  const todayStr = new Date().toISOString().slice(0, 10);
+  document.getElementById("simStartDate").max = todayStr;
+  document.getElementById("simEndDate").max = todayStr;
   document.getElementById("simStartDate").addEventListener("change", renderSimulator);
   document.getElementById("simEndDate").addEventListener("change", renderSimulator);
   document.getElementById("simDateClear").addEventListener("click", () => {
@@ -2500,7 +2508,8 @@ async function init() {
   });
   document.getElementById("simKakaoBtn").addEventListener("click", () => {
     if (!state.simSnapshotData) { flashStatus("simExportStatus", "먼저 계산 결과가 나온 뒤 눌러주세요"); return; }
-    const url = `${location.origin}${location.pathname}#${encodeConfigToHash("sim", serializeSimConfig())}`;
+    // 카카오톡 메시지는 10KB 용량 제한이 있어 설정을 통째로 담은 긴 링크 대신 사이트 기본 주소만 보낸다
+    const url = `${location.origin}${location.pathname}`;
     shareToKakao(state.simSnapshotData, url, "simExportStatus");
   });
   document.getElementById("simClaudeBtn").addEventListener("click", () => {
