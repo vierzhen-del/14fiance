@@ -1,5 +1,5 @@
 {
- "updated": "2026-07-03 21:59 UTC",
+ "updated": "2026-07-04 01:52 UTC",
  "us": [
   {
    "symbol": "SPY",
@@ -466,6 +466,87 @@
    "first": "2019-07-19",
    "last": "2026-07-03",
    "count": 1707
+  },
+  {
+   "symbol": "0167A0.KS",
+   "name": "SOL AI반도체TOP2플러스",
+   "category": "국내 반도체·로봇 테마",
+   "currency": "KRW",
+   "first": "2026-03-17",
+   "last": "2026-07-03",
+   "count": 75
+  },
+  {
+   "symbol": "0177X0.KS",
+   "name": "ACE K휴머노이드로봇산업TOP2+",
+   "category": "국내 반도체·로봇 테마",
+   "currency": "KRW",
+   "first": "2026-04-07",
+   "last": "2026-07-03",
+   "count": 60
+  },
+  {
+   "symbol": "0210A0.KS",
+   "name": "ACE K반도체TOP2+",
+   "category": "국내 반도체·로봇 테마",
+   "currency": "KRW",
+   "first": "2026-06-23",
+   "last": "2026-07-03",
+   "count": 9
+  },
+  {
+   "symbol": "426030.KS",
+   "name": "TIME 미국나스닥100액티브",
+   "category": "미국·글로벌 테마 액티브(국내상장)",
+   "currency": "KRW",
+   "first": "2022-05-11",
+   "last": "2026-07-03",
+   "count": 1014
+  },
+  {
+   "symbol": "0137V0.KS",
+   "name": "KIWOOM 미국S&P500모멘텀",
+   "category": "미국·글로벌 테마 액티브(국내상장)",
+   "currency": "KRW",
+   "first": "2025-12-09",
+   "last": "2026-07-03",
+   "count": 138
+  },
+  {
+   "symbol": "0023A0.KS",
+   "name": "SOL 미국양자컴퓨팅TOP10",
+   "category": "미국·글로벌 테마 액티브(국내상장)",
+   "currency": "KRW",
+   "first": "2025-03-11",
+   "last": "2026-07-03",
+   "count": 322
+  },
+  {
+   "symbol": "442580.KS",
+   "name": "PLUS 글로벌HBM반도체",
+   "category": "미국·글로벌 테마 액티브(국내상장)",
+   "currency": "KRW",
+   "first": "2022-09-22",
+   "last": "2026-07-03",
+   "count": 923
+  },
+  {
+   "symbol": "0180V0.KS",
+   "name": "ACE 미국우주테크액티브",
+   "category": "미국·글로벌 테마 액티브(국내상장)",
+   "currency": "KRW",
+   "first": "2026-04-14",
+   "last": "2026-07-03",
+   "count": 55
+  },
+  {
+   "symbol": "0207Z0.KS",
+   "name": "KIWOOM 미국우주데이터센터인프라",
+   "category": "미국·글로벌 테마 액티브(국내상장)",
+   "currency": "KRW",
+   "first": "2026-06-16",
+   "last": "2026-07-03",
+   "count": 14
   }
  ]
 }
