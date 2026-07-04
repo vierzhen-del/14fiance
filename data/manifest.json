@@ -1,5 +1,5 @@
 {
- "updated": "2026-07-04 12:00 UTC",
+ "updated": "2026-07-04 12:41 UTC",
  "us": [
   {
    "symbol": "SPY",
@@ -286,8 +286,8 @@
    "first": "2002-10-14",
    "last": "2026-07-03",
    "count": 5855,
-   "ttmDividend": 0.0,
-   "dividendYield": 0.0
+   "ttmDividend": 842.0,
+   "dividendYield": 0.0068
   },
   {
    "symbol": "102110.KS",
@@ -297,8 +297,8 @@
    "first": "2008-04-03",
    "last": "2026-07-03",
    "count": 4500,
-   "ttmDividend": 0.0,
-   "dividendYield": 0.0
+   "ttmDividend": 926.0,
+   "dividendYield": 0.0075
   },
   {
    "symbol": "229200.KS",
@@ -308,8 +308,8 @@
    "first": "2015-10-01",
    "last": "2026-07-03",
    "count": 2638,
-   "ttmDividend": 0.0,
-   "dividendYield": 0.0
+   "ttmDividend": 28.0,
+   "dividendYield": 0.0018
   },
   {
    "symbol": "360750.KS",
@@ -319,8 +319,8 @@
    "first": "2020-08-07",
    "last": "2026-07-03",
    "count": 1446,
-   "ttmDividend": 0.0,
-   "dividendYield": 0.0
+   "ttmDividend": 245.0,
+   "dividendYield": 0.0085
   },
   {
    "symbol": "133690.KS",
@@ -330,8 +330,8 @@
    "first": "2010-10-18",
    "last": "2026-07-03",
    "count": 3865,
-   "ttmDividend": 0.0,
-   "dividendYield": 0.0
+   "ttmDividend": 889.0,
+   "dividendYield": 0.0043
   },
   {
    "symbol": "379800.KS",
@@ -341,8 +341,8 @@
    "first": "2021-04-09",
    "last": "2026-07-03",
    "count": 1282,
-   "ttmDividend": 0.0,
-   "dividendYield": 0.0
+   "ttmDividend": 451.0,
+   "dividendYield": 0.0171
   },
   {
    "symbol": "379810.KS",
@@ -352,8 +352,8 @@
    "first": "2021-04-09",
    "last": "2026-07-03",
    "count": 1282,
-   "ttmDividend": 0.0,
-   "dividendYield": 0.0
+   "ttmDividend": 258.0,
+   "dividendYield": 0.0084
   },
   {
    "symbol": "458730.KS",
@@ -363,8 +363,8 @@
    "first": "2023-06-20",
    "last": "2026-07-03",
    "count": 740,
-   "ttmDividend": 0.0,
-   "dividendYield": 0.0
+   "ttmDividend": 431.0,
+   "dividendYield": 0.0274
   },
   {
    "symbol": "381180.KS",
@@ -374,8 +374,8 @@
    "first": "2021-04-09",
    "last": "2026-07-03",
    "count": 1282,
-   "ttmDividend": 0.0,
-   "dividendYield": 0.0
+   "ttmDividend": 157.0,
+   "dividendYield": 0.0029
   },
   {
    "symbol": "390390.KS",
@@ -385,8 +385,8 @@
    "first": "2021-06-30",
    "last": "2026-07-03",
    "count": 1226,
-   "ttmDividend": 0.0,
-   "dividendYield": 0.0
+   "ttmDividend": 214.0,
+   "dividendYield": 0.0033
   },
   {
    "symbol": "472150.KS",
@@ -396,8 +396,8 @@
    "first": "2023-12-12",
    "last": "2026-07-03",
    "count": 621,
-   "ttmDividend": 0.0,
-   "dividendYield": 0.0
+   "ttmDividend": 4065.0,
+   "dividendYield": 0.1691
   },
   {
    "symbol": "0167B0.KS",
@@ -407,8 +407,8 @@
    "first": "2026-03-17",
    "last": "2026-07-03",
    "count": 75,
-   "ttmDividend": 0.0,
-   "dividendYield": 0.0
+   "ttmDividend": 690.0,
+   "dividendYield": 0.05
   },
   {
    "symbol": "498400.KS",
@@ -418,8 +418,8 @@
    "first": "2024-12-03",
    "last": "2026-07-03",
    "count": 384,
-   "ttmDividend": 0.0,
-   "dividendYield": 0.0
+   "ttmDividend": 2718.0,
+   "dividendYield": 0.1127
   },
   {
    "symbol": "0177R0.KS",
@@ -429,8 +429,8 @@
    "first": "2026-04-21",
    "last": "2026-07-03",
    "count": 50,
-   "ttmDividend": 0.0,
-   "dividendYield": 0.0
+   "ttmDividend": 385.0,
+   "dividendYield": 0.0264
   },
   {
    "symbol": "480040.KS",
@@ -440,8 +440,8 @@
    "first": "2024-04-23",
    "last": "2026-07-03",
    "count": 533,
-   "ttmDividend": 0.0,
-   "dividendYield": 0.0
+   "ttmDividend": 2387.0,
+   "dividendYield": 0.116
   },
   {
    "symbol": "441640.KS",
@@ -451,8 +451,8 @@
    "first": "2022-09-27",
    "last": "2026-07-03",
    "count": 920,
-   "ttmDividend": 0.0,
-   "dividendYield": 0.0
+   "ttmDividend": 1158.0,
+   "dividendYield": 0.0845
   },
   {
    "symbol": "490590.KS",
@@ -462,8 +462,8 @@
    "first": "2024-10-02",
    "last": "2026-07-03",
    "count": 426,
-   "ttmDividend": 0.0,
-   "dividendYield": 0.0
+   "ttmDividend": 2749.0,
+   "dividendYield": 0.1683
   },
   {
    "symbol": "402970.KS",
@@ -473,8 +473,8 @@
    "first": "2021-10-21",
    "last": "2026-07-03",
    "count": 1151,
-   "ttmDividend": 0.0,
-   "dividendYield": 0.0
+   "ttmDividend": 433.0,
+   "dividendYield": 0.0271
   },
   {
    "symbol": "284430.KS",
@@ -484,8 +484,8 @@
    "first": "2017-11-30",
    "last": "2026-07-03",
    "count": 2106,
-   "ttmDividend": 0.0,
-   "dividendYield": 0.0
+   "ttmDividend": 338.0,
+   "dividendYield": 0.0144
   },
   {
    "symbol": "0183V0.KS",
@@ -495,8 +495,8 @@
    "first": "2026-04-21",
    "last": "2026-07-03",
    "count": 50,
-   "ttmDividend": 0.0,
-   "dividendYield": 0.0
+   "ttmDividend": 311.0,
+   "dividendYield": 0.0243
   },
   {
    "symbol": "329200.KS",
@@ -506,8 +506,8 @@
    "first": "2019-07-19",
    "last": "2026-07-03",
    "count": 1707,
-   "ttmDividend": 0.0,
-   "dividendYield": 0.0
+   "ttmDividend": 396.0,
+   "dividendYield": 0.1
   },
   {
    "symbol": "0167A0.KS",
@@ -550,8 +550,8 @@
    "first": "2022-05-11",
    "last": "2026-07-03",
    "count": 1014,
-   "ttmDividend": 0.0,
-   "dividendYield": 0.0
+   "ttmDividend": 30.0,
+   "dividendYield": 0.0005
   },
   {
    "symbol": "0137V0.KS",
@@ -561,8 +561,8 @@
    "first": "2025-12-09",
    "last": "2026-07-03",
    "count": 138,
-   "ttmDividend": 0.0,
-   "dividendYield": 0.0
+   "ttmDividend": 33.0,
+   "dividendYield": 0.0024
   },
   {
    "symbol": "0023A0.KS",
@@ -572,8 +572,8 @@
    "first": "2025-03-11",
    "last": "2026-07-03",
    "count": 322,
-   "ttmDividend": 0.0,
-   "dividendYield": 0.0
+   "ttmDividend": 25.0,
+   "dividendYield": 0.0008
   },
   {
    "symbol": "442580.KS",
@@ -583,8 +583,8 @@
    "first": "2022-09-22",
    "last": "2026-07-03",
    "count": 923,
-   "ttmDividend": 0.0,
-   "dividendYield": 0.0
+   "ttmDividend": 100.0,
+   "dividendYield": 0.0008
   },
   {
    "symbol": "0180V0.KS",
