@@ -12,6 +12,7 @@
 import ast
 import json
 import os
+import re
 import sys
 import time
 import urllib.error
@@ -45,6 +46,20 @@ NAVER_HEADERS = {
     "Referer": "https://finance.naver.com/",
 }
 NAVER_INTERVAL_SEC = 1.0
+
+# 국내 ETF 분배금(배당) 이력: 네이버 모바일 증권 "분석" 탭(서버 렌더링 HTML).
+# 정식 API 없이, "배당락일" 표 아래 나오는 날짜·금액 텍스트를 정규식으로 읽는다.
+# ("더보기"를 눌러도 추가 요청 없이 바로 펼쳐지는 것을 확인함 — 전체 이력이
+#  이미 최초 HTML에 들어있다는 뜻이라 별도 페이지네이션 처리가 필요 없다.)
+NAVER_STOCK_URL = "https://m.stock.naver.com/domestic/stock/{code}/analysis"
+NAVER_STOCK_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36"
+    ),
+    "Referer": "https://m.stock.naver.com/",
+}
+DIV_DATE_RE = re.compile(r"(\d{4})\D{0,3}(\d{2})\D{0,3}(\d{2})\D{0,20}?([\d,]+(?:\.\d+)?)\s*원")
 
 # USD/KRW 일별 환율 (시뮬레이터의 통화 혼합 계산용). FRED 공개 CSV, 키 불필요.
 FX_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DEXKOUS"
@@ -291,6 +306,60 @@ def fetch_symbol_kr(symbol: str) -> dict | None:
     }
 
 
+def fetch_dividends_kr(symbol: str) -> dict | None:
+    """국내 ETF 분배금 이력을 네이버 모바일 증권 분석 탭에서 가져온다 (best-effort).
+
+    공식 API가 없어 "배당락일" 표 텍스트를 정규식으로 읽는 방식이라, 네이버가
+    페이지 구조를 바꾸면 조용히 못 읽어올 수 있다 — 실패해도 가격 수집 전체는
+    계속 진행한다(US 배당 수집과 동일한 관용도).
+    """
+    code = symbol[: -len(".KS")] if symbol.endswith(".KS") else symbol
+    url = NAVER_STOCK_URL.format(code=code)
+    try:
+        text = http_get_text(url, headers=NAVER_STOCK_HEADERS)
+    except RuntimeError as err:
+        print(f"  .. kr dividends skipped for {symbol}: {err}")
+        return None
+
+    anchor = text.find("배당락일")
+    if anchor < 0:
+        return None  # 무분배 ETF 등 — 오류 아님
+
+    end = text.find("세금", anchor)
+    raw_window = text[anchor : end if end > anchor else anchor + 20000]
+    # HTML 태그를 걷어내 "2026. 06. 12." "101원" 사이의 마크업 깊이에 상관없이
+    # 정규식이 안정적으로 붙게 만든다
+    window = re.sub(r"<[^>]+>", " ", raw_window)
+
+    pairs = []
+    seen = set()
+    for m in DIV_DATE_RE.finditer(window):
+        y, mo, d, amt_raw = m.groups()
+        if not (1 <= int(mo) <= 12 and 1 <= int(d) <= 31):
+            continue
+        date = f"{y}-{mo}-{d}"
+        if date in seen:
+            continue
+        try:
+            amount = float(amt_raw.replace(",", ""))
+        except ValueError:
+            continue
+        if amount <= 0:
+            continue
+        seen.add(date)
+        pairs.append((date, round(amount, 6)))
+
+    if not pairs:
+        return None
+    pairs.sort()
+    return {
+        "symbol": symbol,
+        "count": len(pairs),
+        "dates": [p[0] for p in pairs],
+        "amounts": [p[1] for p in pairs],
+    }
+
+
 def main() -> int:
     if not API_KEY:
         print("!! TWELVEDATA_API_KEY 환경변수가 설정되지 않았습니다.")
@@ -330,15 +399,13 @@ def main() -> int:
                 failures.append(symbol)
                 continue
 
-            div = None
-            if market == "us":
-                div = fetch_dividends_us(symbol)
-                time.sleep(interval)
-                if div is not None:
-                    (div_dir / f"{symbol}.json").write_text(
-                        json.dumps(div, ensure_ascii=False, separators=(",", ":")),
-                        encoding="utf-8",
-                    )
+            div = fetch_dividends_us(symbol) if market == "us" else fetch_dividends_kr(symbol)
+            time.sleep(interval)
+            if div is not None:
+                (div_dir / f"{symbol}.json").write_text(
+                    json.dumps(div, ensure_ascii=False, separators=(",", ":")),
+                    encoding="utf-8",
+                )
 
             out = DATA_DIR / f"{symbol}.json"
             out.write_text(
@@ -354,11 +421,10 @@ def main() -> int:
                 "last": series["last"],
                 "count": series["count"],
             }
-            if market == "us":
-                ttm = ttm_dividend(div, series["last"])
-                entry["ttmDividend"] = ttm
-                last_close = series["closes"][-1]
-                entry["dividendYield"] = round(ttm / last_close, 6) if last_close else 0.0
+            ttm = ttm_dividend(div, series["last"])
+            entry["ttmDividend"] = ttm
+            last_close = series["closes"][-1]
+            entry["dividendYield"] = round(ttm / last_close, 6) if last_close else 0.0
             manifest[market].append(entry)
             div_note = f", div {div['count']}건" if div else ""
             print(f"  ok: {series['count']} rows {series['first']} ~ {series['last']}{div_note}")
