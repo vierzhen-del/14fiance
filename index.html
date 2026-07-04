@@ -1847,8 +1847,15 @@ async function renderSimulator() {
   const amount = parseFloat(document.getElementById("simAmount").value) || 0;
   const futureYears = Number(document.getElementById("simFutureYears").value);
   const months = Number(document.getElementById("periodSelect").value);
-  const startDateVal = document.getElementById("simStartDate").value;
-  const endDateVal = document.getElementById("simEndDate").value;
+  // max 속성은 달력 UI에서만 미래 날짜를 막아준다 — 모바일에서 숫자를 직접 타이핑하면
+  // 그 제한을 건너뛸 수 있으므로, 여기서도 오늘 날짜로 강제 보정한다(시작일·종료일 모두)
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const startInput = document.getElementById("simStartDate");
+  const endInput = document.getElementById("simEndDate");
+  if (startInput.value > todayStr) startInput.value = todayStr;
+  if (endInput.value > todayStr) endInput.value = todayStr;
+  const startDateVal = startInput.value;
+  const endDateVal = endInput.value;
   const dateRange = startDateVal && endDateVal ? { start: startDateVal, end: endDateVal } : null;
   const cur = state.simCurrency;
   const fmt = (v) => fmtPrice(v, cur);
