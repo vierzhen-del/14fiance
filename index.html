@@ -45,6 +45,11 @@
   }
 
   * { box-sizing: border-box; }
+  :root { color-scheme: light dark; }
+  input[type="date"] {
+    font: inherit; font-size: 13px; padding: 7px 9px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary);
+  }
   body {
     margin: 0;
     background: var(--page-plane);
@@ -220,6 +225,57 @@
   <h1>ETF 최대낙폭(MDD) 계산기</h1>
   <p class="lede">종목을 고르면 선택한 기간 동안의 최대낙폭(고점 대비 최대 하락폭)을 계산해서 보여줍니다.</p>
 
+  <p class="section-title" style="margin-top:8px;">투자 시뮬레이터</p>
+  <p class="section-lede">과거 데이터로 "그때 투자했다면 지금 얼마"를 계산하고(백테스트), 그 실적을 바탕으로 한 미래 추정치도 보여줍니다. 아래에서 기간을 직접 고르거나, 비워두면 "ETF MDD 비교" 등 다른 섹션과 같은 기간 선택을 그대로 씁니다.</p>
+
+  <div class="card">
+    <p class="checklist-group-label">투자 종목 (미국·국내 혼합 가능)</p>
+    <div id="simRows" class="portfolio-rows"></div>
+    <button type="button" id="addSimRow" class="btn-add">+ 종목 추가</button>
+    <p id="simSum" class="portfolio-sum"></p>
+
+    <div class="controls" style="margin-bottom:6px;">
+      <label style="font-size:12.5px; color:var(--text-secondary); display:flex; align-items:center; gap:6px;">시작일 <input type="date" id="simStartDate"></label>
+      <label style="font-size:12.5px; color:var(--text-secondary); display:flex; align-items:center; gap:6px;">종료일 <input type="date" id="simEndDate"></label>
+      <button type="button" id="simDateClear" class="btn-action">기간 초기화</button>
+    </div>
+
+    <div class="controls" style="margin-bottom:6px;">
+      <div class="seg" id="simCurrencySeg" role="group" aria-label="투자금 통화">
+        <button type="button" data-cur="USD" class="active">$ 달러</button>
+        <button type="button" data-cur="KRW">₩ 원화</button>
+      </div>
+      <select id="simMode" aria-label="투자 방식" style="min-width:150px;">
+        <option value="dca" selected>월적립식 (매월 매수)</option>
+        <option value="lump">거치식 (한 번에 투자)</option>
+      </select>
+      <div class="portfolio-weight-wrap">
+        <input type="number" id="simAmount" class="portfolio-weight" style="width:110px" min="1" step="1" value="1000">
+        <span id="simAmountUnit" style="font-size:12.5px; color:var(--text-muted);">$/월</span>
+      </div>
+      <select id="simFutureYears" aria-label="미래 추정 기간" style="min-width:120px;">
+        <option value="5">향후 5년</option>
+        <option value="10" selected>향후 10년</option>
+        <option value="20">향후 20년</option>
+        <option value="30">향후 30년</option>
+      </select>
+    </div>
+    <div class="action-row">
+      <button type="button" id="simSaveBtn" class="btn-action">💾 설정 저장</button>
+      <button type="button" id="simLoadBtn" class="btn-action">📂 불러오기</button>
+      <button type="button" id="simShareBtn" class="btn-action">🔗 설정 링크 공유</button>
+      <span id="simSaveStatus" class="action-status"></span>
+    </div>
+    <div class="action-row">
+      <button type="button" id="simImageBtn" class="btn-action">🖼 이미지 저장</button>
+      <button type="button" id="simCsvBtn" class="btn-action">📄 시트 저장</button>
+      <button type="button" id="simShareAppBtn" class="btn-action">📤 앱으로 공유</button>
+      <button type="button" id="simClaudeBtn" class="btn-action">🤖 클로드에 복사</button>
+      <span id="simExportStatus" class="action-status"></span>
+    </div>
+    <div id="simResult"></div>
+  </div>
+
   <div class="controls">
     <div class="seg" id="marketSeg" role="group" aria-label="시장 구분">
       <button type="button" data-market="all" class="active">전체</button>
@@ -265,49 +321,16 @@
     <div class="action-row">
       <button type="button" id="portfolioSaveBtn" class="btn-action">💾 설정 저장</button>
       <button type="button" id="portfolioLoadBtn" class="btn-action">📂 불러오기</button>
-      <button type="button" id="portfolioSnapshotBtn" class="btn-action">📷 스냅샷 저장</button>
       <span id="portfolioSaveStatus" class="action-status"></span>
     </div>
-    <div id="portfolioResult"></div>
-  </div>
-
-  <p class="section-title">투자 시뮬레이터</p>
-  <p class="section-lede">과거 데이터로 "그때 투자했다면 지금 얼마"를 계산하고(백테스트), 그 실적을 바탕으로 한 미래 추정치도 보여줍니다. 위에서 고른 기간이 백테스트 기간으로 적용됩니다.</p>
-
-  <div class="card">
-    <p class="checklist-group-label">투자 종목 (미국·국내 혼합 가능)</p>
-    <div id="simRows" class="portfolio-rows"></div>
-    <button type="button" id="addSimRow" class="btn-add">+ 종목 추가</button>
-    <p id="simSum" class="portfolio-sum"></p>
-
-    <div class="controls" style="margin-bottom:6px;">
-      <div class="seg" id="simCurrencySeg" role="group" aria-label="투자금 통화">
-        <button type="button" data-cur="USD" class="active">$ 달러</button>
-        <button type="button" data-cur="KRW">₩ 원화</button>
-      </div>
-      <select id="simMode" aria-label="투자 방식" style="min-width:150px;">
-        <option value="dca" selected>월적립식 (매월 매수)</option>
-        <option value="lump">거치식 (한 번에 투자)</option>
-      </select>
-      <div class="portfolio-weight-wrap">
-        <input type="number" id="simAmount" class="portfolio-weight" style="width:110px" min="1" step="1" value="1000">
-        <span id="simAmountUnit" style="font-size:12.5px; color:var(--text-muted);">$/월</span>
-      </div>
-      <select id="simFutureYears" aria-label="미래 추정 기간" style="min-width:120px;">
-        <option value="5">향후 5년</option>
-        <option value="10" selected>향후 10년</option>
-        <option value="20">향후 20년</option>
-        <option value="30">향후 30년</option>
-      </select>
-    </div>
     <div class="action-row">
-      <button type="button" id="simSaveBtn" class="btn-action">💾 설정 저장</button>
-      <button type="button" id="simLoadBtn" class="btn-action">📂 불러오기</button>
-      <button type="button" id="simSnapshotBtn" class="btn-action">📷 스냅샷 저장</button>
-      <button type="button" id="simShareBtn" class="btn-action">🔗 결과 공유</button>
-      <span id="simSaveStatus" class="action-status"></span>
+      <button type="button" id="portfolioImageBtn" class="btn-action">🖼 이미지 저장</button>
+      <button type="button" id="portfolioCsvBtn" class="btn-action">📄 시트 저장</button>
+      <button type="button" id="portfolioShareAppBtn" class="btn-action">📤 앱으로 공유</button>
+      <button type="button" id="portfolioClaudeBtn" class="btn-action">🤖 클로드에 복사</button>
+      <span id="portfolioExportStatus" class="action-status"></span>
     </div>
-    <div id="simResult"></div>
+    <div id="portfolioResult"></div>
   </div>
 
   <footer id="footerNote"></footer>
@@ -434,6 +457,74 @@ function downloadCanvasPNG(canvas, filename) {
     a.href = url; a.download = filename;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }, "image/png");
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/* 결과 시계열을 CSV(엑셀·시트)로 내보낸다 */
+function buildResultCSV(data) {
+  const header = ["날짜", data.valueLabel || "값"];
+  if (data.dd) header.push("낙폭(%)");
+  const lines = [header.join(",")];
+  for (let i = 0; i < data.dates.length; i++) {
+    const row = [data.dates[i], data.values[i]];
+    if (data.dd) row.push((data.dd[i] * 100).toFixed(2));
+    lines.push(row.join(","));
+  }
+  return lines.join("\n");
+}
+
+function downloadResultCSV(data, filename) {
+  const csv = buildResultCSV(data);
+  downloadBlob(new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" }), filename);
+}
+
+/* 사람이 읽는 텍스트 요약 (클로드 등에 붙여넣기용) */
+function buildResultSummaryText(data) {
+  const lines = [data.title, data.subtitle, ""];
+  for (const s of data.stats) {
+    lines.push(`- ${s.label}: ${s.value}${s.sub ? ` (${s.sub})` : ""}`);
+  }
+  lines.push("", `기간: ${data.dates[0]} ~ ${data.dates[data.dates.length - 1]}`);
+  return lines.join("\n");
+}
+
+async function copyResultSummary(data, statusElId) {
+  const text = buildResultSummaryText(data);
+  try {
+    await navigator.clipboard.writeText(text);
+    flashStatus(statusElId, "결과 요약이 복사되었습니다 ✓ 클로드 대화창에 붙여넣기 해보세요.");
+  } catch (err) {
+    window.prompt("아래 내용을 복사해서 클로드에 붙여넣으세요:", text);
+  }
+}
+
+/* 기기의 공유 시트(다른 앱으로 보내기)로 결과 이미지를 전달한다. 미지원 브라우저는 안내만 표시 */
+async function shareResultToApps(data, statusElId) {
+  if (!navigator.share) {
+    flashStatus(statusElId, "이 브라우저는 앱 공유를 지원하지 않습니다. 이미지 저장을 이용해주세요.");
+    return;
+  }
+  const canvas = buildSnapshotCanvas(data);
+  canvas.toBlob(async (blob) => {
+    if (!blob) return;
+    const file = new File([blob], "mdd-result.png", { type: "image/png" });
+    try {
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: data.title, text: data.subtitle });
+      } else {
+        await navigator.share({ title: data.title, text: data.subtitle });
+      }
+    } catch (err) {
+      // 사용자가 공유를 취소한 경우는 조용히 무시
+    }
   }, "image/png");
 }
 
@@ -1147,7 +1238,7 @@ async function renderPortfolio() {
       { label: "저점", value: fmtPrice(closes[troughIdx], "USD"), sub: troughDate },
       { label: "회복 상태", value: recovered ? "회복 완료" : "미회복", sub: recovered ? recoveryDate : dates[dates.length - 1] },
     ],
-    dates, values: closes, mddIdx: troughIdx,
+    dates, values: closes, mddIdx: troughIdx, dd: ddSeries, valueLabel: "지수",
   };
 }
 
@@ -1248,18 +1339,24 @@ function runPortfolioBacktest(assets, mode, amount, cur, fx) {
   return { dates: commonDates, conv };
 }
 
-function simulateOnConverted(dates, conv, assets, mode, amount, cur, fx, months) {
-  // 기간 슬라이스 (모든 배열 같은 인덱스 공유)
-  let startIdx = 0;
-  if (months) {
+function simulateOnConverted(dates, conv, assets, mode, amount, cur, fx, months, dateRange) {
+  // 기간 슬라이스 (모든 배열 같은 인덱스 공유). 시작일·종료일을 직접 고른 경우 그 기간을, 아니면 프리셋 개월 수를 쓴다
+  let startIdx = 0, endIdx = dates.length - 1;
+  if (dateRange && dateRange.start && dateRange.end) {
+    startIdx = dates.findIndex((d) => d >= dateRange.start);
+    if (startIdx < 0) startIdx = dates.length;
+    endIdx = dates.length - 1;
+    while (endIdx >= 0 && dates[endIdx] > dateRange.end) endIdx--;
+  } else if (months) {
     const lastDate = new Date(dates[dates.length - 1]);
     lastDate.setMonth(lastDate.getMonth() - months);
     const cutoff = lastDate.toISOString().slice(0, 10);
     startIdx = dates.findIndex((d) => d >= cutoff);
     if (startIdx < 0) startIdx = 0;
   }
-  const D = dates.slice(startIdx);
-  const P = conv.map((arr) => arr.slice(startIdx));
+  if (startIdx > endIdx) return null;
+  const D = dates.slice(startIdx, endIdx + 1);
+  const P = conv.map((arr) => arr.slice(startIdx, endIdx + 1));
   const n = D.length;
   if (n < 30) return null;
 
@@ -1400,6 +1497,8 @@ function serializeSimConfig() {
     amount: document.getElementById("simAmount").value,
     futureYears: document.getElementById("simFutureYears").value,
     months: document.getElementById("periodSelect").value,
+    startDate: document.getElementById("simStartDate").value,
+    endDate: document.getElementById("simEndDate").value,
   };
 }
 
@@ -1413,6 +1512,8 @@ function applySimConfig(cfg) {
   if (cfg.amount) document.getElementById("simAmount").value = cfg.amount;
   if (cfg.futureYears) document.getElementById("simFutureYears").value = cfg.futureYears;
   if (cfg.months) document.getElementById("periodSelect").value = cfg.months;
+  document.getElementById("simStartDate").value = cfg.startDate || "";
+  document.getElementById("simEndDate").value = cfg.endDate || "";
   return true;
 }
 
@@ -1453,9 +1554,17 @@ async function renderSimulator() {
   const amount = parseFloat(document.getElementById("simAmount").value) || 0;
   const futureYears = Number(document.getElementById("simFutureYears").value);
   const months = Number(document.getElementById("periodSelect").value);
+  const startDateVal = document.getElementById("simStartDate").value;
+  const endDateVal = document.getElementById("simEndDate").value;
+  const dateRange = startDateVal && endDateVal ? { start: startDateVal, end: endDateVal } : null;
   const cur = state.simCurrency;
   const sumEl = document.getElementById("simSum");
   const result = document.getElementById("simResult");
+
+  if (dateRange && dateRange.start >= dateRange.end) {
+    result.innerHTML = `<p class="compare-empty" style="color:var(--critical)">시작일은 종료일보다 앞서야 합니다.</p>`;
+    return;
+  }
 
   const curSym = cur === "KRW" ? "₩" : "$";
   document.getElementById("simAmountUnit").textContent = mode === "dca" ? `${curSym}/월` : `${curSym} 총액`;
@@ -1520,7 +1629,7 @@ async function renderSimulator() {
     result.innerHTML = `<p class="compare-empty">선택한 종목들의 겹치는 데이터 기간이 없습니다.</p>`;
     return;
   }
-  const sim = simulateOnConverted(bt0.dates, bt0.conv, assets, mode, amount, cur, fx, months);
+  const sim = simulateOnConverted(bt0.dates, bt0.conv, assets, mode, amount, cur, fx, months, dateRange);
   if (!sim) {
     result.innerHTML = `<p class="compare-empty">선택한 기간에 데이터가 부족합니다.</p>`;
     return;
@@ -1640,7 +1749,7 @@ async function renderSimulator() {
       { label: "최대낙폭", value: `-${(Math.abs(mdd) * 100).toFixed(1)}%`, color: cssVar("--critical"), sub: dates[troughIdx] },
       { label: "연 수익률(IRR)", value: sim.irr != null ? `${(sim.irr * 100).toFixed(1)}%` : "—" },
     ],
-    dates, values, mddIdx: troughIdx,
+    dates, values, mddIdx: troughIdx, dd: ddSeries, valueLabel: `평가액(${cur})`,
   };
 }
 
@@ -1845,10 +1954,21 @@ async function init() {
   });
   document.getElementById("portfolioSaveBtn").addEventListener("click", savePortfolioSettings);
   document.getElementById("portfolioLoadBtn").addEventListener("click", loadPortfolioSettings);
-  document.getElementById("portfolioSnapshotBtn").addEventListener("click", () => {
-    if (!state.portfolioSnapshotData) { flashStatus("portfolioSaveStatus", "먼저 계산 결과가 나온 뒤 눌러주세요"); return; }
-    const canvas = buildSnapshotCanvas(state.portfolioSnapshotData);
-    downloadCanvasPNG(canvas, `mdd-portfolio-${todayStr()}.png`);
+  document.getElementById("portfolioImageBtn").addEventListener("click", () => {
+    if (!state.portfolioSnapshotData) { flashStatus("portfolioExportStatus", "먼저 계산 결과가 나온 뒤 눌러주세요"); return; }
+    downloadCanvasPNG(buildSnapshotCanvas(state.portfolioSnapshotData), `mdd-portfolio-${todayStr()}.png`);
+  });
+  document.getElementById("portfolioCsvBtn").addEventListener("click", () => {
+    if (!state.portfolioSnapshotData) { flashStatus("portfolioExportStatus", "먼저 계산 결과가 나온 뒤 눌러주세요"); return; }
+    downloadResultCSV(state.portfolioSnapshotData, `mdd-portfolio-${todayStr()}.csv`);
+  });
+  document.getElementById("portfolioShareAppBtn").addEventListener("click", () => {
+    if (!state.portfolioSnapshotData) { flashStatus("portfolioExportStatus", "먼저 계산 결과가 나온 뒤 눌러주세요"); return; }
+    shareResultToApps(state.portfolioSnapshotData, "portfolioExportStatus");
+  });
+  document.getElementById("portfolioClaudeBtn").addEventListener("click", () => {
+    if (!state.portfolioSnapshotData) { flashStatus("portfolioExportStatus", "먼저 계산 결과가 나온 뒤 눌러주세요"); return; }
+    copyResultSummary(state.portfolioSnapshotData, "portfolioExportStatus");
   });
 
   // 시뮬레이터: 공유 링크가 있으면 그 설정으로, 없으면 기본값(SPY 100%)으로 시작
@@ -1873,14 +1993,32 @@ async function init() {
   document.getElementById("simMode").addEventListener("change", renderSimulator);
   document.getElementById("simFutureYears").addEventListener("change", renderSimulator);
   document.getElementById("simAmount").addEventListener("input", renderSimulator);
+  document.getElementById("simStartDate").addEventListener("change", renderSimulator);
+  document.getElementById("simEndDate").addEventListener("change", renderSimulator);
+  document.getElementById("simDateClear").addEventListener("click", () => {
+    document.getElementById("simStartDate").value = "";
+    document.getElementById("simEndDate").value = "";
+    renderSimulator();
+  });
   document.getElementById("simSaveBtn").addEventListener("click", saveSimSettings);
   document.getElementById("simLoadBtn").addEventListener("click", loadSimSettings);
-  document.getElementById("simSnapshotBtn").addEventListener("click", () => {
-    if (!state.simSnapshotData) { flashStatus("simSaveStatus", "먼저 계산 결과가 나온 뒤 눌러주세요"); return; }
-    const canvas = buildSnapshotCanvas(state.simSnapshotData);
-    downloadCanvasPNG(canvas, `mdd-simulator-${todayStr()}.png`);
-  });
   document.getElementById("simShareBtn").addEventListener("click", shareSimResult);
+  document.getElementById("simImageBtn").addEventListener("click", () => {
+    if (!state.simSnapshotData) { flashStatus("simExportStatus", "먼저 계산 결과가 나온 뒤 눌러주세요"); return; }
+    downloadCanvasPNG(buildSnapshotCanvas(state.simSnapshotData), `mdd-simulator-${todayStr()}.png`);
+  });
+  document.getElementById("simCsvBtn").addEventListener("click", () => {
+    if (!state.simSnapshotData) { flashStatus("simExportStatus", "먼저 계산 결과가 나온 뒤 눌러주세요"); return; }
+    downloadResultCSV(state.simSnapshotData, `mdd-simulator-${todayStr()}.csv`);
+  });
+  document.getElementById("simShareAppBtn").addEventListener("click", () => {
+    if (!state.simSnapshotData) { flashStatus("simExportStatus", "먼저 계산 결과가 나온 뒤 눌러주세요"); return; }
+    shareResultToApps(state.simSnapshotData, "simExportStatus");
+  });
+  document.getElementById("simClaudeBtn").addEventListener("click", () => {
+    if (!state.simSnapshotData) { flashStatus("simExportStatus", "먼저 계산 결과가 나온 뒤 눌러주세요"); return; }
+    copyResultSummary(state.simSnapshotData, "simExportStatus");
+  });
 
   const krNote = state.manifest.kr.length
     ? ""
