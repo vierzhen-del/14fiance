@@ -273,6 +273,10 @@
         <button type="button" data-cur="USD" class="active">$ 달러</button>
         <button type="button" data-cur="KRW">₩ 원화</button>
       </div>
+      <div class="seg" id="simFxSeg" role="group" aria-label="환율 반영 방식">
+        <button type="button" data-fx="float" class="active">환율 변동 반영</button>
+        <button type="button" data-fx="fixed">고정 환율</button>
+      </div>
       <div id="simGlobalAmount" style="display:contents;">
         <select id="simMode" aria-label="투자 방식" style="min-width:150px;">
           <option value="dca" selected>월적립식 (매월 매수)</option>
@@ -291,6 +295,7 @@
       </select>
     </div>
     <p id="simCustomHint" class="stat-sub" style="display:none; margin:-4px 0 10px;">종목마다 투자 방식(거치·월적립·거치+월적립)과 금액을 따로 입력합니다. 통화·기간·미래 추정 기간은 위 공통 설정을 그대로 씁니다.</p>
+    <p id="simFxHint" class="stat-sub" style="display:none; margin:-4px 0 10px;">고정 환율: 백테스트 시작일의 환율을 전체 기간에 그대로 적용합니다(환율 변동 효과 제외 — 환헤지 가정과 비슷). 투자금 통화와 종목 통화가 다를 때만 결과가 달라집니다.</p>
     <div class="action-row">
       <button type="button" id="simSaveBtn" class="btn-action">💾 설정 저장</button>
       <button type="button" id="simLoadBtn" class="btn-action">📂 불러오기</button>
@@ -1368,17 +1373,19 @@ function runPortfolioBacktest(assets, cur, fx) {
   }
   if (commonDates.length < 2) return null;
 
-  // 종목별 환산 가격 행렬 (dates × assets)
+  // 종목별 환산 가격 행렬 (dates × assets) + 원본(미환산) 가격 행렬(고정 환율 모드용)
   const n = commonDates.length;
   const conv = assets.map(() => new Array(n));
+  const raw = assets.map(() => new Array(n));
   for (let i = 0; i < n; i++) {
     const d = commonDates[i];
     for (let k = 0; k < assets.length; k++) {
-      conv[k][i] = convert(assets[k].currency, priceMaps[k].get(d), d);
+      raw[k][i] = priceMaps[k].get(d);
+      conv[k][i] = convert(assets[k].currency, raw[k][i], d);
     }
   }
 
-  return { dates: commonDates, conv };
+  return { dates: commonDates, conv, raw };
 }
 
 /* 종목별로 독립된 거치금·월적립액을 가질 수 있는 통합 시뮬레이션 엔진.
@@ -1388,7 +1395,7 @@ function runPortfolioBacktest(assets, cur, fx) {
    두 값을 함께 주면 "거치+월적립"이 된다. "간단(비중배분)" 모드는
    렌더러에서 amount*weight를 lumpAmount 또는 monthlyAmount로 미리 변환해 넣는
    방식으로 이 엔진에 합류한다 — 즉 두 입력 모드가 같은 계산 경로를 공유한다. */
-function simulatePerAsset(dates, conv, assets, cur, fx, months, dateRange) {
+function simulatePerAsset(dates, conv, assets, cur, fx, months, dateRange, fxMode, raw) {
   // 기간 슬라이스 (모든 배열 같은 인덱스 공유). 시작일·종료일을 직접 고른 경우 그 기간을, 아니면 프리셋 개월 수를 쓴다
   let startIdx = 0, endIdx = dates.length - 1;
   if (dateRange && dateRange.start && dateRange.end) {
@@ -1405,9 +1412,23 @@ function simulatePerAsset(dates, conv, assets, cur, fx, months, dateRange) {
   }
   if (startIdx > endIdx) return null;
   const D = dates.slice(startIdx, endIdx + 1);
-  const P = conv.map((arr) => arr.slice(startIdx, endIdx + 1));
+  let P = conv.map((arr) => arr.slice(startIdx, endIdx + 1));
   const n = D.length;
   if (n < 30) return null;
+
+  // 고정 환율 모드: 백테스트 시작일의 환율 하나를 전체 기간에 적용해 다시 환산한다
+  // (환율 변동 효과 제외). 통화가 같은 종목은 어느 모드든 결과가 같다.
+  let fixedRate = null;
+  if (fxMode === "fixed" && fx && raw) {
+    fixedRate = fxRateOn(fx, D[0]);
+    if (fixedRate != null) {
+      P = raw.map((arr, k) => {
+        const sliced = arr.slice(startIdx, endIdx + 1);
+        if (assets[k].currency === cur) return sliced;
+        return sliced.map((p) => (assets[k].currency === "USD" ? p * fixedRate : p / fixedRate));
+      });
+    }
+  }
 
   const startTs = Date.parse(D[0]);
   const monthsAt = (dateStr) => (Date.parse(dateStr) - startTs) / (86400000 * 30.4375);
@@ -1465,7 +1486,7 @@ function simulatePerAsset(dates, conv, assets, cur, fx, months, dateRange) {
       while (divPtr[k] < a.div.dates.length && a.div.dates[divPtr[k]] <= D[i]) {
         let amt = a.div.amounts[divPtr[k]];
         if (a.currency !== cur) {
-          const rate = fxRateOn(fx, a.div.dates[divPtr[k]]);
+          const rate = fixedRate != null ? fixedRate : fxRateOn(fx, a.div.dates[divPtr[k]]);
           amt = rate == null ? 0 : (a.currency === "USD" ? amt * rate : amt / rate);
         }
         const cash = shares[k] * amt;
@@ -1592,6 +1613,12 @@ function addSimRow(defaultSymbol, defaultWeight, rowMode, lumpAmount, monthlyAmo
 
 const SIM_STORAGE_KEY = "mdd_simulator_v1";
 
+/* 환율 반영 방식 토글 화면 갱신(세그 버튼 active + 안내문) */
+function applyFxModeUI() {
+  document.querySelectorAll("#simFxSeg button").forEach((b) => b.classList.toggle("active", b.dataset.fx === state.simFxMode));
+  document.getElementById("simFxHint").style.display = state.simFxMode === "fixed" ? "" : "none";
+}
+
 /* "간단"/"개별 입력" 전환에 따른 화면 갱신(행 필드 표시, 공통 금액 컨트롤 표시 여부, 세그 버튼) */
 function applyInputModeUI() {
   const isCustom = state.simInputMode === "custom";
@@ -1604,6 +1631,7 @@ function applyInputModeUI() {
 function serializeSimConfig() {
   return {
     inputMode: state.simInputMode,
+    fxMode: state.simFxMode,
     rows: [...document.querySelectorAll("#simRows .portfolio-row")].map((el) => ({
       symbol: el.querySelector(".sim-symbol").value,
       weight: parseFloat(el.querySelector(".sim-weight").value) || 0,
@@ -1629,6 +1657,8 @@ function applySimConfig(cfg) {
   document.querySelectorAll("#simCurrencySeg button").forEach((b) => b.classList.toggle("active", b.dataset.cur === state.simCurrency));
   state.simInputMode = cfg.inputMode === "custom" ? "custom" : "simple";
   applyInputModeUI();
+  state.simFxMode = cfg.fxMode === "fixed" ? "fixed" : "float";
+  applyFxModeUI();
   if (cfg.mode) document.getElementById("simMode").value = cfg.mode;
   if (cfg.amount) document.getElementById("simAmount").value = cfg.amount;
   if (cfg.futureYears) document.getElementById("simFutureYears").value = cfg.futureYears;
@@ -1782,7 +1812,7 @@ async function renderSimulator() {
     result.innerHTML = `<p class="compare-empty">선택한 종목들의 겹치는 데이터 기간이 없습니다.</p>`;
     return;
   }
-  const sim = simulatePerAsset(bt0.dates, bt0.conv, assets, cur, fx, months, dateRange);
+  const sim = simulatePerAsset(bt0.dates, bt0.conv, assets, cur, fx, months, dateRange, state.simFxMode, bt0.raw);
   if (!sim) {
     result.innerHTML = `<p class="compare-empty">선택한 기간에 데이터가 부족합니다.</p>`;
     return;
@@ -1850,8 +1880,9 @@ async function renderSimulator() {
     </div>`
     : "";
 
+  const fxLabel = needsFx ? (state.simFxMode === "fixed" ? " · 고정 환율(시작일 기준)" : " · 환율 변동 반영") : "";
   result.innerHTML = `
-    <p class="chart-title" style="margin-top:8px;">📊 백테스트 (합산결과) — ${mixLabel} · ${dates[0]} ~ ${dates[dates.length - 1]}</p>
+    <p class="chart-title" style="margin-top:8px;">📊 백테스트 (합산결과) — ${mixLabel} · ${dates[0]} ~ ${dates[dates.length - 1]}${fxLabel}</p>
     <div class="stat-row">
       <div class="stat">
         <p class="stat-label">최종 평가액 (배당 별도)</p>
@@ -1924,7 +1955,7 @@ async function renderSimulator() {
 
   state.simSnapshotData = {
     title: `투자 시뮬레이터 — ${mixLabel}`,
-    subtitle: `합산결과 · ${dates[0]} ~ ${dates[dates.length - 1]}`,
+    subtitle: `합산결과 · ${dates[0]} ~ ${dates[dates.length - 1]}${fxLabel}`,
     stats: [
       { label: "최종 평가액", value: fmt(sim.finalValue), sub: `납입원금 ${fmt(sim.contributed)}` },
       { label: "총수익률", value: `${totalReturn >= 0 ? "+" : ""}${(totalReturn * 100).toFixed(1)}%`, color: totalReturn >= 0 ? cssVar("--good") : cssVar("--critical") },
@@ -2057,6 +2088,7 @@ async function init() {
   state.compareChecked = new Set(["SPY", "QQQ", "SCHD", "GLD", "TLT"]);
   state.simCurrency = "USD";
   state.simInputMode = "simple";
+  state.simFxMode = "float";
 
   const select = document.getElementById("etfSelect");
   const checklist = document.getElementById("compareChecklist");
@@ -2174,6 +2206,14 @@ async function init() {
     btn.addEventListener("click", () => {
       state.simInputMode = btn.dataset.inputMode;
       applyInputModeUI();
+      renderSimulator();
+    });
+  });
+  applyFxModeUI();
+  document.querySelectorAll("#simFxSeg button").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.simFxMode = btn.dataset.fx;
+      applyFxModeUI();
       renderSimulator();
     });
   });
