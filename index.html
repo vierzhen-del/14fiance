@@ -2163,6 +2163,7 @@ async function render() {
       ${meta && meta.ttmDividend
         ? `<p class="stat-sub" style="border-top:1px solid var(--gridline); padding-top:12px; margin-top:0;">💰 최근 12개월 배당 <b style="color:var(--text-primary)">${fmtPrice(meta.ttmDividend, full.currency)}</b>/주 · 배당수익률 <b style="color:var(--text-primary)">${(meta.dividendYield * 100).toFixed(2)}%</b> <span style="color:var(--text-muted)">(현재가 기준)</span></p>`
         : ""}
+      <div id="divHistoryWrap"></div>
     </div>
 
     <div class="card">
@@ -2196,6 +2197,64 @@ async function render() {
     valueFmt: (v) => (v * 100).toFixed(1) + "%",
     seriesLabel: "낙폭",
   });
+
+  if (!full.isBlend) renderDividendHistory(symbol, full);
+}
+
+/* 배당(분배금) 이력표 — "최근 12개월 배당" 숫자가 어떤 지급 내역들의 합인지 근거를 보여준다.
+   집계 기준은 fetch_data.py의 ttm_dividend()와 동일: 가격 데이터 마지막 날짜 기준 직전 365일. */
+async function renderDividendHistory(symbol, full) {
+  const wrap = document.getElementById("divHistoryWrap");
+  if (!wrap) return;
+  wrap.innerHTML = "";
+  let div;
+  try {
+    div = await loadDividends(symbol);
+  } catch (err) {
+    div = null;
+  }
+  if (!div || !div.dates.length) return;
+
+  const priceDates = full.dates, priceCloses = full.closes;
+  const priceOn = (dateStr) => {
+    let lo = 0, hi = priceDates.length - 1, ans = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (priceDates[mid] <= dateStr) { ans = mid; lo = mid + 1; } else { hi = mid - 1; }
+    }
+    return ans >= 0 ? priceCloses[ans] : null;
+  };
+
+  const lastPriceDate = priceDates[priceDates.length - 1];
+  const ttmStart = new Date(Date.parse(lastPriceDate) - 365 * 86400000).toISOString().slice(0, 10);
+  let ttmSum = 0;
+  const rows = [];
+  for (let i = div.dates.length - 1; i >= 0; i--) {
+    const d = div.dates[i], amt = div.amounts[i];
+    const inTTM = d > ttmStart && d <= lastPriceDate;
+    if (inTTM) ttmSum += amt;
+    const price = priceOn(d);
+    rows.push({ date: d, amount: amt, rate: price ? (amt / price) * 100 : null, inTTM });
+  }
+
+  wrap.innerHTML = `
+    <details style="border-top:1px solid var(--gridline); padding-top:10px; margin-top:8px;">
+      <summary style="cursor:pointer; font-size:13px; color:var(--text-secondary); font-weight:600;">📋 배당(분배금) 이력 보기 — 계산 근거 (${rows.length}건)</summary>
+      <p class="stat-sub" style="margin:8px 0;">노란 배경 표시한 ${rows.filter((r) => r.inTTM).length}건의 합계 <b style="color:var(--text-primary)">${fmtPrice(ttmSum, full.currency)}</b>가 위 "최근 12개월 배당"입니다 (기준일 ${lastPriceDate}, 직전 365일).</p>
+      <div style="overflow-x:auto;">
+      <table class="account-summary-table">
+        <thead><tr><th>배당락일</th><th>분배금(주당)</th><th>분배율(당일 종가 대비)</th></tr></thead>
+        <tbody>
+          ${rows.map((r) => `<tr${r.inTTM ? ' style="background:rgba(234,179,8,0.14);"' : ""}>
+            <td style="text-align:left;">${r.date}</td>
+            <td>${fmtPrice(r.amount, full.currency)}</td>
+            <td>${r.rate != null ? r.rate.toFixed(2) + "%" : "—"}</td>
+          </tr>`).join("")}
+        </tbody>
+      </table>
+      </div>
+    </details>
+  `;
 }
 
 async function init() {
