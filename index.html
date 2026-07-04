@@ -360,6 +360,33 @@
     <div id="simResult"></div>
   </div>
 
+  <p class="section-title">💼 내 자산</p>
+  <p class="section-lede">계좌별 보유 종목·수량을 입력하면 평가액·수익률·예상 월배당을 자동 계산합니다. <b>입력한 보유 정보는 이 기기(브라우저)에만 저장되며 서버로 전송되지 않습니다.</b></p>
+
+  <div class="card">
+    <div id="myAssetRows" class="portfolio-rows"></div>
+    <button type="button" id="addMyAssetRow" class="btn-add">+ 종목 추가</button>
+    <div class="controls" style="margin-top:10px; margin-bottom:6px;">
+      <div class="portfolio-weight-wrap">
+        <input type="number" id="myGoalAmount" class="portfolio-weight" style="width:140px" min="0" step="1" placeholder="목표 금액 (선택)" aria-label="자산 목표 금액">
+        <span style="font-size:12.5px; color:var(--text-muted);">₩ 목표</span>
+      </div>
+      <div class="portfolio-weight-wrap">
+        <input type="number" id="myExpectedReturn" class="portfolio-weight" style="width:110px" step="1" placeholder="기대수익률(선택)" aria-label="기대 연 수익률">
+        <span style="font-size:12.5px; color:var(--text-muted);">%/년</span>
+      </div>
+    </div>
+    <div class="action-row">
+      <button type="button" id="myExportBtn" class="btn-action">📤 내보내기</button>
+      <button type="button" id="myImportBtn" class="btn-action">📂 가져오기</button>
+      <button type="button" id="myClaudeBtn" class="btn-action">🤖 클로드에 복사</button>
+      <a href="https://app.notion.com/p/3865efd0e46281c49a72c9bbc70dcea0" target="_blank" rel="noopener" class="btn-action" style="text-decoration:none;">📋 배당 기준 SOP 확인</a>
+      <span id="myAssetStatus" class="action-status"></span>
+      <input type="file" id="myImportFile" accept="application/json" style="display:none;">
+    </div>
+    <div id="myAssetResult"></div>
+  </div>
+
   <div class="controls">
     <div class="seg" id="marketSeg" role="group" aria-label="시장 구분">
       <button type="button" data-market="all" class="active">전체</button>
@@ -1286,6 +1313,220 @@ function loadPortfolioSettings() {
   } catch (err) {
     flashStatus("portfolioSaveStatus", "저장된 설정을 읽지 못했습니다");
   }
+}
+
+/* ---------- 💼 내 자산 (기기 저장 개인 포트폴리오) ----------
+   개인 보유 정보는 이 브라우저의 localStorage에만 저장한다 — 공개 저장소·서버로
+   절대 내보내지 않는다. 종목 선택값이 곧 종목코드라서 이름 유사 매칭 오류가
+   구조적으로 불가능하다(14RAE 지침 A-13: 코드 기준 1:1 대조). */
+const MY_ASSETS_KEY = "my_assets_v1";
+
+function addMyAssetRow(a = {}) {
+  const row = document.createElement("div");
+  row.className = "portfolio-row";
+  row.innerHTML = `
+    <select class="my-account" aria-label="계좌 구분">${accountOptionsHTML(a.account)}</select>
+    <select class="my-symbol portfolio-symbol" aria-label="종목 선택">${etfOptionsHTML(a.symbol)}</select>
+    <div class="portfolio-weight-wrap">
+      <input type="number" class="my-qty portfolio-weight" style="width:90px" min="0" step="1" value="${a.qty ?? ""}" placeholder="수량"> 주
+    </div>
+    <div class="portfolio-weight-wrap">
+      <input type="number" class="my-avg portfolio-weight" style="width:110px" min="0" step="0.01" value="${a.avgPrice ?? ""}" placeholder="매입단가(선택)">
+    </div>
+    <div class="portfolio-weight-wrap">
+      <input type="number" class="my-monthly portfolio-weight" style="width:100px" min="0" step="1" value="${a.monthlyQty ?? ""}" placeholder="월매수(선택)"> 주/월
+    </div>
+    <button type="button" class="portfolio-remove" aria-label="종목 제거">×</button>
+  `;
+  document.getElementById("myAssetRows").appendChild(row);
+  const onChange = () => { saveMyAssets(); renderMyAssets(); };
+  row.querySelectorAll("select, input").forEach((el) =>
+    el.addEventListener(el.tagName === "SELECT" ? "change" : "input", onChange));
+  row.querySelector(".portfolio-remove").addEventListener("click", () => { row.remove(); onChange(); });
+}
+
+function serializeMyAssets() {
+  return {
+    rows: [...document.querySelectorAll("#myAssetRows .portfolio-row")].map((el) => ({
+      account: el.querySelector(".my-account").value,
+      symbol: el.querySelector(".my-symbol").value,
+      qty: parseFloat(el.querySelector(".my-qty").value) || 0,
+      avgPrice: parseFloat(el.querySelector(".my-avg").value) || 0,
+      monthlyQty: parseFloat(el.querySelector(".my-monthly").value) || 0,
+    })),
+    goalAmount: document.getElementById("myGoalAmount").value,
+    expectedReturn: document.getElementById("myExpectedReturn").value,
+  };
+}
+
+function saveMyAssets() {
+  localStorage.setItem(MY_ASSETS_KEY, JSON.stringify(serializeMyAssets()));
+}
+
+function applyMyAssets(data) {
+  if (!data || !Array.isArray(data.rows)) return false;
+  document.getElementById("myAssetRows").innerHTML = "";
+  for (const r of data.rows) addMyAssetRow(r);
+  document.getElementById("myGoalAmount").value = data.goalAmount || "";
+  document.getElementById("myExpectedReturn").value = data.expectedReturn || "";
+  return true;
+}
+
+async function renderMyAssets() {
+  const result = document.getElementById("myAssetResult");
+  const cfg = serializeMyAssets();
+  const rows = cfg.rows.filter((r) => r.qty > 0);
+  if (!rows.length) {
+    result.innerHTML = `<p class="compare-empty">보유 종목과 수량을 입력하면 평가액·예상 월배당이 자동 계산됩니다.</p>`;
+    return;
+  }
+  result.innerHTML = `<p class="compare-empty">계산 중…</p>`;
+
+  let fx = null;
+  const items = [];
+  try {
+    fx = await loadFx();
+    for (const r of rows) {
+      const full = await loadSymbol(r.symbol);
+      items.push({ ...r, full });
+    }
+  } catch (err) {
+    result.innerHTML = `<p class="compare-empty" style="color:var(--critical)">${err.message}</p>`;
+    return;
+  }
+
+  const fmtW = (v) => fmtPrice(v, "KRW");
+  const latestRate = fx ? fx.rates[fx.rates.length - 1] : null;
+  let totalValue = 0, totalCost = 0, totalMonthlyDiv = 0, totalMonthlyBuy = 0;
+  let costedValue = 0; // 매입단가가 있는 종목의 평가액 합 (수익률 분모 정합성)
+  const perRow = [];
+  const accountMap = new Map();
+
+  for (const it of items) {
+    const meta = state.metaBySymbol.get(it.symbol);
+    const close = it.full.closes[it.full.closes.length - 1];
+    const isUsd = (it.full.currency || "USD") === "USD";
+    if (isUsd && latestRate == null) {
+      result.innerHTML = `<p class="compare-empty" style="color:var(--critical)">환율 데이터가 아직 없어 달러 종목을 환산할 수 없습니다.</p>`;
+      return;
+    }
+    const toKrw = (v) => (isUsd ? v * latestRate : v);
+    const value = toKrw(close) * it.qty;
+    const cost = it.avgPrice > 0 ? toKrw(it.avgPrice) * it.qty : null;
+    const profit = cost != null ? value - cost : null;
+    const ttm = meta && meta.ttmDividend ? meta.ttmDividend : 0;
+    const monthlyDiv = toKrw(ttm / 12) * it.qty;
+    const monthlyBuy = toKrw(close) * it.monthlyQty;
+
+    // NAV 침식 경고(14RAE A-8): 최근 30일 가격 하락률 > 월배당률이면 원금 훼손 의심
+    let erosion = null;
+    if (ttm > 0 && it.full.dates.length > 25) {
+      const lastDate = it.full.dates[it.full.dates.length - 1];
+      const cutoff = new Date(lastDate); cutoff.setDate(cutoff.getDate() - 30);
+      const cutStr = cutoff.toISOString().slice(0, 10);
+      let idx = it.full.dates.findIndex((d) => d >= cutStr);
+      if (idx < 0) idx = 0;
+      const prev = it.full.closes[idx];
+      const drop = (prev - close) / prev;
+      const monthlyYield = ttm / 12 / close;
+      if (drop > monthlyYield) erosion = drop;
+    }
+
+    totalValue += value;
+    if (cost != null) { totalCost += cost; costedValue += value; }
+    totalMonthlyDiv += monthlyDiv;
+    totalMonthlyBuy += monthlyBuy;
+    perRow.push({ ...it, meta, close, isUsd, value, cost, profit, monthlyDiv, monthlyBuy, erosion });
+
+    const accKey = it.account || "계좌 미지정";
+    if (!accountMap.has(accKey)) accountMap.set(accKey, { value: 0, cost: 0, monthlyDiv: 0, n: 0 });
+    const g = accountMap.get(accKey);
+    g.value += value; if (cost != null) g.cost += cost; g.monthlyDiv += monthlyDiv; g.n += 1;
+  }
+
+  const totalProfit = totalCost > 0 ? costedValue - totalCost : null;
+  const selfSuffRate = totalMonthlyBuy > 0 ? totalMonthlyDiv / totalMonthlyBuy : null;
+
+  // 목표 도달: 기대수익률 미입력 시 배당수익률만 가정(보수적) — 안내문에 명시
+  const goalAmount = parseFloat(cfg.goalAmount) || 0;
+  const expReturn = cfg.expectedReturn !== "" ? Number(cfg.expectedReturn) / 100 : null;
+  const wDivYield = totalValue > 0 ? (totalMonthlyDiv * 12) / totalValue : 0;
+  const goalRate = (expReturn != null ? expReturn : 0) + wDivYield;
+  const goal = goalAmount > 0 ? monthsToGoal(goalAmount, totalValue, totalMonthlyBuy, goalRate) : null;
+  const goalLabel = goal
+    ? goal.months == null ? "50년 초과"
+      : goal.months === 0 ? "이미 달성"
+      : `${Math.floor(goal.months / 12) > 0 ? `${Math.floor(goal.months / 12)}년 ` : ""}${goal.months % 12 > 0 ? `${goal.months % 12}개월` : ""}`.trim()
+    : null;
+
+  const rowsHTML = perRow.map((p) => `<tr>
+      <td>${p.account || "미지정"}</td>
+      <td style="text-align:left;">${p.meta ? p.meta.name : p.symbol}${p.erosion != null ? ` <span style="color:var(--critical); font-size:11px;">⚠️ NAV침식 의심</span>` : ""}</td>
+      <td>${p.qty.toLocaleString()}</td>
+      <td>${p.isUsd ? "$" + p.close.toLocaleString() : fmtW(p.close)}</td>
+      <td>${fmtW(p.value)}</td>
+      <td style="color:${p.profit == null ? "var(--text-muted)" : p.profit >= 0 ? "var(--good)" : "var(--critical)"}">${p.profit == null ? "—" : (p.profit >= 0 ? "+" : "") + fmtW(p.profit)}</td>
+      <td>${p.monthlyDiv > 0 ? fmtW(p.monthlyDiv) : "—"}</td>
+    </tr>`).join("");
+
+  const accHTML = [...accountMap.entries()].map(([acc, g]) => `<tr>
+      <td>${acc}</td><td>${g.n}</td><td>${fmtW(g.value)}</td><td>${g.monthlyDiv > 0 ? fmtW(g.monthlyDiv) : "—"}</td>
+    </tr>`).join("");
+
+  result.innerHTML = `
+    <div class="stat-row" style="margin-top:14px;">
+      <div class="stat">
+        <p class="stat-label">총 평가액</p>
+        <p class="stat-hero" style="font-size:28px;">${fmtW(totalValue)}</p>
+        ${totalProfit != null ? `<p class="stat-sub" style="color:${totalProfit >= 0 ? "var(--good)" : "var(--critical)"}">손익 ${totalProfit >= 0 ? "+" : ""}${fmtW(totalProfit)} (${((costedValue / totalCost - 1) * 100).toFixed(2)}%)</p>` : `<p class="stat-sub">매입단가 입력 시 손익 표시</p>`}
+      </div>
+      <div class="stat">
+        <p class="stat-label">예상 월배당 (TTM 기준)</p>
+        <p class="stat-value">${fmtW(totalMonthlyDiv)}</p>
+        <p class="stat-sub">연환산 ${fmtW(totalMonthlyDiv * 12)}</p>
+      </div>
+      <div class="stat">
+        <p class="stat-label">월매수 계획</p>
+        <p class="stat-value">${totalMonthlyBuy > 0 ? fmtW(totalMonthlyBuy) : "—"}</p>
+        <p class="stat-sub">${selfSuffRate != null ? `배당 자급률 ${(selfSuffRate * 100).toFixed(1)}% ${selfSuffRate >= 1 ? "✅ 배당으로 충당" : "⚠️ 부족 " + fmtW(totalMonthlyBuy - totalMonthlyDiv)}` : "월매수 수량 입력 시 자급률 표시"}</p>
+      </div>
+      ${goal ? `<div class="stat">
+        <p class="stat-label">🎯 목표 ${fmtW(goalAmount)} 도달</p>
+        <p class="stat-value">${goalLabel}</p>
+        <p class="stat-sub">연 ${(goalRate * 100).toFixed(1)}% 가정${expReturn == null ? " (기대수익률 미입력 — 배당만 반영)" : ""}</p>
+      </div>` : ""}
+    </div>
+
+    <p class="chart-title" style="margin-top:20px;">보유 종목</p>
+    <div style="overflow-x:auto;">
+    <table class="account-summary-table">
+      <thead><tr><th>계좌</th><th>종목</th><th>수량</th><th>현재가</th><th>평가액</th><th>손익</th><th>월배당</th></tr></thead>
+      <tbody>${rowsHTML}</tbody>
+    </table>
+    </div>
+
+    <p class="chart-title" style="margin-top:20px;">계좌별 합계</p>
+    <div style="overflow-x:auto;">
+    <table class="account-summary-table">
+      <thead><tr><th>계좌</th><th>종목 수</th><th>평가액</th><th>월배당</th></tr></thead>
+      <tbody>${accHTML}</tbody>
+    </table>
+    </div>
+    <p class="stat-sub" style="margin-top:10px;">현재가는 주간 수집 데이터의 마지막 종가 기준이며, 월배당은 최근 1년 배당(TTM)÷12로 추정한 값입니다. 확정 분배금과 다를 수 있습니다.</p>
+  `;
+}
+
+function buildMyAssetsText() {
+  const cfg = serializeMyAssets();
+  const lines = ["[내 자산 보유현황 — " + todayStr() + "]"];
+  for (const r of cfg.rows.filter((x) => x.qty > 0)) {
+    const meta = state.metaBySymbol.get(r.symbol);
+    lines.push(`${r.account || "미지정"} | ${meta ? meta.name : r.symbol} (${r.symbol}) | ${r.qty}주` +
+      (r.avgPrice > 0 ? ` | 매입단가 ${r.avgPrice}` : "") +
+      (r.monthlyQty > 0 ? ` | 월매수 ${r.monthlyQty}주` : ""));
+  }
+  lines.push("", "위 보유현황을 노션 14RAE SOP(매도이력 대장 우선 확인)와 대조해서 갱신해주세요.");
+  return lines.join("\n");
 }
 
 async function renderPortfolio() {
@@ -2556,6 +2797,54 @@ async function init() {
   document.getElementById("portfolioClaudeBtn").addEventListener("click", () => {
     if (!state.portfolioSnapshotData) { flashStatus("portfolioExportStatus", "먼저 계산 결과가 나온 뒤 눌러주세요"); return; }
     copyResultSummary(state.portfolioSnapshotData, "portfolioExportStatus");
+  });
+
+  // 💼 내 자산: localStorage에 저장된 보유 정보 복원(없으면 빈 행 1개)
+  let myAssetsRestored = false;
+  try {
+    const savedAssets = JSON.parse(localStorage.getItem(MY_ASSETS_KEY) || "null");
+    myAssetsRestored = applyMyAssets(savedAssets);
+  } catch (err) { /* 손상된 저장값은 무시하고 새로 시작 */ }
+  if (!myAssetsRestored) addMyAssetRow();
+  renderMyAssets();
+  document.getElementById("addMyAssetRow").addEventListener("click", () => { addMyAssetRow(); saveMyAssets(); });
+  document.getElementById("myGoalAmount").addEventListener("input", () => { saveMyAssets(); renderMyAssets(); });
+  document.getElementById("myExpectedReturn").addEventListener("input", () => { saveMyAssets(); renderMyAssets(); });
+  document.getElementById("myExportBtn").addEventListener("click", () => {
+    const blob = new Blob([JSON.stringify(serializeMyAssets(), null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `my-assets-${todayStr()}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    flashStatus("myAssetStatus", "내보내기 완료 — 파일을 안전한 곳에 보관하세요");
+  });
+  document.getElementById("myImportBtn").addEventListener("click", () => document.getElementById("myImportFile").click());
+  document.getElementById("myImportFile").addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result);
+        if (!applyMyAssets(data)) throw new Error("형식이 맞지 않습니다");
+        saveMyAssets();
+        renderMyAssets();
+        flashStatus("myAssetStatus", "가져오기 완료 ✓");
+      } catch (err) {
+        flashStatus("myAssetStatus", "파일을 읽지 못했습니다: " + err.message);
+      }
+      e.target.value = "";
+    };
+    reader.readAsText(file);
+  });
+  document.getElementById("myClaudeBtn").addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(buildMyAssetsText());
+      flashStatus("myAssetStatus", "복사됨 — 클로드 대화에 붙여넣으면 노션과 동기화됩니다");
+    } catch (err) {
+      window.prompt("아래 내용을 복사해서 클로드에 붙여넣으세요:", buildMyAssetsText());
+    }
   });
 
   // 시뮬레이터: 공유 링크가 있으면 그 설정으로, 없으면 기본값(SPY 100%, 간단 모드)으로 시작
