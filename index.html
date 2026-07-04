@@ -312,6 +312,10 @@
         <option value="20">향후 20년</option>
         <option value="30">향후 30년</option>
       </select>
+      <div class="portfolio-weight-wrap">
+        <input type="number" id="simGoalAmount" class="portfolio-weight" style="width:130px" min="0" step="1" placeholder="목표 금액 (선택)" aria-label="목표 금액">
+        <span id="simGoalUnit" style="font-size:12.5px; color:var(--text-muted);">$ 목표</span>
+      </div>
     </div>
     <p id="simCustomHint" class="stat-sub" style="display:none; margin:-4px 0 10px;">종목마다 투자 방식(거치·월적립·거치+월적립)과 금액을 따로 입력합니다. 통화·기간·미래 추정 기간은 위 공통 설정을 그대로 씁니다.</p>
     <p id="simFxHint" class="stat-sub" style="display:none; margin:-4px 0 10px;">고정 환율: 백테스트 시작일의 환율을 전체 기간에 그대로 적용합니다(환율 변동 효과 제외 — 환헤지 가정과 비슷). 투자금 통화와 종목 통화가 다를 때만 결과가 달라집니다.</p>
@@ -1664,6 +1668,19 @@ function estimateFuture(totalLump, totalMonthly, years, priceCAGR, divYield, div
   return { fv, contributed, monthlyDiv };
 }
 
+/* 목표 금액 도달까지 걸리는 개월 수. annualRate는 배당 재투자를 포함한 연평균 TR 수익률.
+   반환: {months, contributed} — 도달 불가(600개월=50년 초과)면 months: null */
+function monthsToGoal(goal, lump, monthly, annualRate) {
+  if (!(goal > 0)) return null;
+  const rm = Math.pow(1 + annualRate, 1 / 12) - 1;
+  for (let m = 0; m <= 600; m++) {
+    const growth = Math.abs(rm) < 1e-9 ? monthly * m : monthly * ((Math.pow(1 + rm, m) - 1) / rm);
+    const fv = lump * Math.pow(1 + rm, m) + growth;
+    if (fv >= goal) return { months: m, contributed: lump + monthly * m };
+  }
+  return { months: null, contributed: null };
+}
+
 /* 배당 이력에서 연간 배당 성장률 추정 (완전한 연도 3개 이상일 때만, ±범위 제한) */
 function estimateDivGrowth(div) {
   if (!div || div.dates.length < 4) return 0;
@@ -1765,6 +1782,7 @@ function serializeSimConfig() {
     mode: document.getElementById("simMode").value,
     amount: document.getElementById("simAmount").value,
     futureYears: document.getElementById("simFutureYears").value,
+    goalAmount: document.getElementById("simGoalAmount").value,
     months: document.getElementById("periodSelect").value,
     startDate: document.getElementById("simStartDate").value,
     endDate: document.getElementById("simEndDate").value,
@@ -1784,6 +1802,7 @@ function applySimConfig(cfg) {
   if (cfg.mode) document.getElementById("simMode").value = cfg.mode;
   if (cfg.amount) document.getElementById("simAmount").value = cfg.amount;
   if (cfg.futureYears) document.getElementById("simFutureYears").value = cfg.futureYears;
+  document.getElementById("simGoalAmount").value = cfg.goalAmount || "";
   if (cfg.months) document.getElementById("periodSelect").value = cfg.months;
   document.getElementById("simStartDate").value = cfg.startDate || "";
   document.getElementById("simEndDate").value = cfg.endDate || "";
@@ -1843,6 +1862,8 @@ async function renderSimulator() {
 
   const curSym = cur === "KRW" ? "₩" : "$";
   document.getElementById("simAmountUnit").textContent = mode === "dca" ? `${curSym}/월` : `${curSym} 총액`;
+  document.getElementById("simGoalUnit").textContent = `${curSym} 목표`;
+  const goalAmount = parseFloat(document.getElementById("simGoalAmount").value) || 0;
 
   // 입력 모드에 따라 종목별 거치금·월적립액(rawEntries)을 만든다.
   // "간단" 모드: 비중%을 정규화해 전체 금액을 나눈다. "개별 입력" 모드: 종목마다 입력한 금액을 그대로 쓴다.
@@ -1975,6 +1996,17 @@ async function renderSimulator() {
   const totalMonthly = assets.reduce((s, a) => s + a.monthlyAmount, 0);
   const fut = estimateFuture(totalLump, totalMonthly, futureYears, priceCAGR, divYield, divGrowth);
 
+  // 목표 금액 도달 추정: 가격 CAGR + 배당수익률(재투자 가정)을 합친 연평균 TR 수익률로 계산
+  const trCAGR = priceCAGR + (divYield || 0);
+  const goal = goalAmount > 0 ? monthsToGoal(goalAmount, totalLump, totalMonthly, trCAGR) : null;
+  const goalTimeLabel = goal
+    ? goal.months == null
+      ? "50년 초과"
+      : goal.months === 0
+        ? "즉시 달성 (거치금만으로 충분)"
+        : `${Math.floor(goal.months / 12) > 0 ? `${Math.floor(goal.months / 12)}년 ` : ""}${goal.months % 12 > 0 ? `${goal.months % 12}개월` : ""}`.trim()
+    : null;
+
   const anyDiv = assets.some((a) => a.div);
   const someMissingDiv = assets.some((a) => !a.div);
   const divLine = anyDiv
@@ -2106,6 +2138,25 @@ async function renderSimulator() {
         <p class="stat-sub">과거 기간 실측치</p>
       </div>
     </div>
+    ${goal ? `
+    <p class="chart-title" style="margin-top:24px;">🎯 목표 금액 도달 추정</p>
+    <div class="stat-row">
+      <div class="stat">
+        <p class="stat-label">목표 금액</p>
+        <p class="stat-value">${fmt(goalAmount)}</p>
+        <p class="stat-sub">현재 투자 조건 기준${totalMonthly > 0 ? ` (월 ${fmt(totalMonthly)} 적립)` : ""}</p>
+      </div>
+      <div class="stat">
+        <p class="stat-label">도달 소요시간</p>
+        <p class="stat-value">${goalTimeLabel}</p>
+        <p class="stat-sub">${goal.months != null && goal.months > 0 ? `도달 시점 납입원금 ${fmt(goal.contributed)}` : goal.months === 0 ? "" : "투자금·기간 조건 재검토 필요"}</p>
+      </div>
+      <div class="stat">
+        <p class="stat-label">적용 연평균 TR 수익률</p>
+        <p class="stat-value">${(trCAGR * 100).toFixed(1)}%</p>
+        <p class="stat-sub">가격 ${(priceCAGR * 100).toFixed(1)}%${divYield != null ? ` + 배당 ${(divYield * 100).toFixed(2)}% 재투자 가정` : " (배당 데이터 없음)"}</p>
+      </div>
+    </div>` : ""}
     <p class="stat-sub" style="color:var(--critical);">⚠️ 미래 추정은 과거 실적을 그대로 연장한 참고치일 뿐이며, 실제 수익률·배당·낙폭을 보장하지 않습니다.${inputMode === "custom" ? " (미래 추정은 개별 종목이 아닌 합산 포트폴리오 기준입니다)" : ""}</p>
   `;
 
@@ -2132,6 +2183,12 @@ async function renderSimulator() {
       { label: "총수익률", value: `${totalReturn >= 0 ? "+" : ""}${(totalReturn * 100).toFixed(1)}%`, color: totalReturn >= 0 ? cssVar("--good") : cssVar("--critical") },
       { label: "최대낙폭", value: `-${(Math.abs(mdd) * 100).toFixed(1)}%`, color: cssVar("--critical"), sub: dates[troughIdx] },
       { label: "연 수익률(IRR)", value: sim.irr != null ? `${(sim.irr * 100).toFixed(1)}%` : "—" },
+      ...(goal
+        ? [
+            { label: "목표 금액", value: fmt(goalAmount), sub: `도달 소요시간 ${goalTimeLabel}` },
+            { label: "적용 연평균 TR", value: `${(trCAGR * 100).toFixed(1)}%`, sub: "가격+배당 재투자 가정" },
+          ]
+        : []),
     ],
     dates, values, mddIdx: troughIdx, dd: ddSeries, valueLabel: `평가액(${cur})`,
     perAsset: inputMode === "custom"
@@ -2481,6 +2538,7 @@ async function init() {
   document.getElementById("simMode").addEventListener("change", renderSimulator);
   document.getElementById("simFutureYears").addEventListener("change", renderSimulator);
   document.getElementById("simAmount").addEventListener("input", renderSimulator);
+  document.getElementById("simGoalAmount").addEventListener("input", renderSimulator);
   const todayStr = new Date().toISOString().slice(0, 10);
   document.getElementById("simStartDate").max = todayStr;
   document.getElementById("simEndDate").max = todayStr;
