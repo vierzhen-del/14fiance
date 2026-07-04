@@ -195,6 +195,15 @@
   .portfolio-sum { font-size: 12px; color: var(--text-muted); margin: 0 0 16px; }
   .portfolio-sum.ok { color: var(--good); }
 
+  .action-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 16px; }
+  .btn-action {
+    font: inherit; font-size: 12.5px; font-weight: 600;
+    padding: 7px 12px; border-radius: 9px; border: 1px solid var(--border);
+    background: var(--surface-1); color: var(--text-secondary); cursor: pointer;
+  }
+  .btn-action:hover { color: var(--text-primary); border-color: var(--text-muted); }
+  .action-status { font-size: 12px; color: var(--good); }
+
   /* ---- 시장 구분 선택 ---- */
   .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
   .seg button {
@@ -253,6 +262,12 @@
     <div id="portfolioRows" class="portfolio-rows"></div>
     <button type="button" id="addPortfolioRow" class="btn-add">+ 종목 추가</button>
     <p id="portfolioSum" class="portfolio-sum"></p>
+    <div class="action-row">
+      <button type="button" id="portfolioSaveBtn" class="btn-action">💾 설정 저장</button>
+      <button type="button" id="portfolioLoadBtn" class="btn-action">📂 불러오기</button>
+      <button type="button" id="portfolioSnapshotBtn" class="btn-action">📷 스냅샷 저장</button>
+      <span id="portfolioSaveStatus" class="action-status"></span>
+    </div>
     <div id="portfolioResult"></div>
   </div>
 
@@ -285,6 +300,13 @@
         <option value="30">향후 30년</option>
       </select>
     </div>
+    <div class="action-row">
+      <button type="button" id="simSaveBtn" class="btn-action">💾 설정 저장</button>
+      <button type="button" id="simLoadBtn" class="btn-action">📂 불러오기</button>
+      <button type="button" id="simSnapshotBtn" class="btn-action">📷 스냅샷 저장</button>
+      <button type="button" id="simShareBtn" class="btn-action">🔗 결과 공유</button>
+      <span id="simSaveStatus" class="action-status"></span>
+    </div>
     <div id="simResult"></div>
   </div>
 
@@ -310,6 +332,127 @@ const BLENDS = [
   },
 ];
 function isBlend(id) { return BLENDS.some((b) => b.id === id); }
+
+/* ---------- 설정 저장·스냅샷·공유 공용 유틸 ---------- */
+function flashStatus(elId, msg, ms = 2500) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  el.textContent = msg;
+  clearTimeout(el._flashTimer);
+  el._flashTimer = setTimeout(() => { el.textContent = ""; }, ms);
+}
+
+function todayStr() { return new Date().toISOString().slice(0, 10); }
+
+/* 결과 스냅샷을 캔버스에 그려 PNG로 만든다 (외부 라이브러리 없이 통계+선그래프만 간단히 재현) */
+function buildSnapshotCanvas({ title, subtitle, stats, dates, values, mddIdx }) {
+  const W = 960, H = 620;
+  const canvas = document.createElement("canvas");
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d");
+
+  const bg = cssVar("--surface-1") || "#ffffff";
+  const fg = cssVar("--text-primary") || "#111111";
+  const muted = cssVar("--text-muted") || "#888888";
+  const gridline = cssVar("--gridline") || "#e5e5e5";
+  const lineColor = cssVar("--series-price") || "#2a78d6";
+  const critical = cssVar("--critical") || "#d03b3b";
+
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = fg;
+  ctx.font = "700 19px -apple-system, 'Segoe UI', sans-serif";
+  ctx.fillText(title, 30, 38);
+  ctx.fillStyle = muted;
+  ctx.font = "13px -apple-system, 'Segoe UI', sans-serif";
+  ctx.fillText(subtitle, 30, 60);
+
+  const statTop = 100;
+  const colW = (W - 60) / stats.length;
+  stats.forEach((s, i) => {
+    const x = 30 + i * colW;
+    ctx.fillStyle = muted;
+    ctx.font = "11.5px -apple-system, sans-serif";
+    ctx.fillText(s.label, x, statTop);
+    ctx.fillStyle = s.color || fg;
+    ctx.font = "700 21px -apple-system, sans-serif";
+    ctx.fillText(s.value, x, statTop + 26);
+    if (s.sub) {
+      ctx.fillStyle = muted;
+      ctx.font = "11px -apple-system, sans-serif";
+      ctx.fillText(s.sub, x, statTop + 44);
+    }
+  });
+
+  const chartX = 30, chartY = 176, chartW = W - 60, chartH = H - chartY - 56;
+  const n = values.length;
+  const min = Math.min(...values), max = Math.max(...values);
+  const range = (max - min) || 1;
+
+  ctx.strokeStyle = gridline;
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const y = chartY + (chartH * i) / 4;
+    ctx.beginPath(); ctx.moveTo(chartX, y); ctx.lineTo(chartX + chartW, y); ctx.stroke();
+  }
+
+  ctx.strokeStyle = lineColor;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const x = chartX + (chartW * i) / (n - 1);
+    const y = chartY + chartH - ((values[i] - min) / range) * chartH;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  if (mddIdx != null && mddIdx >= 0 && mddIdx < n) {
+    const x = chartX + (chartW * mddIdx) / (n - 1);
+    const y = chartY + chartH - ((values[mddIdx] - min) / range) * chartH;
+    ctx.fillStyle = critical;
+    ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = bg; ctx.lineWidth = 2; ctx.stroke();
+  }
+
+  ctx.fillStyle = muted;
+  ctx.font = "11px -apple-system, sans-serif";
+  ctx.textAlign = "left";
+  ctx.fillText(`${dates[0]} ~ ${dates[dates.length - 1]}`, chartX, H - 24);
+  ctx.textAlign = "right";
+  ctx.fillText("ETF MDD 계산기 · vierzhen-del.github.io/14fiance", chartX + chartW, H - 24);
+  ctx.textAlign = "left";
+
+  return canvas;
+}
+
+function downloadCanvasPNG(canvas, filename) {
+  canvas.toBlob((blob) => {
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }, "image/png");
+}
+
+/* 공유 링크: 설정을 JSON→base64로 URL 해시에 담는다 (서버 없이 링크만으로 복원) */
+function encodeConfigToHash(key, cfg) {
+  const json = JSON.stringify(cfg);
+  return `${key}=${encodeURIComponent(btoa(unescape(encodeURIComponent(json))))}`;
+}
+function decodeConfigFromHash(key, hash) {
+  const re = new RegExp(`(?:^|&)${key}=([^&]+)`);
+  const m = re.exec(hash.replace(/^#/, ""));
+  if (!m) return null;
+  try {
+    const json = decodeURIComponent(escape(atob(decodeURIComponent(m[1]))));
+    return JSON.parse(json);
+  } catch (err) {
+    return null;
+  }
+}
 
 async function fetchJSON(path) {
   const res = await fetch(path);
@@ -846,7 +989,44 @@ function addPortfolioRow(defaultSymbol, defaultWeight) {
   });
 }
 
+const PORTFOLIO_STORAGE_KEY = "mdd_portfolio_v1";
+
+function serializePortfolioRows() {
+  return [...document.querySelectorAll("#portfolioRows .portfolio-row")].map((el) => ({
+    symbol: el.querySelector(".portfolio-symbol").value,
+    weight: parseFloat(el.querySelector(".portfolio-weight").value) || 0,
+  }));
+}
+
+function applyPortfolioRows(rows) {
+  document.getElementById("portfolioRows").innerHTML = "";
+  for (const r of rows) addPortfolioRow(r.symbol, r.weight);
+  renderPortfolio();
+}
+
+function savePortfolioSettings() {
+  const rows = serializePortfolioRows();
+  if (!rows.length) { flashStatus("portfolioSaveStatus", "저장할 종목이 없습니다"); return; }
+  localStorage.setItem(PORTFOLIO_STORAGE_KEY, JSON.stringify(rows));
+  flashStatus("portfolioSaveStatus", "설정이 저장되었습니다 ✓ (이 브라우저에만 보관됩니다)");
+}
+
+function loadPortfolioSettings() {
+  const raw = localStorage.getItem(PORTFOLIO_STORAGE_KEY);
+  if (!raw) { flashStatus("portfolioSaveStatus", "저장된 설정이 없습니다"); return; }
+  try {
+    const rows = JSON.parse(raw);
+    if (Array.isArray(rows) && rows.length) {
+      applyPortfolioRows(rows);
+      flashStatus("portfolioSaveStatus", "저장된 설정을 불러왔습니다 ✓");
+    }
+  } catch (err) {
+    flashStatus("portfolioSaveStatus", "저장된 설정을 읽지 못했습니다");
+  }
+}
+
 async function renderPortfolio() {
+  state.portfolioSnapshotData = null;
   const rowEls = [...document.querySelectorAll("#portfolioRows .portfolio-row")];
   const months = Number(document.getElementById("periodSelect").value);
   const sumEl = document.getElementById("portfolioSum");
@@ -958,6 +1138,17 @@ async function renderPortfolio() {
     seriesLabel: "낙폭",
   });
 
+  state.portfolioSnapshotData = {
+    title: `커스텀 포트폴리오 — ${mixLabel}`,
+    subtitle: `${dates[0]} ~ ${dates[dates.length - 1]}`,
+    stats: [
+      { label: "최대낙폭 (MDD)", value: `-${(Math.abs(mdd) * 100).toFixed(1)}%`, color: cssVar("--critical") },
+      { label: "고점", value: fmtPrice(closes[peakIdx], "USD"), sub: peakDate },
+      { label: "저점", value: fmtPrice(closes[troughIdx], "USD"), sub: troughDate },
+      { label: "회복 상태", value: recovered ? "회복 완료" : "미회복", sub: recovered ? recoveryDate : dates[dates.length - 1] },
+    ],
+    dates, values: closes, mddIdx: troughIdx,
+  };
 }
 
 /* ---------- 투자 시뮬레이터 ---------- */
@@ -1196,7 +1387,67 @@ function addSimRow(defaultSymbol, defaultWeight) {
   });
 }
 
+const SIM_STORAGE_KEY = "mdd_simulator_v1";
+
+function serializeSimConfig() {
+  return {
+    rows: [...document.querySelectorAll("#simRows .portfolio-row")].map((el) => ({
+      symbol: el.querySelector(".sim-symbol").value,
+      weight: parseFloat(el.querySelector(".sim-weight").value) || 0,
+    })),
+    cur: state.simCurrency,
+    mode: document.getElementById("simMode").value,
+    amount: document.getElementById("simAmount").value,
+    futureYears: document.getElementById("simFutureYears").value,
+    months: document.getElementById("periodSelect").value,
+  };
+}
+
+function applySimConfig(cfg) {
+  if (!cfg || !Array.isArray(cfg.rows) || !cfg.rows.length) return false;
+  document.getElementById("simRows").innerHTML = "";
+  for (const r of cfg.rows) addSimRow(r.symbol, r.weight);
+  state.simCurrency = cfg.cur === "KRW" ? "KRW" : "USD";
+  document.querySelectorAll("#simCurrencySeg button").forEach((b) => b.classList.toggle("active", b.dataset.cur === state.simCurrency));
+  if (cfg.mode) document.getElementById("simMode").value = cfg.mode;
+  if (cfg.amount) document.getElementById("simAmount").value = cfg.amount;
+  if (cfg.futureYears) document.getElementById("simFutureYears").value = cfg.futureYears;
+  if (cfg.months) document.getElementById("periodSelect").value = cfg.months;
+  return true;
+}
+
+function saveSimSettings() {
+  localStorage.setItem(SIM_STORAGE_KEY, JSON.stringify(serializeSimConfig()));
+  flashStatus("simSaveStatus", "설정이 저장되었습니다 ✓ (이 브라우저에만 보관됩니다)");
+}
+
+function loadSimSettings() {
+  const raw = localStorage.getItem(SIM_STORAGE_KEY);
+  if (!raw) { flashStatus("simSaveStatus", "저장된 설정이 없습니다"); return; }
+  try {
+    const cfg = JSON.parse(raw);
+    if (applySimConfig(cfg)) {
+      render(); renderCompare(); renderPortfolio(); renderSimulator();
+      flashStatus("simSaveStatus", "저장된 설정을 불러왔습니다 ✓");
+    }
+  } catch (err) {
+    flashStatus("simSaveStatus", "저장된 설정을 읽지 못했습니다");
+  }
+}
+
+async function shareSimResult() {
+  const cfg = serializeSimConfig();
+  const url = `${location.origin}${location.pathname}#${encodeConfigToHash("sim", cfg)}`;
+  try {
+    await navigator.clipboard.writeText(url);
+    flashStatus("simSaveStatus", "공유 링크가 복사되었습니다 ✓ (붙여넣기 해서 전달하세요)");
+  } catch (err) {
+    window.prompt("아래 링크를 복사해서 공유하세요:", url);
+  }
+}
+
 async function renderSimulator() {
+  state.simSnapshotData = null;
   const rowEls = [...document.querySelectorAll("#simRows .portfolio-row")];
   const mode = document.getElementById("simMode").value;
   const amount = parseFloat(document.getElementById("simAmount").value) || 0;
@@ -1379,6 +1630,18 @@ async function renderSimulator() {
     valueFmt: (v) => (v * 100).toFixed(1) + "%",
     seriesLabel: "낙폭",
   });
+
+  state.simSnapshotData = {
+    title: `투자 시뮬레이터 — ${mixLabel}`,
+    subtitle: `${mode === "dca" ? `매월 ${fmt(amount)}` : `${fmt(amount)} 거치`} · ${dates[0]} ~ ${dates[dates.length - 1]}`,
+    stats: [
+      { label: "최종 평가액", value: fmt(sim.finalValue), sub: `납입원금 ${fmt(sim.contributed)}` },
+      { label: "총수익률", value: `${totalReturn >= 0 ? "+" : ""}${(totalReturn * 100).toFixed(1)}%`, color: totalReturn >= 0 ? cssVar("--good") : cssVar("--critical") },
+      { label: "최대낙폭", value: `-${(Math.abs(mdd) * 100).toFixed(1)}%`, color: cssVar("--critical"), sub: dates[troughIdx] },
+      { label: "연 수익률(IRR)", value: sim.irr != null ? `${(sim.irr * 100).toFixed(1)}%` : "—" },
+    ],
+    dates, values, mddIdx: troughIdx,
+  };
 }
 
 async function render() {
@@ -1580,25 +1843,44 @@ async function init() {
     addPortfolioRow(next.symbol, 0);
     renderPortfolio();
   });
-
-  // 시뮬레이터: 종목 행 목록(미국·국내 혼합) + 투자금 통화 토글
-  addSimRow("SPY", 100);
-  document.getElementById("addSimRow").addEventListener("click", () => {
-    const used = new Set([...document.querySelectorAll(".sim-symbol")].map((el) => el.value));
-    const next = state.listedEtfs.find((e) => !used.has(e.symbol)) || state.listedEtfs[0];
-    addSimRow(next.symbol, 0);
-    renderSimulator();
+  document.getElementById("portfolioSaveBtn").addEventListener("click", savePortfolioSettings);
+  document.getElementById("portfolioLoadBtn").addEventListener("click", loadPortfolioSettings);
+  document.getElementById("portfolioSnapshotBtn").addEventListener("click", () => {
+    if (!state.portfolioSnapshotData) { flashStatus("portfolioSaveStatus", "먼저 계산 결과가 나온 뒤 눌러주세요"); return; }
+    const canvas = buildSnapshotCanvas(state.portfolioSnapshotData);
+    downloadCanvasPNG(canvas, `mdd-portfolio-${todayStr()}.png`);
   });
+
+  // 시뮬레이터: 공유 링크가 있으면 그 설정으로, 없으면 기본값(SPY 100%)으로 시작
+  const sharedSimCfg = decodeConfigFromHash("sim", location.hash);
+  if (!sharedSimCfg || !applySimConfig(sharedSimCfg)) {
+    addSimRow("SPY", 100);
+  }
   document.querySelectorAll("#simCurrencySeg button").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.cur === state.simCurrency);
     btn.addEventListener("click", () => {
       state.simCurrency = btn.dataset.cur;
       document.querySelectorAll("#simCurrencySeg button").forEach((b) => b.classList.toggle("active", b === btn));
       renderSimulator();
     });
   });
+  document.getElementById("addSimRow").addEventListener("click", () => {
+    const used = new Set([...document.querySelectorAll(".sim-symbol")].map((el) => el.value));
+    const next = state.listedEtfs.find((e) => !used.has(e.symbol)) || state.listedEtfs[0];
+    addSimRow(next.symbol, 0);
+    renderSimulator();
+  });
   document.getElementById("simMode").addEventListener("change", renderSimulator);
   document.getElementById("simFutureYears").addEventListener("change", renderSimulator);
   document.getElementById("simAmount").addEventListener("input", renderSimulator);
+  document.getElementById("simSaveBtn").addEventListener("click", saveSimSettings);
+  document.getElementById("simLoadBtn").addEventListener("click", loadSimSettings);
+  document.getElementById("simSnapshotBtn").addEventListener("click", () => {
+    if (!state.simSnapshotData) { flashStatus("simSaveStatus", "먼저 계산 결과가 나온 뒤 눌러주세요"); return; }
+    const canvas = buildSnapshotCanvas(state.simSnapshotData);
+    downloadCanvasPNG(canvas, `mdd-simulator-${todayStr()}.png`);
+  });
+  document.getElementById("simShareBtn").addEventListener("click", shareSimResult);
 
   const krNote = state.manifest.kr.length
     ? ""
