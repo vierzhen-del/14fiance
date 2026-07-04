@@ -46,6 +46,10 @@ NAVER_HEADERS = {
 }
 NAVER_INTERVAL_SEC = 1.0
 
+# USD/KRW 일별 환율 (시뮬레이터의 통화 혼합 계산용). FRED 공개 CSV, 키 불필요.
+FX_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DEXKOUS"
+FX_DIR_NAME = "fx"
+
 
 def http_get_text(url: str, headers: dict | None = None, retries: int = 4) -> str:
     delay = 2.0
@@ -200,6 +204,48 @@ def ttm_dividend(div: dict | None, last_date: str) -> float:
     return round(total, 6)
 
 
+def parse_fred_csv(text: str) -> tuple[list[str], list[float]]:
+    """FRED fredgraph.csv(DATE,VALUE) 응답을 (dates, rates)로 파싱한다.
+
+    결측일은 값이 "."로 오므로 건너뛴다(사용처에서 직전 값으로 보간).
+    """
+    dates: list[str] = []
+    rates: list[float] = []
+    for line in text.splitlines()[1:]:  # 첫 줄은 헤더
+        parts = line.strip().split(",")
+        if len(parts) != 2 or len(parts[0]) != 10:
+            continue
+        try:
+            rate = float(parts[1])
+        except ValueError:
+            continue  # "." (결측)
+        if rate > 0:
+            dates.append(parts[0])
+            rates.append(round(rate, 4))
+    return dates, rates
+
+
+def fetch_fx_usdkrw() -> dict | None:
+    """USD/KRW 일별 환율을 FRED에서 받아온다. 실패해도 전체 수집은 계속한다."""
+    try:
+        text = http_get_text(FX_URL)
+    except RuntimeError as err:
+        print(f"  .. fx skipped: {err}")
+        return None
+    dates, rates = parse_fred_csv(text)
+    if len(dates) < 100:
+        print(f"  .. fx skipped: too few rows ({len(dates)})")
+        return None
+    return {
+        "pair": "USDKRW",
+        "count": len(dates),
+        "first": dates[0],
+        "last": dates[-1],
+        "dates": dates,
+        "rates": rates,
+    }
+
+
 def parse_naver_sise(text: str) -> tuple[list[str], list[float]]:
     """siseJson.naver 응답을 (dates, closes)로 파싱한다.
 
@@ -254,8 +300,19 @@ def main() -> int:
     DATA_DIR.mkdir(exist_ok=True)
     div_dir = DATA_DIR / DIV_DIR_NAME
     div_dir.mkdir(exist_ok=True)
+    fx_dir = DATA_DIR / FX_DIR_NAME
+    fx_dir.mkdir(exist_ok=True)
     manifest = {"updated": time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime()), "us": [], "kr": []}
     failures = []
+
+    print("fetching USD/KRW fx (FRED) ...")
+    fx = fetch_fx_usdkrw()
+    if fx is not None:
+        (fx_dir / "USDKRW.json").write_text(
+            json.dumps(fx, ensure_ascii=False, separators=(",", ":")),
+            encoding="utf-8",
+        )
+        print(f"  ok: {fx['count']} rows {fx['first']} ~ {fx['last']}")
 
     fetchers = {"us": (fetch_symbol_us, REQUEST_INTERVAL_SEC), "kr": (fetch_symbol_kr, NAVER_INTERVAL_SEC)}
     for market in ("us", "kr"):
