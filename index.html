@@ -10,6 +10,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="MDD계산기">
+<script src="https://t1.kakaocdn.net/kakao_js_sdk/2.8.0/kakao.min.js"></script>
 <style>
   :root {
     --surface-1:      #fcfcfb;
@@ -324,6 +325,7 @@
       <button type="button" id="simImageBtn" class="btn-action">🖼 이미지 저장</button>
       <button type="button" id="simCsvBtn" class="btn-action">📄 시트 저장</button>
       <button type="button" id="simShareAppBtn" class="btn-action">📤 앱으로 공유</button>
+      <button type="button" id="simKakaoBtn" class="btn-action">💬 카카오톡 공유</button>
       <button type="button" id="simClaudeBtn" class="btn-action">🤖 클로드에 복사</button>
       <span id="simExportStatus" class="action-status"></span>
     </div>
@@ -381,6 +383,7 @@
       <button type="button" id="portfolioImageBtn" class="btn-action">🖼 이미지 저장</button>
       <button type="button" id="portfolioCsvBtn" class="btn-action">📄 시트 저장</button>
       <button type="button" id="portfolioShareAppBtn" class="btn-action">📤 앱으로 공유</button>
+      <button type="button" id="portfolioKakaoBtn" class="btn-action">💬 카카오톡 공유</button>
       <button type="button" id="portfolioClaudeBtn" class="btn-action">🤖 클로드에 복사</button>
       <span id="portfolioExportStatus" class="action-status"></span>
     </div>
@@ -615,6 +618,41 @@ async function shareResultToApps(data, statusElId) {
       // 사용자가 공유를 취소한 경우는 조용히 무시
     }
   }, "image/png");
+}
+
+/* 카카오톡 공유 — 카카오 디벨로퍼스에 등록한 JavaScript 키로 초기화한다.
+   이 키는 도메인 제한이 걸려 있어 코드에 그대로 노출해도 안전하다(서버 비밀키와 다름). */
+const KAKAO_JS_KEY = "6d122bbe9d926f06ce1d964db6fc4340";
+
+function initKakao() {
+  if (typeof Kakao === "undefined") return;
+  try {
+    if (!Kakao.isInitialized()) Kakao.init(KAKAO_JS_KEY);
+  } catch (err) {
+    // SDK 로드 실패(오프라인 등) — 카카오 공유 버튼만 조용히 비활성
+  }
+}
+
+function shareToKakao(data, url, statusElId) {
+  if (typeof Kakao === "undefined" || !Kakao.isInitialized || !Kakao.isInitialized()) {
+    flashStatus(statusElId, "카카오톡 공유 기능을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.");
+    return;
+  }
+  const statLine = data.stats.slice(0, 3).map((s) => `${s.label} ${s.value}`).join(" · ");
+  try {
+    Kakao.Share.sendDefault({
+      objectType: "feed",
+      content: {
+        title: data.title,
+        description: statLine,
+        imageUrl: `${location.origin}${location.pathname.replace(/[^/]*$/, "")}icons/icon-512.png`,
+        link: { webUrl: url, mobileWebUrl: url },
+      },
+      buttons: [{ title: "결과 보러가기", link: { webUrl: url, mobileWebUrl: url } }],
+    });
+  } catch (err) {
+    flashStatus(statusElId, "카카오톡 공유 중 오류가 발생했습니다.");
+  }
 }
 
 /* 공유 링크: 설정을 JSON→base64로 URL 해시에 담는다 (서버 없이 링크만으로 복원) */
@@ -2258,6 +2296,7 @@ async function renderDividendHistory(symbol, full) {
 }
 
 async function init() {
+  initKakao();
   try {
     state.manifest = await fetchJSON(`${DATA_DIR}/manifest.json`);
   } catch (err) {
@@ -2360,8 +2399,14 @@ async function init() {
   });
   document.getElementById("alignStartToggle").addEventListener("change", renderCompare);
 
-  addPortfolioRow("DIVO", 75);
-  addPortfolioRow("VOO", 25);
+  // 공유 링크(#portfolio=...)가 있으면 그 구성으로, 없으면 기본값(DIVO 75%+VOO 25%)으로 시작
+  const sharedPortfolioCfg = decodeConfigFromHash("portfolio", location.hash);
+  if (Array.isArray(sharedPortfolioCfg) && sharedPortfolioCfg.length) {
+    for (const r of sharedPortfolioCfg) addPortfolioRow(r.symbol, r.weight, r.account);
+  } else {
+    addPortfolioRow("DIVO", 75);
+    addPortfolioRow("VOO", 25);
+  }
   document.getElementById("addPortfolioRow").addEventListener("click", () => {
     const used = new Set([...document.querySelectorAll(".portfolio-symbol")].map((el) => el.value));
     const next = state.listedEtfs.find((e) => !used.has(e.symbol)) || state.listedEtfs[0];
@@ -2381,6 +2426,12 @@ async function init() {
   document.getElementById("portfolioShareAppBtn").addEventListener("click", () => {
     if (!state.portfolioSnapshotData) { flashStatus("portfolioExportStatus", "먼저 계산 결과가 나온 뒤 눌러주세요"); return; }
     shareResultToApps(state.portfolioSnapshotData, "portfolioExportStatus");
+  });
+  document.getElementById("portfolioKakaoBtn").addEventListener("click", () => {
+    if (!state.portfolioSnapshotData) { flashStatus("portfolioExportStatus", "먼저 계산 결과가 나온 뒤 눌러주세요"); return; }
+    const rows = serializePortfolioRows();
+    const url = `${location.origin}${location.pathname}#${encodeConfigToHash("portfolio", rows)}`;
+    shareToKakao(state.portfolioSnapshotData, url, "portfolioExportStatus");
   });
   document.getElementById("portfolioClaudeBtn").addEventListener("click", () => {
     if (!state.portfolioSnapshotData) { flashStatus("portfolioExportStatus", "먼저 계산 결과가 나온 뒤 눌러주세요"); return; }
@@ -2446,6 +2497,11 @@ async function init() {
   document.getElementById("simShareAppBtn").addEventListener("click", () => {
     if (!state.simSnapshotData) { flashStatus("simExportStatus", "먼저 계산 결과가 나온 뒤 눌러주세요"); return; }
     shareResultToApps(state.simSnapshotData, "simExportStatus");
+  });
+  document.getElementById("simKakaoBtn").addEventListener("click", () => {
+    if (!state.simSnapshotData) { flashStatus("simExportStatus", "먼저 계산 결과가 나온 뒤 눌러주세요"); return; }
+    const url = `${location.origin}${location.pathname}#${encodeConfigToHash("sim", serializeSimConfig())}`;
+    shareToKakao(state.simSnapshotData, url, "simExportStatus");
   });
   document.getElementById("simClaudeBtn").addEventListener("click", () => {
     if (!state.simSnapshotData) { flashStatus("simExportStatus", "먼저 계산 결과가 나온 뒤 눌러주세요"); return; }
