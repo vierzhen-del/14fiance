@@ -309,14 +309,27 @@
       <select id="simFutureYears" aria-label="미래 추정 기간" style="min-width:120px;">
         <option value="5">향후 5년</option>
         <option value="10" selected>향후 10년</option>
+        <option value="11">향후 11년</option>
+        <option value="12">향후 12년</option>
+        <option value="13">향후 13년</option>
+        <option value="14">향후 14년</option>
+        <option value="15">향후 15년</option>
+        <option value="16">향후 16년</option>
         <option value="20">향후 20년</option>
+        <option value="25">향후 25년</option>
         <option value="30">향후 30년</option>
+        <option value="35">향후 35년</option>
+        <option value="40">향후 40년</option>
+        <option value="45">향후 45년</option>
+        <option value="50">향후 50년</option>
       </select>
+      <label style="font-size:12.5px; color:var(--text-secondary); display:flex; align-items:center; gap:6px;">목표일(선택) <input type="date" id="simGoalDate" aria-label="목표일"></label>
       <div class="portfolio-weight-wrap">
         <input type="number" id="simGoalAmount" class="portfolio-weight" style="width:130px" min="0" step="1" placeholder="목표 금액 (선택)" aria-label="목표 금액">
         <span id="simGoalUnit" style="font-size:12.5px; color:var(--text-muted);">$ 목표</span>
       </div>
     </div>
+    <p id="simGoalDateHint" class="stat-sub" style="display:none; margin:-4px 0 10px;">목표일을 지정하면 "향후 N년 추정" 대신 오늘부터 그 날짜까지 남은 기간으로 미래 추정을 계산합니다.</p>
     <p id="simCustomHint" class="stat-sub" style="display:none; margin:-4px 0 10px;">종목마다 투자 방식(거치·월적립·거치+월적립)과 금액을 따로 입력합니다. 통화·기간·미래 추정 기간은 위 공통 설정을 그대로 씁니다.</p>
     <p id="simFxHint" class="stat-sub" style="display:none; margin:-4px 0 10px;">고정 환율: 백테스트 시작일의 환율을 전체 기간에 그대로 적용합니다(환율 변동 효과 제외 — 환헤지 가정과 비슷). 투자금 통화와 종목 통화가 다를 때만 결과가 달라집니다.</p>
     <div class="action-row">
@@ -1782,6 +1795,7 @@ function serializeSimConfig() {
     mode: document.getElementById("simMode").value,
     amount: document.getElementById("simAmount").value,
     futureYears: document.getElementById("simFutureYears").value,
+    goalDate: document.getElementById("simGoalDate").value,
     goalAmount: document.getElementById("simGoalAmount").value,
     months: document.getElementById("periodSelect").value,
     startDate: document.getElementById("simStartDate").value,
@@ -1802,6 +1816,7 @@ function applySimConfig(cfg) {
   if (cfg.mode) document.getElementById("simMode").value = cfg.mode;
   if (cfg.amount) document.getElementById("simAmount").value = cfg.amount;
   if (cfg.futureYears) document.getElementById("simFutureYears").value = cfg.futureYears;
+  document.getElementById("simGoalDate").value = cfg.goalDate || "";
   document.getElementById("simGoalAmount").value = cfg.goalAmount || "";
   if (cfg.months) document.getElementById("periodSelect").value = cfg.months;
   document.getElementById("simStartDate").value = cfg.startDate || "";
@@ -1845,7 +1860,13 @@ async function renderSimulator() {
   const inputMode = state.simInputMode;
   const mode = document.getElementById("simMode").value;
   const amount = parseFloat(document.getElementById("simAmount").value) || 0;
-  const futureYears = Number(document.getElementById("simFutureYears").value);
+  const dropdownYears = Number(document.getElementById("simFutureYears").value);
+  const goalDateVal = document.getElementById("simGoalDate").value;
+  const todayForGoal = new Date().toISOString().slice(0, 10);
+  // 목표일을 지정하면(오늘보다 미래일 때만) 드롭다운 대신 오늘부터 목표일까지 남은 기간(년)을 쓴다
+  const goalDateYears = goalDateVal && goalDateVal > todayForGoal ? daysBetween(todayForGoal, goalDateVal) / 365.25 : null;
+  const futureYears = goalDateYears != null ? goalDateYears : dropdownYears;
+  document.getElementById("simGoalDateHint").style.display = goalDateYears != null ? "" : "none";
   const months = Number(document.getElementById("periodSelect").value);
   // max 속성은 달력 UI에서만 미래 날짜를 막아준다 — 모바일에서 숫자를 직접 타이핑하면
   // 그 제한을 건너뛸 수 있으므로, 여기서도 오늘 날짜로 강제 보정한다(시작일·종료일 모두)
@@ -2122,7 +2143,7 @@ async function renderSimulator() {
     <p class="chart-title" style="margin-top:20px;">평가액 낙폭 추이</p>
     <div id="simDdChart"></div>
 
-    <p class="chart-title" style="margin-top:24px;">🔮 향후 ${futureYears}년 추정 (과거 실적 기반)</p>
+    <p class="chart-title" style="margin-top:24px;">🔮 ${goalDateYears != null ? `목표일(${goalDateVal})까지` : `향후 ${futureYears}년`} 추정 (과거 실적 기반)</p>
     <div class="stat-row">
       <div class="stat">
         <p class="stat-label">예상 평가액</p>
@@ -2135,7 +2156,7 @@ async function renderSimulator() {
         <p class="stat-sub">백테스트 기간 포트폴리오 CAGR</p>
       </div>
       <div class="stat">
-        <p class="stat-label">예상 월배당 (${futureYears}년 후)</p>
+        <p class="stat-label">예상 월배당 (${goalDateYears != null ? goalDateVal : `${futureYears}년 후`})</p>
         <p class="stat-value">${fut.monthlyDiv != null ? fmt(fut.monthlyDiv) : "—"}</p>
         <p class="stat-sub">${fut.monthlyDiv != null ? `가중평균 수익률 ${(divYield * 100).toFixed(2)}% · 배당성장 연 ${(divGrowth * 100).toFixed(1)}% 가정` : "배당 데이터 없음"}</p>
       </div>
@@ -2546,9 +2567,11 @@ async function init() {
   document.getElementById("simFutureYears").addEventListener("change", renderSimulator);
   document.getElementById("simAmount").addEventListener("input", renderSimulator);
   document.getElementById("simGoalAmount").addEventListener("input", renderSimulator);
+  document.getElementById("simGoalDate").addEventListener("change", renderSimulator);
   const todayStr = new Date().toISOString().slice(0, 10);
   document.getElementById("simStartDate").max = todayStr;
   document.getElementById("simEndDate").max = todayStr;
+  document.getElementById("simGoalDate").min = todayStr;
   document.getElementById("simStartDate").addEventListener("change", renderSimulator);
   document.getElementById("simEndDate").addEventListener("change", renderSimulator);
   document.getElementById("simDateClear").addEventListener("click", () => {
