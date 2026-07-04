@@ -209,6 +209,27 @@
   .btn-action:hover { color: var(--text-primary); border-color: var(--text-muted); }
   .action-status { font-size: 12px; color: var(--good); }
 
+  /* ---- 시뮬레이터: 종목별 개별 입력 모드 ---- */
+  .sim-row-mode {
+    font: inherit; font-size: 13px; padding: 8px 8px; border-radius: 10px;
+    border: 1px solid var(--border); background: var(--surface-1); color: var(--text-primary);
+  }
+  .sim-row-lump, .sim-row-monthly {
+    font: inherit; font-size: 13.5px; width: 108px;
+    padding: 9px 8px; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--surface-1); color: var(--text-primary); text-align: right;
+  }
+  .sim-custom-fields { display: none; align-items: center; gap: 6px; flex-wrap: wrap; }
+  #simRows.custom-mode .sim-weight-field { display: none; }
+  #simRows.custom-mode .sim-custom-fields { display: flex; }
+
+  .sim-per-asset-table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 8px 0 4px; }
+  .sim-per-asset-table th, .sim-per-asset-table td {
+    padding: 7px 8px; text-align: right; border-bottom: 1px solid var(--gridline);
+  }
+  .sim-per-asset-table th:first-child, .sim-per-asset-table td:first-child { text-align: left; }
+  .sim-per-asset-table th { color: var(--text-muted); font-weight: 600; font-size: 12px; }
+
   /* ---- 시장 구분 선택 ---- */
   .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
   .seg button {
@@ -229,6 +250,13 @@
   <p class="section-lede">과거 데이터로 "그때 투자했다면 지금 얼마"를 계산하고(백테스트), 그 실적을 바탕으로 한 미래 추정치도 보여줍니다. 아래에서 기간을 직접 고르거나, 비워두면 "ETF MDD 비교" 등 다른 섹션과 같은 기간 선택을 그대로 씁니다.</p>
 
   <div class="card">
+    <p class="checklist-group-label">투자 방식</p>
+    <div class="controls" style="margin-bottom:10px;">
+      <div class="seg" id="simInputModeSeg" role="group" aria-label="투자금 입력 방식">
+        <button type="button" data-input-mode="simple" class="active">간단 (비중으로 배분)</button>
+        <button type="button" data-input-mode="custom">종목별 개별 입력</button>
+      </div>
+    </div>
     <p class="checklist-group-label">투자 종목 (미국·국내 혼합 가능)</p>
     <div id="simRows" class="portfolio-rows"></div>
     <button type="button" id="addSimRow" class="btn-add">+ 종목 추가</button>
@@ -245,13 +273,15 @@
         <button type="button" data-cur="USD" class="active">$ 달러</button>
         <button type="button" data-cur="KRW">₩ 원화</button>
       </div>
-      <select id="simMode" aria-label="투자 방식" style="min-width:150px;">
-        <option value="dca" selected>월적립식 (매월 매수)</option>
-        <option value="lump">거치식 (한 번에 투자)</option>
-      </select>
-      <div class="portfolio-weight-wrap">
-        <input type="number" id="simAmount" class="portfolio-weight" style="width:110px" min="1" step="1" value="1000">
-        <span id="simAmountUnit" style="font-size:12.5px; color:var(--text-muted);">$/월</span>
+      <div id="simGlobalAmount" style="display:contents;">
+        <select id="simMode" aria-label="투자 방식" style="min-width:150px;">
+          <option value="dca" selected>월적립식 (매월 매수)</option>
+          <option value="lump">거치식 (한 번에 투자)</option>
+        </select>
+        <div class="portfolio-weight-wrap">
+          <input type="number" id="simAmount" class="portfolio-weight" style="width:110px" min="1" step="1" value="1000">
+          <span id="simAmountUnit" style="font-size:12.5px; color:var(--text-muted);">$/월</span>
+        </div>
       </div>
       <select id="simFutureYears" aria-label="미래 추정 기간" style="min-width:120px;">
         <option value="5">향후 5년</option>
@@ -260,6 +290,7 @@
         <option value="30">향후 30년</option>
       </select>
     </div>
+    <p id="simCustomHint" class="stat-sub" style="display:none; margin:-4px 0 10px;">종목마다 투자 방식(거치·월적립·거치+월적립)과 금액을 따로 입력합니다. 통화·기간·미래 추정 기간은 위 공통 설정을 그대로 씁니다.</p>
     <div class="action-row">
       <button type="button" id="simSaveBtn" class="btn-action">💾 설정 저장</button>
       <button type="button" id="simLoadBtn" class="btn-action">📂 불러오기</button>
@@ -478,6 +509,13 @@ function buildResultCSV(data) {
     if (data.dd) row.push((data.dd[i] * 100).toFixed(2));
     lines.push(row.join(","));
   }
+  if (data.perAsset && data.perAsset.length) {
+    lines.push("", "종목별 개별 결과");
+    lines.push(["종목", "방식", "납입원금", "최종평가액", "수익률", "MDD"].join(","));
+    for (const pa of data.perAsset) {
+      lines.push([pa.symbol, pa.mode, pa.contributed, pa.finalValue, pa.returnPct, pa.mdd].join(","));
+    }
+  }
   return lines.join("\n");
 }
 
@@ -491,6 +529,12 @@ function buildResultSummaryText(data) {
   const lines = [data.title, data.subtitle, ""];
   for (const s of data.stats) {
     lines.push(`- ${s.label}: ${s.value}${s.sub ? ` (${s.sub})` : ""}`);
+  }
+  if (data.perAsset && data.perAsset.length) {
+    lines.push("", "종목별 개별 결과:");
+    for (const pa of data.perAsset) {
+      lines.push(`- ${pa.symbol} (${pa.mode}): 납입원금 ${pa.contributed} → 최종 ${pa.finalValue}, 수익률 ${pa.returnPct}, MDD ${pa.mdd}`);
+    }
   }
   lines.push("", `기간: ${data.dates[0]} ~ ${data.dates[data.dates.length - 1]}`);
   return lines.join("\n");
@@ -1295,11 +1339,9 @@ function fxRateOn(fx, dateStr) {
   return ans >= 0 ? fx.rates[ans] : null;
 }
 
-/* 다중 종목·다중 통화 백테스트.
-   assets: [{symbol, weight(정규화됨), dates, closes, currency, div}]
-   투자금(amount)은 선택 통화(cur) 기준. 각 종목 가격·배당은 그날의
-   환율로 선택 통화로 환산해 계산한다. */
-function runPortfolioBacktest(assets, mode, amount, cur, fx) {
+/* 다중 종목·다중 통화 백테스트 — 공통 거래일 교집합과 선택 통화(cur) 기준 환산
+   가격 행렬을 만든다. 각 종목 가격은 그날의 환율로 환산한다. */
+function runPortfolioBacktest(assets, cur, fx) {
   // 공통 거래일 = 모든 종목 날짜의 교집합
   const priceMaps = assets.map((a) => {
     const m = new Map();
@@ -1339,7 +1381,14 @@ function runPortfolioBacktest(assets, mode, amount, cur, fx) {
   return { dates: commonDates, conv };
 }
 
-function simulateOnConverted(dates, conv, assets, mode, amount, cur, fx, months, dateRange) {
+/* 종목별로 독립된 거치금·월적립액을 가질 수 있는 통합 시뮬레이션 엔진.
+   assets: [{symbol, currency, div, lumpAmount, monthlyAmount}]
+   - lumpAmount: 첫 거래일에 한 번 투자하는 금액(0이면 거치 없음)
+   - monthlyAmount: 매월 첫 거래일마다 투자하는 금액(0이면 월적립 없음)
+   두 값을 함께 주면 "거치+월적립"이 된다. "간단(비중배분)" 모드는
+   렌더러에서 amount*weight를 lumpAmount 또는 monthlyAmount로 미리 변환해 넣는
+   방식으로 이 엔진에 합류한다 — 즉 두 입력 모드가 같은 계산 경로를 공유한다. */
+function simulatePerAsset(dates, conv, assets, cur, fx, months, dateRange) {
   // 기간 슬라이스 (모든 배열 같은 인덱스 공유). 시작일·종료일을 직접 고른 경우 그 기간을, 아니면 프리셋 개월 수를 쓴다
   let startIdx = 0, endIdx = dates.length - 1;
   if (dateRange && dateRange.start && dateRange.end) {
@@ -1363,15 +1412,21 @@ function simulateOnConverted(dates, conv, assets, mode, amount, cur, fx, months,
   const startTs = Date.parse(D[0]);
   const monthsAt = (dateStr) => (Date.parse(dateStr) - startTs) / (86400000 * 30.4375);
 
-  // 순수 가격(+환율) 지수: 매수 타이밍과 무관하게 CAGR 계산용으로 쓴다 (t0=100)
+  // 순수 가격(+환율) 지수: 매수 타이밍과 무관하게 CAGR 계산용으로 쓴다 (t0=100). 투자 비중은
+  // 각 종목의 총 납입액 비율로 근사한다(거치·월적립 모두 동일 비율로 반영되므로 정확히 맞아떨어진다)
+  const totalWeight = assets.reduce((s, a) => s + a.lumpAmount + a.monthlyAmount, 0) || 1;
   const nav = new Array(n);
   for (let i = 0; i < n; i++) {
     let v = 0;
-    for (let k = 0; k < assets.length; k++) v += assets[k].weight * (P[k][i] / P[k][0]);
+    for (let k = 0; k < assets.length; k++) v += ((assets[k].lumpAmount + assets[k].monthlyAmount) / totalWeight) * (P[k][i] / P[k][0]);
     nav[i] = v * 100;
   }
 
   const shares = assets.map(() => 0);
+  const perContributed = assets.map(() => 0);
+  const perDivCash = assets.map(() => 0);
+  const perFlows = assets.map(() => []);
+  const perDivEvents = assets.map(() => []);
   let contributed = 0, divCash = 0;
   const flows = [];
   const divEvents = [];
@@ -1385,15 +1440,22 @@ function simulateOnConverted(dates, conv, assets, mode, amount, cur, fx, months,
 
   let lastMonth = "";
   const values = new Array(n);
+  const perValues = assets.map(() => new Array(n));
   for (let i = 0; i < n; i++) {
     const month = D[i].slice(0, 7);
-    const investToday = mode === "lump" ? i === 0 : month !== lastMonth;
-    if (investToday) {
-      for (let k = 0; k < assets.length; k++) {
-        shares[k] += (amount * assets[k].weight) / P[k][i];
+    const isFirstDay = i === 0;
+    const isMonthChange = month !== lastMonth;
+    for (let k = 0; k < assets.length; k++) {
+      let buy = 0;
+      if (isFirstDay && assets[k].lumpAmount > 0) buy += assets[k].lumpAmount;
+      if (isMonthChange && assets[k].monthlyAmount > 0) buy += assets[k].monthlyAmount;
+      if (buy > 0) {
+        shares[k] += buy / P[k][i];
+        perContributed[k] += buy;
+        contributed += buy;
+        perFlows[k].push({ t: monthsAt(D[i]), amount: -buy });
+        flows.push({ t: monthsAt(D[i]), amount: -buy });
       }
-      contributed += amount;
-      flows.push({ t: monthsAt(D[i]), amount: -amount });
     }
     lastMonth = month;
 
@@ -1408,13 +1470,19 @@ function simulateOnConverted(dates, conv, assets, mode, amount, cur, fx, months,
         }
         const cash = shares[k] * amt;
         divCash += cash;
+        perDivCash[k] += cash;
         divEvents.push({ date: a.div.dates[divPtr[k]], cash });
+        perDivEvents[k].push({ date: a.div.dates[divPtr[k]], cash });
         divPtr[k]++;
       }
     }
 
     let v = 0;
-    for (let k = 0; k < assets.length; k++) v += shares[k] * P[k][i];
+    for (let k = 0; k < assets.length; k++) {
+      const pv = shares[k] * P[k][i];
+      perValues[k][i] = pv;
+      v += pv;
+    }
     values[i] = v;
   }
 
@@ -1425,21 +1493,33 @@ function simulateOnConverted(dates, conv, assets, mode, amount, cur, fx, months,
   const lastYearStart = new Date(Date.parse(D[n - 1]) - 365 * 86400000).toISOString().slice(0, 10);
   const ttmDivCash = divEvents.filter((e) => e.date > lastYearStart).reduce((s, e) => s + e.cash, 0);
 
-  return { dates: D, values, nav, contributed, finalValue, divCash, ttmDivCash, irr, shares };
+  const perAsset = assets.map((a, k) => {
+    const finalV = perValues[k][n - 1];
+    perFlows[k].push({ t: monthsAt(D[n - 1]), amount: finalV + perDivCash[k] });
+    const pIrr = perContributed[k] > 0 ? solveAnnualIRR(perFlows[k]) : null;
+    const pTtmDiv = perDivEvents[k].filter((e) => e.date > lastYearStart).reduce((s, e) => s + e.cash, 0);
+    const { mdd, troughIdx } = calcMDD(D, perValues[k]);
+    return {
+      symbol: a.symbol, values: perValues[k], contributed: perContributed[k], finalValue: finalV,
+      divCash: perDivCash[k], ttmDivCash: pTtmDiv, irr: pIrr, shares: shares[k], mdd, troughIdx,
+      lumpAmount: a.lumpAmount, monthlyAmount: a.monthlyAmount,
+    };
+  });
+
+  return { dates: D, values, nav, contributed, finalValue, divCash, ttmDivCash, irr, shares, perAsset };
 }
 
 /* 과거 실적 기반 미래 추정 (보장 아님) */
-function estimateFuture(mode, amount, years, priceCAGR, divYield, divGrowth) {
+/* totalLump(최초 거치 총액)·totalMonthly(월 적립 총액)을 함께 받아 미래가치를 추정한다.
+   두 값을 동시에 가질 수 있어 "거치+월적립" 혼합 구성도 그대로 계산된다
+   (totalMonthly=0이면 순수 거치식, totalLump=0이면 순수 월적립식과 같아진다). */
+function estimateFuture(totalLump, totalMonthly, years, priceCAGR, divYield, divGrowth) {
   const months = years * 12;
   const rm = Math.pow(1 + priceCAGR, 1 / 12) - 1;
-  let fv, contributed;
-  if (mode === "lump") {
-    fv = amount * Math.pow(1 + priceCAGR, years);
-    contributed = amount;
-  } else {
-    fv = Math.abs(rm) < 1e-9 ? amount * months : amount * ((Math.pow(1 + rm, months) - 1) / rm);
-    contributed = amount * months;
-  }
+  const fvLump = totalLump * Math.pow(1 + priceCAGR, years);
+  const fvMonthly = Math.abs(rm) < 1e-9 ? totalMonthly * months : totalMonthly * ((Math.pow(1 + rm, months) - 1) / rm);
+  const fv = fvLump + fvMonthly;
+  const contributed = totalLump + totalMonthly * months;
   const monthlyDiv = divYield != null ? (fv * divYield * Math.pow(1 + (divGrowth || 0), years)) / 12 : null;
   return { fv, contributed, monthlyDiv };
 }
@@ -1462,22 +1542,48 @@ function estimateDivGrowth(div) {
   return Math.max(-0.2, Math.min(0.3, g));
 }
 
-function addSimRow(defaultSymbol, defaultWeight) {
+function updateSimRowFieldVisibility(row) {
+  const rowMode = row.querySelector(".sim-row-mode").value;
+  const lumpEl = row.querySelector(".sim-row-lump");
+  const monthlyEl = row.querySelector(".sim-row-monthly");
+  lumpEl.style.display = rowMode === "dca" ? "none" : "";
+  monthlyEl.style.display = rowMode === "lump" ? "none" : "";
+  if (rowMode === "dca") lumpEl.value = "";
+  if (rowMode === "lump") monthlyEl.value = "";
+}
+
+function addSimRow(defaultSymbol, defaultWeight, rowMode, lumpAmount, monthlyAmount) {
   const rowId = "srow_" + (portfolioRowSeq++);
   const row = document.createElement("div");
   row.className = "portfolio-row";
   row.dataset.rowId = rowId;
   row.innerHTML = `
     <select class="sim-symbol" aria-label="종목 선택">${etfOptionsHTML(defaultSymbol)}</select>
-    <div class="portfolio-weight-wrap">
+    <div class="portfolio-weight-wrap sim-weight-field">
       <input type="number" class="sim-weight" min="0" step="1" value="${defaultWeight}"> %
+    </div>
+    <div class="sim-custom-fields">
+      <select class="sim-row-mode" aria-label="종목별 투자 방식">
+        <option value="lump" ${rowMode === "lump" ? "selected" : ""}>거치</option>
+        <option value="dca" ${rowMode === "dca" ? "selected" : ""}>월적립</option>
+        <option value="both" ${rowMode === "both" ? "selected" : ""}>거치+월적립</option>
+      </select>
+      <input type="number" class="sim-row-lump" min="0" step="1" placeholder="초기 투자금" value="${lumpAmount || ""}">
+      <input type="number" class="sim-row-monthly" min="0" step="1" placeholder="월 납입액" value="${monthlyAmount || ""}">
     </div>
     <button type="button" class="portfolio-remove" aria-label="종목 제거">×</button>
   `;
   document.getElementById("simRows").appendChild(row);
+  updateSimRowFieldVisibility(row);
 
   row.querySelector(".sim-symbol").addEventListener("change", renderSimulator);
   row.querySelector(".sim-weight").addEventListener("input", renderSimulator);
+  row.querySelector(".sim-row-mode").addEventListener("change", () => {
+    updateSimRowFieldVisibility(row);
+    renderSimulator();
+  });
+  row.querySelector(".sim-row-lump").addEventListener("input", renderSimulator);
+  row.querySelector(".sim-row-monthly").addEventListener("input", renderSimulator);
   row.querySelector(".portfolio-remove").addEventListener("click", () => {
     row.remove();
     renderSimulator();
@@ -1486,11 +1592,24 @@ function addSimRow(defaultSymbol, defaultWeight) {
 
 const SIM_STORAGE_KEY = "mdd_simulator_v1";
 
+/* "간단"/"개별 입력" 전환에 따른 화면 갱신(행 필드 표시, 공통 금액 컨트롤 표시 여부, 세그 버튼) */
+function applyInputModeUI() {
+  const isCustom = state.simInputMode === "custom";
+  document.getElementById("simRows").classList.toggle("custom-mode", isCustom);
+  document.getElementById("simGlobalAmount").style.display = isCustom ? "none" : "contents";
+  document.getElementById("simCustomHint").style.display = isCustom ? "" : "none";
+  document.querySelectorAll("#simInputModeSeg button").forEach((b) => b.classList.toggle("active", b.dataset.inputMode === state.simInputMode));
+}
+
 function serializeSimConfig() {
   return {
+    inputMode: state.simInputMode,
     rows: [...document.querySelectorAll("#simRows .portfolio-row")].map((el) => ({
       symbol: el.querySelector(".sim-symbol").value,
       weight: parseFloat(el.querySelector(".sim-weight").value) || 0,
+      rowMode: el.querySelector(".sim-row-mode").value,
+      lumpAmount: parseFloat(el.querySelector(".sim-row-lump").value) || 0,
+      monthlyAmount: parseFloat(el.querySelector(".sim-row-monthly").value) || 0,
     })),
     cur: state.simCurrency,
     mode: document.getElementById("simMode").value,
@@ -1505,9 +1624,11 @@ function serializeSimConfig() {
 function applySimConfig(cfg) {
   if (!cfg || !Array.isArray(cfg.rows) || !cfg.rows.length) return false;
   document.getElementById("simRows").innerHTML = "";
-  for (const r of cfg.rows) addSimRow(r.symbol, r.weight);
+  for (const r of cfg.rows) addSimRow(r.symbol, r.weight, r.rowMode, r.lumpAmount, r.monthlyAmount);
   state.simCurrency = cfg.cur === "KRW" ? "KRW" : "USD";
   document.querySelectorAll("#simCurrencySeg button").forEach((b) => b.classList.toggle("active", b.dataset.cur === state.simCurrency));
+  state.simInputMode = cfg.inputMode === "custom" ? "custom" : "simple";
+  applyInputModeUI();
   if (cfg.mode) document.getElementById("simMode").value = cfg.mode;
   if (cfg.amount) document.getElementById("simAmount").value = cfg.amount;
   if (cfg.futureYears) document.getElementById("simFutureYears").value = cfg.futureYears;
@@ -1550,6 +1671,7 @@ async function shareSimResult() {
 async function renderSimulator() {
   state.simSnapshotData = null;
   const rowEls = [...document.querySelectorAll("#simRows .portfolio-row")];
+  const inputMode = state.simInputMode;
   const mode = document.getElementById("simMode").value;
   const amount = parseFloat(document.getElementById("simAmount").value) || 0;
   const futureYears = Number(document.getElementById("simFutureYears").value);
@@ -1558,6 +1680,7 @@ async function renderSimulator() {
   const endDateVal = document.getElementById("simEndDate").value;
   const dateRange = startDateVal && endDateVal ? { start: startDateVal, end: endDateVal } : null;
   const cur = state.simCurrency;
+  const fmt = (v) => fmtPrice(v, cur);
   const sumEl = document.getElementById("simSum");
   const result = document.getElementById("simResult");
 
@@ -1569,42 +1692,72 @@ async function renderSimulator() {
   const curSym = cur === "KRW" ? "₩" : "$";
   document.getElementById("simAmountUnit").textContent = mode === "dca" ? `${curSym}/월` : `${curSym} 총액`;
 
-  const entries = rowEls
-    .map((el) => ({
-      symbol: el.querySelector(".sim-symbol").value,
-      weight: parseFloat(el.querySelector(".sim-weight").value) || 0,
-    }))
-    .filter((e) => e.weight > 0);
-
-  const sum = entries.reduce((s, e) => s + e.weight, 0);
-  if (rowEls.length > 0) {
-    sumEl.textContent = `합계 ${sum.toFixed(0)}%` + (Math.abs(sum - 100) < 0.5 ? " ✓" : " — 자동으로 100%에 맞춰 계산됩니다");
-    sumEl.classList.toggle("ok", Math.abs(sum - 100) < 0.5);
-  } else {
+  // 입력 모드에 따라 종목별 거치금·월적립액(rawEntries)을 만든다.
+  // "간단" 모드: 비중%을 정규화해 전체 금액을 나눈다. "개별 입력" 모드: 종목마다 입력한 금액을 그대로 쓴다.
+  let rawEntries, mixLabel;
+  if (inputMode === "custom") {
     sumEl.textContent = "";
+    rawEntries = rowEls
+      .map((el) => ({
+        symbol: el.querySelector(".sim-symbol").value,
+        lumpAmount: parseFloat(el.querySelector(".sim-row-lump").value) || 0,
+        monthlyAmount: parseFloat(el.querySelector(".sim-row-monthly").value) || 0,
+      }))
+      .filter((e) => e.lumpAmount > 0 || e.monthlyAmount > 0);
+    if (rawEntries.length === 0) {
+      result.innerHTML = `<p class="compare-empty">최소 1개 종목에 투자금을 입력해주세요.</p>`;
+      return;
+    }
+    mixLabel = rawEntries
+      .map((e) => {
+        const parts = [];
+        if (e.lumpAmount > 0) parts.push(`거치 ${fmt(e.lumpAmount)}`);
+        if (e.monthlyAmount > 0) parts.push(`월 ${fmt(e.monthlyAmount)}`);
+        return `${e.symbol} ${parts.join("+")}`;
+      })
+      .join(" · ");
+  } else {
+    const weightEntries = rowEls
+      .map((el) => ({
+        symbol: el.querySelector(".sim-symbol").value,
+        weight: parseFloat(el.querySelector(".sim-weight").value) || 0,
+      }))
+      .filter((e) => e.weight > 0);
+    const sum = weightEntries.reduce((s, e) => s + e.weight, 0);
+    if (rowEls.length > 0) {
+      sumEl.textContent = `합계 ${sum.toFixed(0)}%` + (Math.abs(sum - 100) < 0.5 ? " ✓" : " — 자동으로 100%에 맞춰 계산됩니다");
+      sumEl.classList.toggle("ok", Math.abs(sum - 100) < 0.5);
+    } else {
+      sumEl.textContent = "";
+    }
+    if (weightEntries.length === 0 || sum <= 0) {
+      result.innerHTML = `<p class="compare-empty">최소 1개 종목에 비율을 입력해주세요.</p>`;
+      return;
+    }
+    if (amount <= 0) {
+      result.innerHTML = `<p class="compare-empty">금액을 입력해주세요.</p>`;
+      return;
+    }
+    rawEntries = weightEntries.map((e) => ({
+      symbol: e.symbol,
+      lumpAmount: mode === "lump" ? (amount * e.weight) / sum : 0,
+      monthlyAmount: mode === "dca" ? (amount * e.weight) / sum : 0,
+    }));
+    mixLabel = weightEntries.map((e) => `${e.symbol} ${((e.weight / sum) * 100).toFixed(0)}%`).join(" + ");
   }
 
-  if (entries.length === 0 || sum <= 0) {
-    result.innerHTML = `<p class="compare-empty">최소 1개 종목에 비율을 입력해주세요.</p>`;
-    return;
-  }
-  if (amount <= 0) {
-    result.innerHTML = `<p class="compare-empty">금액을 입력해주세요.</p>`;
-    return;
-  }
   result.innerHTML = `<p class="compare-empty">계산 중…</p>`;
-
-  const weights = entries.map((e) => ({ symbol: e.symbol, weight: e.weight / sum }));
 
   let assets, fx;
   try {
     assets = await Promise.all(
-      weights.map(async (w) => {
-        const full = await loadSymbol(w.symbol);
-        const div = await loadDividends(w.symbol);
+      rawEntries.map(async (e) => {
+        const full = await loadSymbol(e.symbol);
+        const div = await loadDividends(e.symbol);
         return {
-          symbol: w.symbol,
-          weight: w.weight,
+          symbol: e.symbol,
+          lumpAmount: e.lumpAmount,
+          monthlyAmount: e.monthlyAmount,
           dates: full.dates,
           closes: full.closes,
           currency: full.currency || "USD",
@@ -1624,12 +1777,12 @@ async function renderSimulator() {
     return;
   }
 
-  const bt0 = runPortfolioBacktest(assets, mode, amount, cur, fx);
+  const bt0 = runPortfolioBacktest(assets, cur, fx);
   if (!bt0) {
     result.innerHTML = `<p class="compare-empty">선택한 종목들의 겹치는 데이터 기간이 없습니다.</p>`;
     return;
   }
-  const sim = simulateOnConverted(bt0.dates, bt0.conv, assets, mode, amount, cur, fx, months, dateRange);
+  const sim = simulatePerAsset(bt0.dates, bt0.conv, assets, cur, fx, months, dateRange);
   if (!sim) {
     result.innerHTML = `<p class="compare-empty">선택한 기간에 데이터가 부족합니다.</p>`;
     return;
@@ -1638,27 +1791,29 @@ async function renderSimulator() {
   const { dates, values } = sim;
   const { mdd, troughIdx, ddSeries } = calcMDD(dates, values);
   const totalReturn = (sim.finalValue + sim.divCash) / sim.contributed - 1;
-  const fmt = (v) => fmtPrice(v, cur);
 
   const days = daysBetween(dates[0], dates[dates.length - 1]);
   const priceCAGR = days > 0 ? Math.pow(sim.nav[sim.nav.length - 1] / sim.nav[0], 365.25 / days) - 1 : 0;
 
-  // 가중 평균 배당수익률·배당성장률 (배당 데이터 있는 종목만, 원래 비율 기준)
+  // 가중 평균 배당수익률·배당성장률 (배당 데이터 있는 종목만, 실제 납입 비중 기준)
   let wYieldSum = 0, wYieldWeight = 0, wGrowthSum = 0;
-  for (const a of assets) {
+  for (let k = 0; k < assets.length; k++) {
+    const a = assets[k];
+    const shareW = sim.contributed > 0 ? sim.perAsset[k].contributed / sim.contributed : 0;
     const meta = state.metaBySymbol.get(a.symbol);
     if (meta && meta.ttmDividend && a.closes[a.closes.length - 1]) {
       const y = meta.ttmDividend / a.closes[a.closes.length - 1];
-      wYieldSum += y * a.weight;
-      wYieldWeight += a.weight;
-      wGrowthSum += estimateDivGrowth(a.div) * a.weight;
+      wYieldSum += y * shareW;
+      wYieldWeight += shareW;
+      wGrowthSum += estimateDivGrowth(a.div) * shareW;
     }
   }
   const divYield = wYieldWeight > 0 ? wYieldSum : null;
   const divGrowth = wYieldWeight > 0 ? wGrowthSum / wYieldWeight : 0;
-  const fut = estimateFuture(mode, amount, futureYears, priceCAGR, divYield, divGrowth);
+  const totalLump = assets.reduce((s, a) => s + a.lumpAmount, 0);
+  const totalMonthly = assets.reduce((s, a) => s + a.monthlyAmount, 0);
+  const fut = estimateFuture(totalLump, totalMonthly, futureYears, priceCAGR, divYield, divGrowth);
 
-  const mixLabel = weights.map((w) => `${w.symbol} ${(w.weight * 100).toFixed(0)}%`).join(" + ");
   const anyDiv = assets.some((a) => a.div);
   const someMissingDiv = assets.some((a) => !a.div);
   const divLine = anyDiv
@@ -1669,8 +1824,34 @@ async function renderSimulator() {
     .map((a, k) => `${a.symbol} ${sim.shares[k].toLocaleString(undefined, { maximumFractionDigits: 2 })}주`)
     .join(" · ");
 
+  // "개별 입력" 모드에서만 종목별 결과표를 추가로 보여준다("합산결과"는 두 모드 모두 위 통합 통계로 제공)
+  const perAssetTableHTML = inputMode === "custom"
+    ? `
+    <p class="chart-title" style="margin-top:20px;">종목별 개별 결과</p>
+    <div style="overflow-x:auto;">
+    <table class="sim-per-asset-table">
+      <thead><tr><th>종목</th><th>방식</th><th>납입원금</th><th>최종평가액</th><th>수익률</th><th>연IRR</th><th>MDD</th></tr></thead>
+      <tbody>
+        ${sim.perAsset.map((pa) => {
+          const paReturn = pa.contributed > 0 ? (pa.finalValue + pa.divCash) / pa.contributed - 1 : 0;
+          const modeLabel = pa.lumpAmount > 0 && pa.monthlyAmount > 0 ? "거치+월적립" : pa.lumpAmount > 0 ? "거치" : "월적립";
+          return `<tr>
+            <td>${pa.symbol}</td>
+            <td>${modeLabel}</td>
+            <td>${fmt(pa.contributed)}</td>
+            <td>${fmt(pa.finalValue)}</td>
+            <td style="color:${paReturn >= 0 ? "var(--good)" : "var(--critical)"}">${paReturn >= 0 ? "+" : ""}${(paReturn * 100).toFixed(1)}%</td>
+            <td>${pa.irr != null ? (pa.irr * 100).toFixed(1) + "%" : "—"}</td>
+            <td style="color:var(--critical)">-${(Math.abs(pa.mdd) * 100).toFixed(1)}%</td>
+          </tr>`;
+        }).join("")}
+      </tbody>
+    </table>
+    </div>`
+    : "";
+
   result.innerHTML = `
-    <p class="chart-title" style="margin-top:8px;">📊 백테스트 — ${mixLabel} · ${mode === "dca" ? `매월 ${fmt(amount)}` : `${fmt(amount)} 거치`} · ${dates[0]} ~ ${dates[dates.length - 1]}</p>
+    <p class="chart-title" style="margin-top:8px;">📊 백테스트 (합산결과) — ${mixLabel} · ${dates[0]} ~ ${dates[dates.length - 1]}</p>
     <div class="stat-row">
       <div class="stat">
         <p class="stat-label">최종 평가액 (배당 별도)</p>
@@ -1693,6 +1874,7 @@ async function renderSimulator() {
       </div>
     </div>
     <p class="stat-sub" style="border-top:1px solid var(--gridline); padding-top:12px;">💰 ${divLine}</p>
+    ${perAssetTableHTML}
 
     <p class="chart-title" style="margin-top:20px;">평가액 추이</p>
     <div id="simValueChart"></div>
@@ -1722,7 +1904,7 @@ async function renderSimulator() {
         <p class="stat-sub">과거 기간 실측치</p>
       </div>
     </div>
-    <p class="stat-sub" style="color:var(--critical);">⚠️ 미래 추정은 과거 실적을 그대로 연장한 참고치일 뿐이며, 실제 수익률·배당·낙폭을 보장하지 않습니다.</p>
+    <p class="stat-sub" style="color:var(--critical);">⚠️ 미래 추정은 과거 실적을 그대로 연장한 참고치일 뿐이며, 실제 수익률·배당·낙폭을 보장하지 않습니다.${inputMode === "custom" ? " (미래 추정은 개별 종목이 아닌 합산 포트폴리오 기준입니다)" : ""}</p>
   `;
 
   buildChart(document.getElementById("simValueChart"), {
@@ -1742,7 +1924,7 @@ async function renderSimulator() {
 
   state.simSnapshotData = {
     title: `투자 시뮬레이터 — ${mixLabel}`,
-    subtitle: `${mode === "dca" ? `매월 ${fmt(amount)}` : `${fmt(amount)} 거치`} · ${dates[0]} ~ ${dates[dates.length - 1]}`,
+    subtitle: `합산결과 · ${dates[0]} ~ ${dates[dates.length - 1]}`,
     stats: [
       { label: "최종 평가액", value: fmt(sim.finalValue), sub: `납입원금 ${fmt(sim.contributed)}` },
       { label: "총수익률", value: `${totalReturn >= 0 ? "+" : ""}${(totalReturn * 100).toFixed(1)}%`, color: totalReturn >= 0 ? cssVar("--good") : cssVar("--critical") },
@@ -1750,6 +1932,16 @@ async function renderSimulator() {
       { label: "연 수익률(IRR)", value: sim.irr != null ? `${(sim.irr * 100).toFixed(1)}%` : "—" },
     ],
     dates, values, mddIdx: troughIdx, dd: ddSeries, valueLabel: `평가액(${cur})`,
+    perAsset: inputMode === "custom"
+      ? sim.perAsset.map((pa) => ({
+          symbol: pa.symbol,
+          mode: pa.lumpAmount > 0 && pa.monthlyAmount > 0 ? "거치+월적립" : pa.lumpAmount > 0 ? "거치" : "월적립",
+          contributed: fmt(pa.contributed),
+          finalValue: fmt(pa.finalValue),
+          returnPct: pa.contributed > 0 ? (((pa.finalValue + pa.divCash) / pa.contributed - 1) * 100).toFixed(1) + "%" : "—",
+          mdd: `-${(Math.abs(pa.mdd) * 100).toFixed(1)}%`,
+        }))
+      : null,
   };
 }
 
@@ -1864,6 +2056,7 @@ async function init() {
   state.marketFilter = "all";
   state.compareChecked = new Set(["SPY", "QQQ", "SCHD", "GLD", "TLT"]);
   state.simCurrency = "USD";
+  state.simInputMode = "simple";
 
   const select = document.getElementById("etfSelect");
   const checklist = document.getElementById("compareChecklist");
@@ -1971,11 +2164,19 @@ async function init() {
     copyResultSummary(state.portfolioSnapshotData, "portfolioExportStatus");
   });
 
-  // 시뮬레이터: 공유 링크가 있으면 그 설정으로, 없으면 기본값(SPY 100%)으로 시작
+  // 시뮬레이터: 공유 링크가 있으면 그 설정으로, 없으면 기본값(SPY 100%, 간단 모드)으로 시작
   const sharedSimCfg = decodeConfigFromHash("sim", location.hash);
   if (!sharedSimCfg || !applySimConfig(sharedSimCfg)) {
     addSimRow("SPY", 100);
+    applyInputModeUI();
   }
+  document.querySelectorAll("#simInputModeSeg button").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      state.simInputMode = btn.dataset.inputMode;
+      applyInputModeUI();
+      renderSimulator();
+    });
+  });
   document.querySelectorAll("#simCurrencySeg button").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.cur === state.simCurrency);
     btn.addEventListener("click", () => {
