@@ -1,17 +1,14 @@
 #!/usr/bin/env python3
-"""[임시 진단용] 네이버 모바일 증권에서 국내 ETF 분배금 이력이 어떤 형태로
-제공되는지 CI 러너(실제 인터넷 접근 가능)에서 확인한다.
+"""[임시 진단용] 네이버 모바일 증권 내부 API(m.stock.naver.com/api/stock/{code}/integration)
+응답 전체 구조를 확인해 개별 배당락일/배당금 이력이 어느 키에 들어있는지 찾는다.
 
-fetch_dividends_kr가 전 종목 None을 반환한 원인 규명:
-- analysis 페이지가 서버 렌더링인지(한글이 그대로 있는지) 확인
-- __NEXT_DATA__ JSON 안에 배당 데이터가 있는지 확인
-- 내부 JSON API 후보들을 직접 두드려 응답 확인
-
-성공적으로 원인을 찾으면 이 파일과 probe.yml은 삭제한다.
+1차 프로브 결과: /api/stock/{code}/integration 가 200으로 정상 JSON을 반환함을
+확인했다(dividendYieldTtm, dividendPerShareTtm 등 TTM 요약치는 있음). 이번엔
+전체 응답을 훑어서 날짜별 개별 배당 이력 리스트가 있는 키를 찾는다.
 """
 import json
-import re
 import sys
+import urllib.error
 import urllib.request
 
 HEADERS = {
@@ -20,20 +17,10 @@ HEADERS = {
         "(KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36"
     ),
     "Referer": "https://m.stock.naver.com/",
-    "Accept": "application/json, text/html;q=0.9, */*;q=0.8",
+    "Accept": "application/json",
 }
 
 CODES = ["441640", "472150"]
-
-API_CANDIDATES = [
-    "https://m.stock.naver.com/api/stock/{code}/integration",
-    "https://m.stock.naver.com/api/stock/{code}/dividend",
-    "https://m.stock.naver.com/api/stock/{code}/dividend/history",
-    "https://m.stock.naver.com/api/stock/{code}/analysis",
-    "https://api.stock.naver.com/etf/{code}/dividend",
-    "https://api.stock.naver.com/stock/{code}/dividend",
-    "https://m.stock.naver.com/front-api/etf/dividend?code={code}",
-]
 
 
 def get(url: str) -> tuple[int, str]:
@@ -42,34 +29,81 @@ def get(url: str) -> tuple[int, str]:
         with urllib.request.urlopen(req, timeout=20) as resp:
             return resp.status, resp.read().decode("utf-8", errors="replace")
     except urllib.error.HTTPError as err:
-        return err.code, ""
+        try:
+            return err.code, err.read().decode("utf-8", errors="replace")
+        except Exception:  # noqa: BLE001
+            return err.code, ""
     except Exception as err:  # noqa: BLE001
         return -1, str(err)
 
 
+def find_date_like_lists(obj, path="root", found=None):
+    """dict/list를 재귀 순회하며, 'date'/'day'/'ymd' 비슷한 키를 가진
+    dict들의 list를 찾아 (path, sample) 형태로 수집한다."""
+    if found is None:
+        found = []
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            find_date_like_lists(v, f"{path}.{k}", found)
+    elif isinstance(obj, list) and obj:
+        first = obj[0]
+        if isinstance(first, dict):
+            keys = set()
+            for item in obj[:3]:
+                if isinstance(item, dict):
+                    keys |= set(item.keys())
+            date_like = [k for k in keys if any(t in k.lower() for t in ("date", "day", "ymd", "dt"))]
+            if date_like or "dividend" in path.lower():
+                found.append((path, len(obj), list(keys)[:12], obj[:2]))
+        for item in obj[:5]:
+            find_date_like_lists(item, f"{path}[]", found)
+    return found
+
+
 def main() -> int:
     for code in CODES:
-        print(f"\n===== {code} : analysis page =====")
-        status, html = get(f"https://m.stock.naver.com/domestic/stock/{code}/analysis")
-        print(f"status={status} length={len(html)}")
-        if html:
-            print("  raw '배당락일' in html:", "배당락일" in html)
-            print("  escaped '\\ubc30\\ub2f9\\ub77d\\uc77c' in html:", "\\ubc30\\ub2f9\\ub77d\\uc77c" in html)
-            print("  '__NEXT_DATA__' in html:", "__NEXT_DATA__" in html)
-            print("  'dividend' count:", html.lower().count("dividend"))
-            # dividend 주변 문맥 샘플 3곳
-            for i, m in enumerate(re.finditer(r"dividend", html, re.I)):
-                if i >= 3:
-                    break
-                s = max(0, m.start() - 120)
-                print(f"  ctx{i}: ...{html[s:m.start()+180]!r}...")
+        print(f"\n===== {code} : integration full =====")
+        status, body = get(f"https://m.stock.naver.com/api/stock/{code}/integration")
+        print(f"status={status} length={len(body)}")
+        if status != 200:
+            print("  body:", body[:300])
+            continue
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError as err:
+            print("  JSON parse failed:", err)
+            continue
 
-        print(f"\n===== {code} : API candidates =====")
-        for tpl in API_CANDIDATES:
-            url = tpl.format(code=code)
-            status, body = get(url)
-            head = body[:400].replace("\n", " ")
-            print(f"[{status}] {url}\n    {head!r}")
+        print("  top-level keys:", list(data.keys()))
+        hits = find_date_like_lists(data)
+        if hits:
+            print(f"  candidate date-like lists ({len(hits)}):")
+            for path, n, keys, sample in hits:
+                print(f"    - {path}: n={n} keys={keys}")
+                print(f"      sample={json.dumps(sample, ensure_ascii=False)[:400]}")
+        else:
+            print("  no date-like list found via heuristic scan")
+
+        # dividend 관련 키를 직접 검색 (얕은 깊이)
+        def walk_keys(obj, path="root", depth=0, out=None):
+            if out is None:
+                out = []
+            if depth > 6:
+                return out
+            if isinstance(obj, dict):
+                for k, v in obj.items():
+                    if "divid" in k.lower():
+                        out.append((f"{path}.{k}", type(v).__name__, str(v)[:200]))
+                    walk_keys(v, f"{path}.{k}", depth + 1, out)
+            elif isinstance(obj, list):
+                for item in obj[:5]:
+                    walk_keys(item, f"{path}[]", depth + 1, out)
+            return out
+
+        divkeys = walk_keys(data)
+        print(f"  keys containing 'divid' ({len(divkeys)}):")
+        for path, typ, val in divkeys:
+            print(f"    - {path} ({typ}): {val}")
 
     return 0
 
