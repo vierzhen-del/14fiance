@@ -1326,6 +1326,7 @@ function loadPortfolioSettings() {
    절대 내보내지 않는다. 종목 선택값이 곧 종목코드라서 이름 유사 매칭 오류가
    구조적으로 불가능하다(14RAE 지침 A-13: 코드 기준 1:1 대조). */
 const MY_ASSETS_KEY = "my_assets_v1";
+const MY_ASSETS_HISTORY_KEY = "my_assets_history_v1";
 
 function addMyAssetRow(a = {}) {
   const row = document.createElement("div");
@@ -1493,6 +1494,49 @@ async function renderMyAssets() {
       <td>${acc}</td><td>${g.n}</td><td>${fmtW(g.value)}</td><td>${g.monthlyDiv > 0 ? fmtW(g.monthlyDiv) : "—"}</td>
     </tr>`).join("");
 
+  // 자산배분 비중(종목별) — 첨부 대시보드의 "비중분석" 탭에 해당
+  const PALETTE = ["#2a78d6", "#e5484d", "#2a9d5c", "#c98a2c", "#7b5ec9", "#1aa8a0", "#c9527b", "#5c7ac9"];
+  const bySymbolValue = perRow.slice().sort((a, b) => b.value - a.value);
+  const assetAllocHTML = bySymbolValue.map((p, i) => {
+    const pct = totalValue > 0 ? (p.value / totalValue) * 100 : 0;
+    const label = p.meta ? p.meta.name : p.symbol;
+    return `<div class="bar-row">
+      <span class="bar-label" title="${label}">${label}</span>
+      <div class="bar-track"><div class="bar-fill" style="width:${pct.toFixed(1)}%; background:${PALETTE[i % PALETTE.length]}"></div></div>
+      <span class="bar-value">${pct.toFixed(1)}%</span>
+    </div>`;
+  }).join("");
+
+  // 계좌별 비중 — 첨부 대시보드의 "연금자산 히트맵" 탭을 막대 강도로 대체 표현
+  const byAccountValue = [...accountMap.entries()].sort((a, b) => b[1].value - a[1].value);
+  const accountAllocHTML = byAccountValue.map(([acc, g], i) => {
+    const pct = totalValue > 0 ? (g.value / totalValue) * 100 : 0;
+    return `<div class="bar-row">
+      <span class="bar-label" title="${acc}">${acc}</span>
+      <div class="bar-track"><div class="bar-fill" style="width:${pct.toFixed(1)}%; background:${PALETTE[i % PALETTE.length]}"></div></div>
+      <span class="bar-value">${pct.toFixed(1)}%</span>
+    </div>`;
+  }).join("");
+
+  // 월배당 TOP10 — 첨부 대시보드의 "월배당 현황차트" 탭 중 TOP10 항목
+  const top10Div = perRow.filter((p) => p.monthlyDiv > 0).sort((a, b) => b.monthlyDiv - a.monthlyDiv).slice(0, 10);
+  const maxDiv = top10Div.length ? top10Div[0].monthlyDiv : 0;
+  const top10HTML = top10Div.map((p, i) => {
+    const pct = maxDiv > 0 ? (p.monthlyDiv / maxDiv) * 100 : 0;
+    const label = p.meta ? p.meta.name : p.symbol;
+    return `<div class="bar-row">
+      <span class="bar-label" title="${label}">${label}</span>
+      <div class="bar-track"><div class="bar-fill" style="width:${pct.toFixed(1)}%; background:${PALETTE[i % PALETTE.length]}"></div></div>
+      <span class="bar-value">${fmtW(p.monthlyDiv)}</span>
+    </div>`;
+  }).join("");
+
+  // 월별 스냅샷 추이 — "이번 달 스냅샷 저장" 버튼으로 기기에 누적(로그인 없이도 이력 확인 가능)
+  const history = JSON.parse(localStorage.getItem(MY_ASSETS_HISTORY_KEY) || "[]");
+  const trendHTML = history.length >= 2
+    ? `<div id="myAssetTrendChart"></div>`
+    : `<p class="compare-empty">"이번 달 스냅샷 저장"을 매달 눌러두면 평가액·월배당 추이 그래프가 여기 쌓입니다(현재 ${history.length}개월 기록).</p>`;
+
   result.innerHTML = `
     <div class="stat-row" style="margin-top:14px;">
       <div class="stat">
@@ -1533,8 +1577,48 @@ async function renderMyAssets() {
       <tbody>${accHTML}</tbody>
     </table>
     </div>
+
+    <p class="chart-title" style="margin-top:20px;">📊 자산배분 비중 (종목별)</p>
+    <div class="bar-list">${assetAllocHTML}</div>
+
+    <p class="chart-title" style="margin-top:20px;">🗺️ 계좌별 비중</p>
+    <div class="bar-list">${accountAllocHTML}</div>
+
+    ${top10HTML ? `<p class="chart-title" style="margin-top:20px;">💰 월배당 TOP${top10Div.length}</p>
+    <div class="bar-list">${top10HTML}</div>` : ""}
+
+    <p class="chart-title" style="margin-top:20px;">📈 평가액·월배당 추이</p>
+    <div class="action-row" style="margin-bottom:8px;">
+      <button type="button" id="mySnapshotBtn" class="btn-action">📸 이번 달 스냅샷 저장</button>
+      <span id="mySnapshotStatus" class="action-status"></span>
+    </div>
+    ${trendHTML}
+
     <p class="stat-sub" style="margin-top:10px;">현재가는 주간 수집 데이터의 마지막 종가 기준이며, 월배당은 최근 1년 배당(TTM)÷12로 추정한 값입니다. 확정 분배금과 다를 수 있습니다.</p>
   `;
+
+  if (history.length >= 2) {
+    buildChart(document.getElementById("myAssetTrendChart"), {
+      dates: history.map((h) => h.month + "-01"),
+      values: history.map((h) => h.value),
+      color: cssVar("--series-price"),
+      mode: "price", currency: "KRW",
+      markers: [],
+      valueFmt: (v) => fmtW(v),
+      seriesLabel: "평가액",
+    });
+  }
+  document.getElementById("mySnapshotBtn").addEventListener("click", () => {
+    const month = todayStr().slice(0, 7);
+    const hist = JSON.parse(localStorage.getItem(MY_ASSETS_HISTORY_KEY) || "[]");
+    const idx = hist.findIndex((h) => h.month === month);
+    const entry = { month, value: totalValue, monthlyDiv: totalMonthlyDiv };
+    if (idx >= 0) hist[idx] = entry; else hist.push(entry);
+    hist.sort((a, b) => a.month.localeCompare(b.month));
+    localStorage.setItem(MY_ASSETS_HISTORY_KEY, JSON.stringify(hist));
+    flashStatus("mySnapshotStatus", `${month} 스냅샷 저장 ✓ (이 브라우저에만 보관)`);
+    renderMyAssets();
+  });
 }
 
 function buildMyAssetsText() {
