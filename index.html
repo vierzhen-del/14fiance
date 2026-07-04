@@ -362,6 +362,7 @@
 
   <p class="section-title">💼 내 자산</p>
   <p class="section-lede">계좌별 보유 종목·수량을 입력하면 평가액·수익률·예상 월배당을 자동 계산합니다. <b>입력한 보유 정보는 이 기기(브라우저)에만 저장되며 서버로 전송되지 않습니다.</b></p>
+  <p class="section-lede">월배당은 기본적으로 최근 1년 배당(TTM)÷12로 추정합니다. 노션 등에 기록해 둔 실제 확정 월배당(원)을 알고 있으면 종목별 "확정 월배당(원,선택)" 칸에 입력하세요 — 입력 시 그 값이 추정치보다 우선 적용됩니다.</p>
 
   <div class="card">
     <div id="myAssetRows" class="portfolio-rows"></div>
@@ -1343,6 +1344,9 @@ function addMyAssetRow(a = {}) {
     <div class="portfolio-weight-wrap">
       <input type="number" class="my-monthly portfolio-weight" style="width:100px" min="0" step="1" value="${a.monthlyQty ?? ""}" placeholder="월매수(선택)"> 주/월
     </div>
+    <div class="portfolio-weight-wrap">
+      <input type="number" class="my-confirmed portfolio-weight" style="width:140px" min="0" step="1" value="${a.confirmedMonthlyDiv ?? ""}" placeholder="확정 월배당(원,선택)">
+    </div>
     <button type="button" class="portfolio-remove" aria-label="종목 제거">×</button>
   `;
   document.getElementById("myAssetRows").appendChild(row);
@@ -1360,6 +1364,7 @@ function serializeMyAssets() {
       qty: parseFloat(el.querySelector(".my-qty").value) || 0,
       avgPrice: parseFloat(el.querySelector(".my-avg").value) || 0,
       monthlyQty: parseFloat(el.querySelector(".my-monthly").value) || 0,
+      confirmedMonthlyDiv: parseFloat(el.querySelector(".my-confirmed").value) || 0,
     })),
     goalAmount: document.getElementById("myGoalAmount").value,
     expectedReturn: document.getElementById("myExpectedReturn").value,
@@ -1436,7 +1441,9 @@ async function renderMyAssets() {
     const cost = it.avgPrice > 0 ? toKrw(it.avgPrice) * it.qty : null;
     const profit = cost != null ? value - cost : null;
     const ttm = meta && meta.ttmDividend ? meta.ttmDividend : 0;
-    const monthlyDiv = toKrw(ttm / 12) * it.qty;
+    // 확정값이 있으면 최우선 적용(CLAUDE.md 원칙) — TTM÷12 평균은 최근 배당 인상·한시 특별배당을 과소 반영할 수 있음
+    const usedConfirmed = it.confirmedMonthlyDiv > 0;
+    const monthlyDiv = usedConfirmed ? it.confirmedMonthlyDiv : toKrw(ttm / 12) * it.qty;
     const monthlyBuy = toKrw(close) * it.monthlyQty;
 
     // NAV 침식 경고(14RAE A-8): 최근 30일 가격 하락률 > 월배당률이면 원금 훼손 의심
@@ -1457,7 +1464,7 @@ async function renderMyAssets() {
     if (cost != null) { totalCost += cost; costedValue += value; }
     totalMonthlyDiv += monthlyDiv;
     totalMonthlyBuy += monthlyBuy;
-    perRow.push({ ...it, meta, close, isUsd, value, cost, profit, monthlyDiv, monthlyBuy, erosion });
+    perRow.push({ ...it, meta, close, isUsd, value, cost, profit, monthlyDiv, monthlyBuy, erosion, usedConfirmed });
 
     const accKey = it.account || "계좌 미지정";
     if (!accountMap.has(accKey)) accountMap.set(accKey, { value: 0, cost: 0, monthlyDiv: 0, n: 0 });
@@ -1483,7 +1490,12 @@ async function renderMyAssets() {
   const rowsHTML = perRow.map((p) => {
     const ttm = p.meta && p.meta.ttmDividend ? p.meta.ttmDividend : 0;
     const perShareMonthly = ttm / 12;
-    const distLabel = ttm > 0 ? (p.isUsd ? "$" + perShareMonthly.toFixed(4) : fmtW(perShareMonthly)) : "—";
+    const distLabel = p.usedConfirmed
+      ? "확정값 사용"
+      : ttm > 0 ? (p.isUsd ? "$" + perShareMonthly.toFixed(4) : fmtW(perShareMonthly)) : "—";
+    const divLabel = p.monthlyDiv > 0
+      ? `${fmtW(p.monthlyDiv)} <span style="color:${p.usedConfirmed ? "var(--good)" : "var(--text-muted)"}; font-size:11px;">${p.usedConfirmed ? "확정" : "추정(TTM)"}</span>`
+      : "—";
     return `<tr>
       <td>${p.account || "미지정"}</td>
       <td style="text-align:left;">${p.meta ? p.meta.name : p.symbol}${p.erosion != null ? ` <span style="color:var(--critical); font-size:11px;">⚠️ NAV침식 의심</span>` : ""}</td>
@@ -1492,7 +1504,7 @@ async function renderMyAssets() {
       <td>${fmtW(p.value)}</td>
       <td style="color:${p.profit == null ? "var(--text-muted)" : p.profit >= 0 ? "var(--good)" : "var(--critical)"}">${p.profit == null ? "—" : (p.profit >= 0 ? "+" : "") + fmtW(p.profit)}</td>
       <td>${distLabel}</td>
-      <td>${p.monthlyDiv > 0 ? fmtW(p.monthlyDiv) : "—"}</td>
+      <td>${divLabel}</td>
     </tr>`;
   }).join("");
 
@@ -1600,7 +1612,7 @@ async function renderMyAssets() {
     </div>
     ${trendHTML}
 
-    <p class="stat-sub" style="margin-top:10px;">현재가는 주간 수집 데이터의 마지막 종가 기준이며, 월배당은 최근 1년 배당(TTM)÷12로 추정한 값입니다. 확정 분배금과 다를 수 있습니다.</p>
+    <p class="stat-sub" style="margin-top:10px;">현재가는 주간 수집 데이터의 마지막 종가 기준입니다. 월배당은 종목별 "확정 월배당" 입력란에 값을 넣으면 그 값을 우선 적용하고, 비워두면 최근 1년 배당(TTM)÷12 추정치를 사용합니다. TTM 평균은 최근 배당 인상·한시 특별배당분이 반영되기 전이라 실제보다 낮게 나올 수 있습니다 — 노션 등에 기록해 둔 확정 수치를 입력하면 정확해집니다.</p>
   `;
 
   if (history.length >= 2) {
@@ -1634,7 +1646,8 @@ function buildMyAssetsText() {
     const meta = state.metaBySymbol.get(r.symbol);
     lines.push(`${r.account || "미지정"} | ${meta ? meta.name : r.symbol} (${r.symbol}) | ${r.qty}주` +
       (r.avgPrice > 0 ? ` | 매입단가 ${r.avgPrice}` : "") +
-      (r.monthlyQty > 0 ? ` | 월매수 ${r.monthlyQty}주` : ""));
+      (r.monthlyQty > 0 ? ` | 월매수 ${r.monthlyQty}주` : "") +
+      (r.confirmedMonthlyDiv > 0 ? ` | 확정 월배당 ${r.confirmedMonthlyDiv}원` : ""));
   }
   lines.push("", "위 보유현황을 노션 14RAE SOP(매도이력 대장 우선 확인)와 대조해서 갱신해주세요.");
   return lines.join("\n");
