@@ -1480,15 +1480,21 @@ async function renderMyAssets() {
       : `${Math.floor(goal.months / 12) > 0 ? `${Math.floor(goal.months / 12)}년 ` : ""}${goal.months % 12 > 0 ? `${goal.months % 12}개월` : ""}`.trim()
     : null;
 
-  const rowsHTML = perRow.map((p) => `<tr>
+  const rowsHTML = perRow.map((p) => {
+    const ttm = p.meta && p.meta.ttmDividend ? p.meta.ttmDividend : 0;
+    const perShareMonthly = ttm / 12;
+    const distLabel = ttm > 0 ? (p.isUsd ? "$" + perShareMonthly.toFixed(4) : fmtW(perShareMonthly)) : "—";
+    return `<tr>
       <td>${p.account || "미지정"}</td>
       <td style="text-align:left;">${p.meta ? p.meta.name : p.symbol}${p.erosion != null ? ` <span style="color:var(--critical); font-size:11px;">⚠️ NAV침식 의심</span>` : ""}</td>
       <td>${p.qty.toLocaleString()}</td>
       <td>${p.isUsd ? "$" + p.close.toLocaleString() : fmtW(p.close)}</td>
       <td>${fmtW(p.value)}</td>
       <td style="color:${p.profit == null ? "var(--text-muted)" : p.profit >= 0 ? "var(--good)" : "var(--critical)"}">${p.profit == null ? "—" : (p.profit >= 0 ? "+" : "") + fmtW(p.profit)}</td>
+      <td>${distLabel}</td>
       <td>${p.monthlyDiv > 0 ? fmtW(p.monthlyDiv) : "—"}</td>
-    </tr>`).join("");
+    </tr>`;
+  }).join("");
 
   const accHTML = [...accountMap.entries()].map(([acc, g]) => `<tr>
       <td>${acc}</td><td>${g.n}</td><td>${fmtW(g.value)}</td><td>${g.monthlyDiv > 0 ? fmtW(g.monthlyDiv) : "—"}</td>
@@ -1565,7 +1571,7 @@ async function renderMyAssets() {
     <p class="chart-title" style="margin-top:20px;">보유 종목</p>
     <div style="overflow-x:auto;">
     <table class="account-summary-table">
-      <thead><tr><th>계좌</th><th>종목</th><th>수량</th><th>현재가</th><th>평가액</th><th>손익</th><th>월배당</th></tr></thead>
+      <thead><tr><th>계좌</th><th>종목</th><th>수량</th><th>현재가</th><th>평가액</th><th>손익</th><th>분배금(주당·월평균)</th><th>월배당</th></tr></thead>
       <tbody>${rowsHTML}</tbody>
     </table>
     </div>
