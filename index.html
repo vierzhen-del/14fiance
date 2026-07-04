@@ -307,6 +307,8 @@
         </div>
       </div>
       <select id="simFutureYears" aria-label="미래 추정 기간" style="min-width:120px;">
+        <option value="1">향후 1년</option>
+        <option value="3">향후 3년</option>
         <option value="5">향후 5년</option>
         <option value="10" selected>향후 10년</option>
         <option value="11">향후 11년</option>
@@ -328,7 +330,16 @@
         <input type="number" id="simGoalAmount" class="portfolio-weight" style="width:130px" min="0" step="1" placeholder="목표 금액 (선택)" aria-label="목표 금액">
         <span id="simGoalUnit" style="font-size:12.5px; color:var(--text-muted);">$ 목표</span>
       </div>
+      <div class="portfolio-weight-wrap">
+        <input type="number" id="simExpectedReturn" class="portfolio-weight" style="width:110px" step="1" placeholder="기대수익률(선택)" aria-label="기대 연 수익률">
+        <span style="font-size:12.5px; color:var(--text-muted);">%/년</span>
+      </div>
+      <label style="font-size:12.5px; color:var(--text-secondary); display:flex; align-items:center; gap:6px;">
+        <input type="checkbox" id="simInflationOn"> 물가상승률 반영
+        <input type="number" id="simInflationRate" style="width:60px;" step="1" value="2" aria-label="연간 물가상승률">%
+      </label>
     </div>
+    <p id="simExpectedReturnHint" class="stat-sub" style="display:none; margin:-4px 0 10px;">기대수익률을 지정하면 "향후 추정"에서 백테스트 CAGR 대신 이 값을 가격 상승률로 씁니다(국내 ETF는 상장 초기 짧은 기간의 급등장이 그대로 연장 추정될 수 있어, 직접 보수적인 값을 넣을 수 있게 한 기능입니다). 배당수익률은 실제 데이터를 그대로 더합니다.</p>
     <p id="simGoalDateHint" class="stat-sub" style="display:none; margin:-4px 0 10px;">목표일을 지정하면 "향후 N년 추정" 대신 오늘부터 그 날짜까지 남은 기간으로 미래 추정을 계산합니다.</p>
     <p id="simCustomHint" class="stat-sub" style="display:none; margin:-4px 0 10px;">종목마다 투자 방식(거치·월적립·거치+월적립)과 금액을 따로 입력합니다. 통화·기간·미래 추정 기간은 위 공통 설정을 그대로 씁니다.</p>
     <p id="simFxHint" class="stat-sub" style="display:none; margin:-4px 0 10px;">고정 환율: 백테스트 시작일의 환율을 전체 기간에 그대로 적용합니다(환율 변동 효과 제외 — 환헤지 가정과 비슷). 투자금 통화와 종목 통화가 다를 때만 결과가 달라집니다.</p>
@@ -1797,6 +1808,9 @@ function serializeSimConfig() {
     futureYears: document.getElementById("simFutureYears").value,
     goalDate: document.getElementById("simGoalDate").value,
     goalAmount: document.getElementById("simGoalAmount").value,
+    expectedReturn: document.getElementById("simExpectedReturn").value,
+    inflationOn: document.getElementById("simInflationOn").checked,
+    inflationRate: document.getElementById("simInflationRate").value,
     months: document.getElementById("periodSelect").value,
     startDate: document.getElementById("simStartDate").value,
     endDate: document.getElementById("simEndDate").value,
@@ -1818,6 +1832,9 @@ function applySimConfig(cfg) {
   if (cfg.futureYears) document.getElementById("simFutureYears").value = cfg.futureYears;
   document.getElementById("simGoalDate").value = cfg.goalDate || "";
   document.getElementById("simGoalAmount").value = cfg.goalAmount || "";
+  document.getElementById("simExpectedReturn").value = cfg.expectedReturn || "";
+  document.getElementById("simInflationOn").checked = !!cfg.inflationOn;
+  if (cfg.inflationRate) document.getElementById("simInflationRate").value = cfg.inflationRate;
   if (cfg.months) document.getElementById("periodSelect").value = cfg.months;
   document.getElementById("simStartDate").value = cfg.startDate || "";
   document.getElementById("simEndDate").value = cfg.endDate || "";
@@ -2005,6 +2022,18 @@ async function renderSimulator() {
   const days = daysBetween(dates[0], dates[dates.length - 1]);
   const priceCAGR = days > 0 ? Math.pow(sim.nav[sim.nav.length - 1] / sim.nav[0], 365.25 / days) - 1 : 0;
 
+  // 기대수익률 직접 입력(선택): 국내 ETF는 상장 초기 짧은 기간의 급등장이 그대로
+  // 미래로 연장 추정될 수 있어(예: 2년치 데이터로 CAGR 60%+), 사용자가 보수적인
+  // 값을 직접 넣으면 향후 추정에서 백테스트 CAGR 대신 이 값을 쓴다
+  const expectedReturnVal = document.getElementById("simExpectedReturn").value;
+  const expectedReturn = expectedReturnVal !== "" ? Number(expectedReturnVal) / 100 : null;
+  const effectivePriceCAGR = expectedReturn != null ? expectedReturn : priceCAGR;
+  document.getElementById("simExpectedReturnHint").style.display = expectedReturn != null ? "" : "none";
+
+  // 물가상승률 반영(선택): 향후 추정 예상 평가액을 오늘 화폐가치(실질)로도 함께 보여준다
+  const inflationOn = document.getElementById("simInflationOn").checked;
+  const inflationRate = inflationOn ? (Number(document.getElementById("simInflationRate").value) || 0) / 100 : null;
+
   // 가중 평균 배당수익률·배당성장률 (배당 데이터 있는 종목만, 실제 납입 비중 기준)
   let wYieldSum = 0, wYieldWeight = 0, wGrowthSum = 0;
   for (let k = 0; k < assets.length; k++) {
@@ -2022,10 +2051,11 @@ async function renderSimulator() {
   const divGrowth = wYieldWeight > 0 ? wGrowthSum / wYieldWeight : 0;
   const totalLump = assets.reduce((s, a) => s + a.lumpAmount, 0);
   const totalMonthly = assets.reduce((s, a) => s + a.monthlyAmount, 0);
-  const fut = estimateFuture(totalLump, totalMonthly, futureYears, priceCAGR, divYield, divGrowth);
+  const fut = estimateFuture(totalLump, totalMonthly, futureYears, effectivePriceCAGR, divYield, divGrowth);
+  const futReal = inflationRate != null ? fut.fv / Math.pow(1 + inflationRate, futureYears) : null;
 
   // 목표 금액 도달 추정: 가격 CAGR + 배당수익률(재투자 가정)을 합친 연평균 TR 수익률로 계산
-  const trCAGR = priceCAGR + (divYield || 0);
+  const trCAGR = effectivePriceCAGR + (divYield || 0);
   const goal = goalAmount > 0 ? monthsToGoal(goalAmount, totalLump, totalMonthly, trCAGR) : null;
   const goalTimeLabel = goal
     ? goal.months == null
@@ -2148,12 +2178,12 @@ async function renderSimulator() {
       <div class="stat">
         <p class="stat-label">예상 평가액</p>
         <p class="stat-value">${fmt(fut.fv)}</p>
-        <p class="stat-sub">납입 예정 원금 ${fmt(fut.contributed)}</p>
+        <p class="stat-sub">납입 예정 원금 ${fmt(fut.contributed)}${futReal != null ? ` · 물가반영 실질가치 ${fmt(futReal)}` : ""}</p>
       </div>
       <div class="stat">
         <p class="stat-label">적용 연 수익률</p>
-        <p class="stat-value">${(priceCAGR * 100).toFixed(1)}%</p>
-        <p class="stat-sub">백테스트 기간 포트폴리오 CAGR</p>
+        <p class="stat-value">${(effectivePriceCAGR * 100).toFixed(1)}%</p>
+        <p class="stat-sub">${expectedReturn != null ? "사용자 지정 기대수익률" : "백테스트 기간 포트폴리오 CAGR"}</p>
       </div>
       <div class="stat">
         <p class="stat-label">예상 월배당 (${goalDateYears != null ? goalDateVal : `${futureYears}년 후`})</p>
@@ -2182,7 +2212,7 @@ async function renderSimulator() {
       <div class="stat">
         <p class="stat-label">적용 연평균 TR 수익률</p>
         <p class="stat-value">${(trCAGR * 100).toFixed(1)}%</p>
-        <p class="stat-sub">가격 ${(priceCAGR * 100).toFixed(1)}%${divYield != null ? ` + 배당 ${(divYield * 100).toFixed(2)}% 재투자 가정` : " (배당 데이터 없음)"}</p>
+        <p class="stat-sub">가격 ${(effectivePriceCAGR * 100).toFixed(1)}%${expectedReturn != null ? "(지정값)" : ""}${divYield != null ? ` + 배당 ${(divYield * 100).toFixed(2)}% 재투자 가정` : " (배당 데이터 없음)"}</p>
       </div>
     </div>` : ""}
     <p class="stat-sub" style="color:var(--critical);">⚠️ 미래 추정은 과거 실적을 그대로 연장한 참고치일 뿐이며, 실제 수익률·배당·낙폭을 보장하지 않습니다.${inputMode === "custom" ? " (미래 추정은 개별 종목이 아닌 합산 포트폴리오 기준입니다)" : ""}</p>
@@ -2568,6 +2598,9 @@ async function init() {
   document.getElementById("simAmount").addEventListener("input", renderSimulator);
   document.getElementById("simGoalAmount").addEventListener("input", renderSimulator);
   document.getElementById("simGoalDate").addEventListener("change", renderSimulator);
+  document.getElementById("simExpectedReturn").addEventListener("input", renderSimulator);
+  document.getElementById("simInflationOn").addEventListener("change", renderSimulator);
+  document.getElementById("simInflationRate").addEventListener("input", renderSimulator);
   const todayStr = new Date().toISOString().slice(0, 10);
   document.getElementById("simStartDate").max = todayStr;
   document.getElementById("simEndDate").max = todayStr;
