@@ -281,6 +281,66 @@
       "symbol": "0207Z0.KS",
       "name": "KIWOOM 미국우주데이터센터인프라",
       "category": "미국·글로벌 테마 액티브(국내상장)"
+    },
+    {
+      "symbol": "442570.KS",
+      "name": "RISE TDF2050액티브",
+      "category": "TDF·자산배분"
+    },
+    {
+      "symbol": "0025N0.KS",
+      "name": "TIGER TDF2045",
+      "category": "TDF·자산배분"
+    },
+    {
+      "symbol": "0173Y0.KS",
+      "name": "KODEX 미국AI광통신네트워크",
+      "category": "미국 테마"
+    },
+    {
+      "symbol": "0038A0.KS",
+      "name": "KODEX 미국휴머노이드로봇",
+      "category": "미국 테마"
+    },
+    {
+      "symbol": "0104H0.KS",
+      "name": "KoAct 미국나스닥채권혼합50액티브",
+      "category": "채권혼합"
+    },
+    {
+      "symbol": "0019K0.KS",
+      "name": "TIME 미국나스닥100채권혼합50액티브",
+      "category": "채권혼합"
+    },
+    {
+      "symbol": "0144L0.KS",
+      "name": "KODEX 미국성장커버드콜액티브",
+      "category": "커버드콜(국내)"
+    },
+    {
+      "symbol": "459560.KS",
+      "name": "KODEX 테슬라밸류체인FactSet",
+      "category": "미국 테마"
+    },
+    {
+      "symbol": "483340.KS",
+      "name": "ACE 구글밸류체인액티브",
+      "category": "미국 테마"
+    },
+    {
+      "symbol": "0137W0.KS",
+      "name": "KIWOOM 미국S&P500&GOLD",
+      "category": "미국 테마"
+    },
+    {
+      "symbol": "494340.KS",
+      "name": "ACE 글로벌AI맞춤형반도체",
+      "category": "미국 테마"
+    },
+    {
+      "symbol": "0190M0.KS",
+      "name": "KIWOOM 미국AI테크하이베타",
+      "category": "미국 테마"
     }
   ]
 }
