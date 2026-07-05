@@ -1,5 +1,5 @@
 {
- "updated": "2026-07-04 12:41 UTC",
+ "updated": "2026-07-05 00:39 UTC",
  "us": [
   {
    "symbol": "SPY",
@@ -83,8 +83,8 @@
    "name": "VIG (배당성장)",
    "category": "배당",
    "currency": "USD",
-   "first": "2006-08-16",
-   "last": "2026-07-02",
+   "first": "2006-08-14",
+   "last": "2026-06-30",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -106,8 +106,8 @@
    "category": "배당",
    "currency": "USD",
    "first": "2014-06-12",
-   "last": "2026-07-02",
-   "count": 3032,
+   "last": "2026-06-30",
+   "count": 3030,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   },
@@ -171,8 +171,8 @@
    "name": "IWF (러셀1000 성장)",
    "category": "성장·모멘텀",
    "currency": "USD",
-   "first": "2006-08-16",
-   "last": "2026-07-02",
+   "first": "2006-08-14",
+   "last": "2026-06-30",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -464,6 +464,17 @@
    "count": 426,
    "ttmDividend": 2749.0,
    "dividendYield": 0.1683
+  },
+  {
+   "symbol": "0198A0.KS",
+   "name": "KIWOOM 코스닥150커버드콜액티브",
+   "category": "커버드콜(국내)",
+   "currency": "KRW",
+   "first": "2026-06-30",
+   "last": "2026-07-03",
+   "count": 4,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
   },
   {
    "symbol": "402970.KS",
