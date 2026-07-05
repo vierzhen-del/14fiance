@@ -1605,7 +1605,7 @@ async function renderMyAssets() {
         ${totalProfit != null ? `<p class="stat-sub" style="color:${totalProfit >= 0 ? "var(--good)" : "var(--critical)"}">손익 ${totalProfit >= 0 ? "+" : ""}${fmtW(totalProfit)} (${((costedValue / totalCost - 1) * 100).toFixed(2)}%)</p>` : `<p class="stat-sub">매입단가 입력 시 손익 표시</p>`}
       </div>
       <div class="stat">
-        <p class="stat-label">예상 월배당 (TTM 기준)</p>
+        <p class="stat-label">예상 월배당 (확정 DPS 우선)</p>
         <p class="stat-value">${fmtW(totalMonthlyDiv)}</p>
         <p class="stat-sub">연환산 ${fmtW(totalMonthlyDiv * 12)}</p>
       </div>
