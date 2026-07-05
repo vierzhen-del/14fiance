@@ -329,7 +329,8 @@
   .month-bars { display: flex; align-items: flex-end; gap: 4px; height: 130px; margin: 8px 0 4px; }
   .mb-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 3px; }
   .mb-val { font-size: 9.5px; color: var(--text-muted); white-space: nowrap; }
-  .mb-bar { width: 100%; max-width: 34px; border-radius: 4px 4px 0 0; background: color-mix(in srgb, var(--series-price) 35%, transparent); }
+  .mb-bar { width: 100%; max-width: 34px; border-radius: 4px 4px 0 0; background: var(--gridline); }
+  .mb-bar.estimated { background: color-mix(in srgb, var(--series-price) 45%, transparent); }
   .mb-bar.confirmed { background: var(--series-price); }
   .mb-label { font-size: 10px; color: var(--text-muted); }
   .stack-bar { display: flex; height: 18px; border-radius: 6px; overflow: hidden; margin: 8px 0 8px; }
@@ -382,6 +383,13 @@
           <button type="button" id="myExportBtn" class="btn-action">📤 내보내기</button>
           <button type="button" id="myImportBtn" class="btn-action">📂 가져오기</button>
           <button type="button" id="myClaudeBtn" class="btn-action">🤖 클로드에 복사</button>
+          <select id="myCsvSheet" aria-label="저장할 시트 선택" style="min-width:130px;">
+            <option value="__all__">전체(통합 1개 파일)</option>
+            <option value="종목현황">종목현황만</option>
+            <option value="계좌별 합계">계좌별 합계만</option>
+            <option value="지급시기별">지급시기별만</option>
+            <option value="총계">총계만</option>
+          </select>
           <button type="button" id="myCsvBtn" class="btn-action">📄 시트 저장</button>
           <a href="https://app.notion.com/p/3865efd0e46281c49a72c9bbc70dcea0" target="_blank" rel="noopener" class="btn-action" style="text-decoration:none;">📋 배당 기준 SOP 확인</a>
           <span id="myAssetStatus" class="action-status"></span>
@@ -1877,24 +1885,28 @@ function buildDonutSVG(items, centerLabel) {
 /* 통합 탭 — 월별 예상 배당금 12개월 바 (확정=divHistory 강조, 나머지=현재 월배당 추정) */
 function buildMonthBarsHTML(monthlyDiv, divHistory) {
   const year = todayStr().slice(0, 4);
+  const nowMonth = Number(todayStr().slice(5, 7));
   const vals = [];
   for (let m = 1; m <= 12; m++) {
     const key = `${year}-${String(m).padStart(2, "0")}`;
     const confirmed = divHistory && divHistory[key] > 0 ? divHistory[key] : null;
-    vals.push({ m, v: confirmed != null ? confirmed : monthlyDiv, confirmed: confirmed != null });
+    // 확정 이력이 있는 달만 실값, 이번 달은 현재 월배당으로 추정, 그 외 달은 데이터가 없으므로 0원 처리
+    // (과거 실제 지급액을 알 수 없는데 현재 추정치를 반복해서 채우면 실제보다 부풀려 보이는 문제가 있었음)
+    const v = confirmed != null ? confirmed : m === nowMonth ? monthlyDiv : 0;
+    vals.push({ m, v, confirmed: confirmed != null, estimated: confirmed == null && m === nowMonth });
   }
   const max = Math.max(...vals.map((x) => x.v), 1);
-  const bars = vals.map(({ m, v, confirmed }) => {
-    const h = Math.max(4, (v / max) * 100);
+  const bars = vals.map(({ m, v, confirmed, estimated }) => {
+    const h = v > 0 ? Math.max(4, (v / max) * 100) : 0;
     const label = v >= 10000 ? `${Math.round(v / 10000)}만` : v > 0 ? Math.round(v).toLocaleString() : "";
     return `<div class="mb-col">
       <span class="mb-val">${label}</span>
-      <div class="mb-bar${confirmed ? " confirmed" : ""}" style="height:${h.toFixed(0)}%"></div>
+      <div class="mb-bar${confirmed ? " confirmed" : estimated ? " estimated" : ""}" style="height:${h.toFixed(0)}%"></div>
       <span class="mb-label">${m}월</span>
     </div>`;
   }).join("");
   return `<div class="month-bars">${bars}</div>
-  <p class="stat-sub">진한 막대 = 확정 이력(가져온 데이터), 흐린 막대 = 현재 월배당 기준 추정(${year}년).</p>`;
+  <p class="stat-sub">진한 막대 = 확정 이력(가져온 데이터), 중간 막대 = 이번 달 추정(현재 월배당 기준), 표시 없음 = 데이터 없음(${year}년).</p>`;
 }
 
 /* 통합 탭 — 자산 유형별(카테고리) 1줄 스택바 */
@@ -2385,15 +2397,17 @@ function buildMyAssetsText() {
   return lines.join("\n");
 }
 
-/* 내 자산 CSV — 시트(금융비서 대시보드)의 종목현황/계좌별/지급시기별 구성과 동일한 형태 */
-function buildMyAssetsCSV(d) {
+/* 내 자산 CSV — 시트(금융비서 대시보드)의 종목현황/계좌별/지급시기별 구성과 동일한 형태.
+   탭별로 나눠 받을 수 있도록 각 표를 별도 시트(키)로 반환한다. */
+function buildMyAssetsSheets(d) {
   const w = (v) => Math.round(v);
-  const lines = ["종목현황"];
-  lines.push(csvRow(["계좌", "종목", "코드", "수량", "현재가", "평가액(원)", "손익(원)", "DPS(주당)", "DPS구분", "월배당(원)", "지급시기"]));
+  const sheets = {};
+
+  const rowLines = [csvRow(["계좌", "종목", "코드", "수량", "현재가", "평가액(원)", "손익(원)", "DPS(주당)", "DPS구분", "월배당(원)", "지급시기"])];
   for (const p of d.perRow) {
     const ttm = p.meta && p.meta.ttmDividend ? p.meta.ttmDividend : 0;
     const dps = p.usedConfirmed ? p.confirmedDps : ttm / 12;
-    lines.push(csvRow([
+    rowLines.push(csvRow([
       p.account || "미지정", p.meta ? p.meta.name : p.symbol, p.symbol, p.qty,
       p.isUsd ? p.close + " USD" : w(p.close),
       w(p.value), p.profit == null ? "" : w(p.profit),
@@ -2402,16 +2416,30 @@ function buildMyAssetsCSV(d) {
       p.monthlyDiv > 0 ? w(p.monthlyDiv) : "", p.payPeriod || "",
     ]));
   }
-  lines.push("", "계좌별 합계");
-  lines.push(csvRow(["계좌", "종목 수", "평가액(원)", "월배당(원)"]));
-  for (const [acc, g] of d.accountMap) lines.push(csvRow([acc, g.n, w(g.value), w(g.monthlyDiv)]));
-  lines.push("", "지급시기별 월배당");
-  lines.push(csvRow(["지급시기", "월배당(원)"]));
-  for (const [k, v] of d.periodMap) lines.push(csvRow([k, w(v)]));
-  lines.push("", "총계");
-  lines.push(csvRow(["총 평가액(원)", w(d.totalValue)]));
-  lines.push(csvRow(["총 월배당(원)", w(d.totalMonthlyDiv)]));
-  if (d.totalProfit != null) lines.push(csvRow(["총 손익(원)", w(d.totalProfit)]));
+  sheets["종목현황"] = rowLines.join("\n");
+
+  const acctLines = [csvRow(["계좌", "종목 수", "평가액(원)", "월배당(원)"])];
+  for (const [acc, g] of d.accountMap) acctLines.push(csvRow([acc, g.n, w(g.value), w(g.monthlyDiv)]));
+  sheets["계좌별 합계"] = acctLines.join("\n");
+
+  const periodLines = [csvRow(["지급시기", "월배당(원)"])];
+  for (const [k, v] of d.periodMap) periodLines.push(csvRow([k, w(v)]));
+  sheets["지급시기별"] = periodLines.join("\n");
+
+  const totalLines = [csvRow(["총 평가액(원)", w(d.totalValue)]), csvRow(["총 월배당(원)", w(d.totalMonthlyDiv)])];
+  if (d.totalProfit != null) totalLines.push(csvRow(["총 손익(원)", w(d.totalProfit)]));
+  sheets["총계"] = totalLines.join("\n");
+
+  return sheets;
+}
+
+/* 통합(전체) CSV — 기존처럼 모든 시트를 하나의 파일에 이어 붙인 버전 */
+function buildMyAssetsCSV(d) {
+  const sheets = buildMyAssetsSheets(d);
+  const lines = [];
+  for (const [name, body] of Object.entries(sheets)) {
+    lines.push(name, body, "");
+  }
   return lines.join("\n");
 }
 
@@ -3746,8 +3774,16 @@ async function init() {
   });
   document.getElementById("myCsvBtn").addEventListener("click", () => {
     if (!state.myAssetsCsvData) { flashStatus("myAssetStatus", "먼저 보유 종목을 입력하세요"); return; }
-    const csv = buildMyAssetsCSV(state.myAssetsCsvData);
-    downloadBlob(new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" }), `my-assets-${todayStr()}.csv`);
+    const sheetKey = document.getElementById("myCsvSheet").value;
+    let csv, suffix;
+    if (sheetKey === "__all__") {
+      csv = buildMyAssetsCSV(state.myAssetsCsvData);
+      suffix = "";
+    } else {
+      csv = buildMyAssetsSheets(state.myAssetsCsvData)[sheetKey];
+      suffix = "-" + sheetKey.replace(/\s+/g, "");
+    }
+    downloadBlob(new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" }), `my-assets${suffix}-${todayStr()}.csv`);
     flashStatus("myAssetStatus", "시트 저장 완료 ✓");
   });
 
