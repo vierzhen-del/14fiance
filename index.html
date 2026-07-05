@@ -362,7 +362,7 @@
 
   <p class="section-title">💼 내 자산</p>
   <p class="section-lede">계좌별 보유 종목·수량을 입력하면 평가액·수익률·예상 월배당을 자동 계산합니다. <b>입력한 보유 정보는 이 기기(브라우저)에만 저장되며 서버로 전송되지 않습니다.</b></p>
-  <p class="section-lede">월배당은 기본적으로 최근 1년 배당(TTM)÷12로 추정합니다. 노션 등에 기록해 둔 실제 확정 월배당(원)을 알고 있으면 종목별 "확정 월배당(원,선택)" 칸에 입력하세요 — 입력 시 그 값이 추정치보다 우선 적용됩니다.</p>
+  <p class="section-lede">월배당은 기본적으로 최근 1년 배당(TTM)÷12로 추정합니다. 시트/노션 배당기준에 기록된 <b>주당 확정 DPS(원)</b>를 알고 있으면 종목별 "확정 DPS(원/주,선택)" 칸에 그대로 입력하세요 — 월배당이 DPS×수량으로 계산되어 추정치보다 우선 적용되고, 수량을 바꿔도 자동으로 따라갑니다.</p>
 
   <div class="card">
     <div id="myAssetRows" class="portfolio-rows"></div>
@@ -381,6 +381,7 @@
       <button type="button" id="myExportBtn" class="btn-action">📤 내보내기</button>
       <button type="button" id="myImportBtn" class="btn-action">📂 가져오기</button>
       <button type="button" id="myClaudeBtn" class="btn-action">🤖 클로드에 복사</button>
+      <button type="button" id="myCsvBtn" class="btn-action">📄 시트 저장</button>
       <a href="https://app.notion.com/p/3865efd0e46281c49a72c9bbc70dcea0" target="_blank" rel="noopener" class="btn-action" style="text-decoration:none;">📋 배당 기준 SOP 확인</a>
       <span id="myAssetStatus" class="action-status"></span>
       <input type="file" id="myImportFile" accept="application/json" style="display:none;">
@@ -1232,6 +1233,11 @@ const ACCOUNT_TYPES = [
 
 function accountOptionsHTML(selected) {
   let html = `<option value="" ${!selected ? "selected" : ""}>계좌 미지정</option>`;
+  // 가져오기 데이터에 목록 밖 계좌명(예: 삼성_DC)이 있어도 그대로 보존한다 —
+  // 조용히 "계좌 미지정"으로 빠지면 계좌별 합계를 시트와 비교할 수 없게 됨
+  if (selected && !ACCOUNT_TYPES.includes(selected)) {
+    html += `<option value="${selected}" selected>${selected}</option>`;
+  }
   for (const acc of ACCOUNT_TYPES) {
     html += `<option value="${acc}" ${acc === selected ? "selected" : ""}>${acc}</option>`;
   }
@@ -1345,8 +1351,14 @@ function addMyAssetRow(a = {}) {
       <input type="number" class="my-monthly portfolio-weight" style="width:100px" min="0" step="1" value="${a.monthlyQty ?? ""}" placeholder="월매수(선택)"> 주/월
     </div>
     <div class="portfolio-weight-wrap">
-      <input type="number" class="my-confirmed portfolio-weight" style="width:140px" min="0" step="1" value="${a.confirmedMonthlyDiv ?? ""}" placeholder="확정 월배당(원,선택)">
+      <input type="number" class="my-confirmed portfolio-weight" style="width:130px" min="0" step="1" value="${a.confirmedDps ?? ""}" placeholder="확정 DPS(원/주,선택)">
     </div>
+    <select class="my-period" aria-label="지급시기">
+      <option value="" ${!a.payPeriod ? "selected" : ""}>지급시기</option>
+      <option value="월초" ${a.payPeriod === "월초" ? "selected" : ""}>월초</option>
+      <option value="월중" ${a.payPeriod === "월중" ? "selected" : ""}>월중</option>
+      <option value="월말" ${a.payPeriod === "월말" ? "selected" : ""}>월말</option>
+    </select>
     <button type="button" class="portfolio-remove" aria-label="종목 제거">×</button>
   `;
   document.getElementById("myAssetRows").appendChild(row);
@@ -1364,7 +1376,8 @@ function serializeMyAssets() {
       qty: parseFloat(el.querySelector(".my-qty").value) || 0,
       avgPrice: parseFloat(el.querySelector(".my-avg").value) || 0,
       monthlyQty: parseFloat(el.querySelector(".my-monthly").value) || 0,
-      confirmedMonthlyDiv: parseFloat(el.querySelector(".my-confirmed").value) || 0,
+      confirmedDps: parseFloat(el.querySelector(".my-confirmed").value) || 0,
+      payPeriod: el.querySelector(".my-period").value,
     })),
     goalAmount: document.getElementById("myGoalAmount").value,
     expectedReturn: document.getElementById("myExpectedReturn").value,
@@ -1378,7 +1391,13 @@ function saveMyAssets() {
 function applyMyAssets(data) {
   if (!data || !Array.isArray(data.rows)) return false;
   document.getElementById("myAssetRows").innerHTML = "";
-  for (const r of data.rows) addMyAssetRow(r);
+  for (const r of data.rows) {
+    // 구버전(확정 월배당 총액) 데이터는 주당 DPS로 1회 변환
+    if (!r.confirmedDps && r.confirmedMonthlyDiv > 0 && r.qty > 0) {
+      r.confirmedDps = Math.round(r.confirmedMonthlyDiv / r.qty);
+    }
+    addMyAssetRow(r);
+  }
   document.getElementById("myGoalAmount").value = data.goalAmount || "";
   document.getElementById("myExpectedReturn").value = data.expectedReturn || "";
   return true;
@@ -1386,6 +1405,7 @@ function applyMyAssets(data) {
 
 async function renderMyAssets() {
   const result = document.getElementById("myAssetResult");
+  state.myAssetsCsvData = null;
   const cfg = serializeMyAssets();
   const rows = cfg.rows.filter((r) => r.qty > 0);
   if (!rows.length) {
@@ -1427,6 +1447,7 @@ async function renderMyAssets() {
   let costedValue = 0; // 매입단가가 있는 종목의 평가액 합 (수익률 분모 정합성)
   const perRow = [];
   const accountMap = new Map();
+  const periodMap = new Map(); // 지급시기(월초/월중/월말)별 월배당 합계
 
   for (const it of items) {
     const meta = state.metaBySymbol.get(it.symbol);
@@ -1441,9 +1462,9 @@ async function renderMyAssets() {
     const cost = it.avgPrice > 0 ? toKrw(it.avgPrice) * it.qty : null;
     const profit = cost != null ? value - cost : null;
     const ttm = meta && meta.ttmDividend ? meta.ttmDividend : 0;
-    // 확정값이 있으면 최우선 적용(CLAUDE.md 원칙) — TTM÷12 평균은 최근 배당 인상·한시 특별배당을 과소 반영할 수 있음
-    const usedConfirmed = it.confirmedMonthlyDiv > 0;
-    const monthlyDiv = usedConfirmed ? it.confirmedMonthlyDiv : toKrw(ttm / 12) * it.qty;
+    // 확정 DPS(주당)가 있으면 최우선 적용(CLAUDE.md 원칙) — TTM÷12 평균은 신규 상장·특별배당 종목에서 실제 지급액을 과소 반영함
+    const usedConfirmed = it.confirmedDps > 0;
+    const monthlyDiv = usedConfirmed ? toKrw(it.confirmedDps) * it.qty : toKrw(ttm / 12) * it.qty;
     const monthlyBuy = toKrw(close) * it.monthlyQty;
 
     // NAV 침식 경고(14RAE A-8): 최근 30일 가격 하락률 > 월배당률이면 원금 훼손 의심
@@ -1470,10 +1491,18 @@ async function renderMyAssets() {
     if (!accountMap.has(accKey)) accountMap.set(accKey, { value: 0, cost: 0, monthlyDiv: 0, n: 0 });
     const g = accountMap.get(accKey);
     g.value += value; if (cost != null) g.cost += cost; g.monthlyDiv += monthlyDiv; g.n += 1;
+
+    if (monthlyDiv > 0) {
+      const pKey = it.payPeriod || "지급시기 미지정";
+      periodMap.set(pKey, (periodMap.get(pKey) || 0) + monthlyDiv);
+    }
   }
 
   const totalProfit = totalCost > 0 ? costedValue - totalCost : null;
   const selfSuffRate = totalMonthlyBuy > 0 ? totalMonthlyDiv / totalMonthlyBuy : null;
+
+  // "📄 시트 저장" 버튼용 — 화면과 동일한 계산 결과를 CSV로 내릴 수 있게 보관
+  state.myAssetsCsvData = { perRow, accountMap, periodMap, totalValue, totalMonthlyDiv, totalProfit };
 
   // 목표 도달: 기대수익률 미입력 시 배당수익률만 가정(보수적) — 안내문에 명시
   const goalAmount = parseFloat(cfg.goalAmount) || 0;
@@ -1489,10 +1518,10 @@ async function renderMyAssets() {
 
   const rowsHTML = perRow.map((p) => {
     const ttm = p.meta && p.meta.ttmDividend ? p.meta.ttmDividend : 0;
-    const perShareMonthly = ttm / 12;
-    const distLabel = p.usedConfirmed
-      ? "확정값 사용"
-      : ttm > 0 ? (p.isUsd ? "$" + perShareMonthly.toFixed(4) : fmtW(perShareMonthly)) : "—";
+    const perShareMonthly = p.usedConfirmed ? p.confirmedDps : ttm / 12;
+    const distLabel = perShareMonthly > 0
+      ? `${p.isUsd ? "$" + perShareMonthly.toFixed(4) : fmtW(perShareMonthly)} <span style="color:${p.usedConfirmed ? "var(--good)" : "var(--text-muted)"}; font-size:11px;">${p.usedConfirmed ? "확정" : "추정"}</span>`
+      : "—";
     const divLabel = p.monthlyDiv > 0
       ? `${fmtW(p.monthlyDiv)} <span style="color:${p.usedConfirmed ? "var(--good)" : "var(--text-muted)"}; font-size:11px;">${p.usedConfirmed ? "확정" : "추정(TTM)"}</span>`
       : "—";
@@ -1533,6 +1562,19 @@ async function renderMyAssets() {
       <span class="bar-label" title="${acc}">${acc}</span>
       <div class="bar-track"><div class="bar-fill" style="width:${pct.toFixed(1)}%; background:${PALETTE[i % PALETTE.length]}"></div></div>
       <span class="bar-value">${pct.toFixed(1)}%</span>
+    </div>`;
+  }).join("");
+
+  // 지급시기별 월배당 — 시트(금융비서 대시보드)의 "지급시기별" 집계와 동일형태
+  const PERIOD_ORDER = ["월초", "월중", "월말", "지급시기 미지정"];
+  const periodTotal = [...periodMap.values()].reduce((a, b) => a + b, 0);
+  const periodHTML = PERIOD_ORDER.filter((k) => periodMap.has(k)).map((k, i) => {
+    const v = periodMap.get(k);
+    const pct = periodTotal > 0 ? (v / periodTotal) * 100 : 0;
+    return `<div class="bar-row">
+      <span class="bar-label" title="${k}">${k}</span>
+      <div class="bar-track"><div class="bar-fill" style="width:${pct.toFixed(1)}%; background:${PALETTE[i % PALETTE.length]}"></div></div>
+      <span class="bar-value">${fmtW(v)}</span>
     </div>`;
   }).join("");
 
@@ -1602,6 +1644,9 @@ async function renderMyAssets() {
     <p class="chart-title" style="margin-top:20px;">🗺️ 계좌별 비중</p>
     <div class="bar-list">${accountAllocHTML}</div>
 
+    ${periodHTML ? `<p class="chart-title" style="margin-top:20px;">🗓️ 지급시기별 월배당</p>
+    <div class="bar-list">${periodHTML}</div>` : ""}
+
     ${top10HTML ? `<p class="chart-title" style="margin-top:20px;">💰 월배당 TOP${top10Div.length}</p>
     <div class="bar-list">${top10HTML}</div>` : ""}
 
@@ -1612,7 +1657,7 @@ async function renderMyAssets() {
     </div>
     ${trendHTML}
 
-    <p class="stat-sub" style="margin-top:10px;">현재가는 주간 수집 데이터의 마지막 종가 기준입니다. 월배당은 종목별 "확정 월배당" 입력란에 값을 넣으면 그 값을 우선 적용하고, 비워두면 최근 1년 배당(TTM)÷12 추정치를 사용합니다. TTM 평균은 최근 배당 인상·한시 특별배당분이 반영되기 전이라 실제보다 낮게 나올 수 있습니다 — 노션 등에 기록해 둔 확정 수치를 입력하면 정확해집니다.</p>
+    <p class="stat-sub" style="margin-top:10px;">현재가는 주간 수집 데이터의 마지막 종가 기준입니다. 월배당은 종목별 "확정 DPS(원/주)"를 입력하면 DPS×수량으로 계산해 우선 적용하고, 비워두면 최근 1년 배당(TTM)÷12 추정치를 사용합니다. 신규 상장·특별배당 종목은 TTM 추정이 실제보다 크게 낮을 수 있으니 시트/노션 배당기준의 확정 DPS 입력을 권장합니다.</p>
   `;
 
   if (history.length >= 2) {
@@ -1647,9 +1692,40 @@ function buildMyAssetsText() {
     lines.push(`${r.account || "미지정"} | ${meta ? meta.name : r.symbol} (${r.symbol}) | ${r.qty}주` +
       (r.avgPrice > 0 ? ` | 매입단가 ${r.avgPrice}` : "") +
       (r.monthlyQty > 0 ? ` | 월매수 ${r.monthlyQty}주` : "") +
-      (r.confirmedMonthlyDiv > 0 ? ` | 확정 월배당 ${r.confirmedMonthlyDiv}원` : ""));
+      (r.confirmedDps > 0 ? ` | 확정 DPS ${r.confirmedDps}원/주` : "") +
+      (r.payPeriod ? ` | ${r.payPeriod}` : ""));
   }
   lines.push("", "위 보유현황을 노션 14RAE SOP(매도이력 대장 우선 확인)와 대조해서 갱신해주세요.");
+  return lines.join("\n");
+}
+
+/* 내 자산 CSV — 시트(금융비서 대시보드)의 종목현황/계좌별/지급시기별 구성과 동일한 형태 */
+function buildMyAssetsCSV(d) {
+  const w = (v) => Math.round(v);
+  const lines = ["종목현황"];
+  lines.push(csvRow(["계좌", "종목", "코드", "수량", "현재가", "평가액(원)", "손익(원)", "DPS(주당)", "DPS구분", "월배당(원)", "지급시기"]));
+  for (const p of d.perRow) {
+    const ttm = p.meta && p.meta.ttmDividend ? p.meta.ttmDividend : 0;
+    const dps = p.usedConfirmed ? p.confirmedDps : ttm / 12;
+    lines.push(csvRow([
+      p.account || "미지정", p.meta ? p.meta.name : p.symbol, p.symbol, p.qty,
+      p.isUsd ? p.close + " USD" : w(p.close),
+      w(p.value), p.profit == null ? "" : w(p.profit),
+      dps > 0 ? (p.isUsd && !p.usedConfirmed ? dps.toFixed(4) + " USD" : w(dps)) : "",
+      p.usedConfirmed ? "확정" : dps > 0 ? "추정(TTM)" : "",
+      p.monthlyDiv > 0 ? w(p.monthlyDiv) : "", p.payPeriod || "",
+    ]));
+  }
+  lines.push("", "계좌별 합계");
+  lines.push(csvRow(["계좌", "종목 수", "평가액(원)", "월배당(원)"]));
+  for (const [acc, g] of d.accountMap) lines.push(csvRow([acc, g.n, w(g.value), w(g.monthlyDiv)]));
+  lines.push("", "지급시기별 월배당");
+  lines.push(csvRow(["지급시기", "월배당(원)"]));
+  for (const [k, v] of d.periodMap) lines.push(csvRow([k, w(v)]));
+  lines.push("", "총계");
+  lines.push(csvRow(["총 평가액(원)", w(d.totalValue)]));
+  lines.push(csvRow(["총 월배당(원)", w(d.totalMonthlyDiv)]));
+  if (d.totalProfit != null) lines.push(csvRow(["총 손익(원)", w(d.totalProfit)]));
   return lines.join("\n");
 }
 
@@ -2969,6 +3045,12 @@ async function init() {
     } catch (err) {
       window.prompt("아래 내용을 복사해서 클로드에 붙여넣으세요:", buildMyAssetsText());
     }
+  });
+  document.getElementById("myCsvBtn").addEventListener("click", () => {
+    if (!state.myAssetsCsvData) { flashStatus("myAssetStatus", "먼저 보유 종목을 입력하세요"); return; }
+    const csv = buildMyAssetsCSV(state.myAssetsCsvData);
+    downloadBlob(new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" }), `my-assets-${todayStr()}.csv`);
+    flashStatus("myAssetStatus", "시트 저장 완료 ✓");
   });
 
   // 시뮬레이터: 공유 링크가 있으면 그 설정으로, 없으면 기본값(SPY 100%, 간단 모드)으로 시작
