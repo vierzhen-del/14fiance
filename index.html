@@ -369,14 +369,22 @@
         <button type="button" id="addMyAssetRow" class="btn-add">+ 종목 추가</button>
         <div class="controls" style="margin-top:10px; margin-bottom:6px;">
           <div class="portfolio-weight-wrap">
-            <input type="number" id="myGoalAmount" class="portfolio-weight" style="width:140px" min="0" step="1" placeholder="목표 금액 (선택)" aria-label="자산 목표 금액">
+            <input type="number" id="myGoalAmount" class="portfolio-weight" style="width:140px" min="0" step="10000" placeholder="목표 금액(만원 단위, 선택)" aria-label="자산 목표 금액">
             <span style="font-size:12.5px; color:var(--text-muted);">₩ 목표</span>
           </div>
-          <div class="portfolio-weight-wrap">
+          <select id="myReturnMode" aria-label="목표 계산 수익률 방식" style="min-width:170px;">
+            <option value="manual" selected>통합 목표수익률(직접입력)</option>
+            <option value="1">종목별 최근 1개월 실적 반영</option>
+            <option value="3">종목별 최근 3개월 실적 반영</option>
+            <option value="6">종목별 최근 6개월 실적 반영</option>
+            <option value="12">종목별 최근 12개월 실적 반영</option>
+          </select>
+          <div class="portfolio-weight-wrap" id="myExpectedReturnWrap">
             <input type="number" id="myExpectedReturn" class="portfolio-weight" style="width:110px" step="1" placeholder="기대수익률(선택)" aria-label="기대 연 수익률">
             <span style="font-size:12.5px; color:var(--text-muted);">%/년</span>
           </div>
         </div>
+        <p class="stat-sub" id="myReturnModeHint" style="display:none; margin:-4px 0 10px;">종목별 실적 반영을 고르면 위 기대수익률 입력 대신, 보유 종목 각각의 최근 실제 가격 등락률(연환산)을 평가금액 비중으로 가중평균해 목표 도달 계산에 씁니다.</p>
         <p class="stat-sub" id="myContribLabel" style="display:none; margin:6px 0 4px;">계좌별 월 납입금(선택, 연금저축 등 배당 외 현금 납입이 있는 계좌)</p>
         <div class="controls" id="myContribRows" style="margin-bottom:6px;"></div>
         <div class="action-row">
@@ -1565,6 +1573,7 @@ function serializeMyAssets() {
     })),
     goalAmount: document.getElementById("myGoalAmount").value,
     expectedReturn: document.getElementById("myExpectedReturn").value,
+    returnMode: document.getElementById("myReturnMode").value,
     contributions: serializeMyContributions(),
     dataAsOf: state.myAssetsDataAsOf || "",
     importedAt: state.myAssetsImportedAt || "",
@@ -1574,6 +1583,17 @@ function serializeMyAssets() {
 
 function saveMyAssets() {
   localStorage.setItem(MY_ASSETS_KEY, JSON.stringify(serializeMyAssets()));
+}
+
+/* 목표 도달 수익률 방식(통합 직접입력 / 종목별 실적) 전환 시 관련 UI 표시만 토글 */
+function updateReturnModeUI() {
+  const modeEl = document.getElementById("myReturnMode");
+  const wrapEl = document.getElementById("myExpectedReturnWrap");
+  const hintEl = document.getElementById("myReturnModeHint");
+  if (!modeEl || !wrapEl || !hintEl) return;
+  const manual = modeEl.value === "manual";
+  wrapEl.style.display = manual ? "" : "none";
+  hintEl.style.display = manual ? "none" : "";
 }
 
 /* 내 자산 종목 목록이 길어지면(6행 초과) 기본 접어서 스크롤을 줄인다 — 입력값은 그대로 유지, 시각적으로만 숨김 */
@@ -1621,6 +1641,8 @@ function applyMyAssets(data) {
   }
   document.getElementById("myGoalAmount").value = data.goalAmount || "";
   document.getElementById("myExpectedReturn").value = data.expectedReturn || "";
+  document.getElementById("myReturnMode").value = data.returnMode || "manual";
+  updateReturnModeUI();
   syncMyContribRows();
   return true;
 }
@@ -1647,7 +1669,7 @@ function syncMyContribRows() {
   container.innerHTML = accounts.map((acc) => {
     const val = existing.has(acc) ? existing.get(acc) : (seed[acc] ?? "");
     return `<div class="portfolio-weight-wrap">
-      <input type="number" class="my-contrib portfolio-weight" style="width:150px" min="0" step="1" data-account="${acc}" value="${val}" placeholder="${acc} 월납입(선택)">
+      <input type="number" class="my-contrib portfolio-weight" style="width:150px" min="0" step="10000" data-account="${acc}" value="${val}" placeholder="${acc} 월납입(만원단위,선택)">
     </div>`;
   }).join("");
   container.querySelectorAll(".my-contrib").forEach((el) =>
@@ -2064,11 +2086,16 @@ async function renderMyAssets() {
       if (drop > monthlyYield) erosion = drop;
     }
 
+    // 목표 도달 "종목별 실적 반영" 옵션용 — 선택된 기간(1/3/6/12개월)의 실제 가격 등락률(연환산)
+    const trailReturn = cfg.returnMode !== "manual"
+      ? trailingReturnAnnualized(it.full.dates, it.full.closes, Number(cfg.returnMode))
+      : null;
+
     totalValue += value;
     if (cost != null) { totalCost += cost; costedValue += value; }
     totalMonthlyDiv += monthlyDiv;
     totalMonthlyBuy += monthlyBuy;
-    perRow.push({ ...it, meta, close, isUsd, value, cost, profit, monthlyDiv, nextMonthDiv, monthlyBuy, erosion, usedConfirmed });
+    perRow.push({ ...it, meta, close, isUsd, value, cost, profit, monthlyDiv, nextMonthDiv, monthlyBuy, erosion, usedConfirmed, trailReturn });
 
     const accKey = it.account || "계좌 미지정";
     if (!accountMap.has(accKey)) accountMap.set(accKey, { value: 0, cost: 0, monthlyDiv: 0, monthlyBuy: 0, n: 0 });
@@ -2089,10 +2116,22 @@ async function renderMyAssets() {
 
   // 목표 도달: 기대수익률 미입력 시 배당수익률만 가정(보수적) — 안내문에 명시
   const goalAmount = parseFloat(cfg.goalAmount) || 0;
-  const expReturn = cfg.expectedReturn !== "" ? Number(cfg.expectedReturn) / 100 : null;
+  let expReturn = cfg.expectedReturn !== "" ? Number(cfg.expectedReturn) / 100 : null;
+  let weightedTrailReturn = null;
+  if (cfg.returnMode !== "manual") {
+    let wsum = 0, vsum = 0;
+    for (const p of perRow) {
+      if (p.trailReturn != null && p.value > 0) { wsum += p.trailReturn * p.value; vsum += p.value; }
+    }
+    weightedTrailReturn = vsum > 0 ? wsum / vsum : null;
+    expReturn = weightedTrailReturn; // 종목별 실적 반영 모드에서는 직접입력 대신 이 값을 씀
+  }
   const wDivYield = totalValue > 0 ? (totalMonthlyDiv * 12) / totalValue : 0;
   const goalRate = (expReturn != null ? expReturn : 0) + wDivYield;
-  const goal = goalAmount > 0 ? monthsToGoal(goalAmount, totalValue, totalMonthlyBuy, goalRate) : null;
+  // 월 재투자액 = 월매수총액(ETF 매수) + 월적립투자금액(계좌별 월 납입금, 연금저축 등) — 둘 다 매달 잔고에 더해져 복리로 불어남
+  const totalContributions = Object.values(cfg.contributions || {}).reduce((a, b) => a + b, 0);
+  const totalMonthlyInvest = totalMonthlyBuy + totalContributions;
+  const goal = goalAmount > 0 ? monthsToGoal(goalAmount, totalValue, totalMonthlyInvest, goalRate) : null;
   const goalLabel = goal
     ? goal.months == null ? "50년 초과"
       : goal.months === 0 ? "이미 달성"
@@ -2268,7 +2307,11 @@ async function renderMyAssets() {
       ${goal ? `<div class="stat">
         <p class="stat-label">🎯 목표 ${fmtW(goalAmount)} 도달</p>
         <p class="stat-value">${goalLabel}</p>
-        <p class="stat-sub">연 ${(goalRate * 100).toFixed(1)}% 가정${expReturn == null ? " (기대수익률 미입력 — 배당만 반영)" : ""}</p>
+        <p class="stat-sub">연 ${(goalRate * 100).toFixed(1)}% 가정${
+          cfg.returnMode !== "manual" ? ` (종목별 최근 ${cfg.returnMode}개월 실적 가중평균${weightedTrailReturn == null ? ", 가격데이터 부족 시 0% 처리" : ""} + 배당수익률)`
+          : expReturn == null ? " (기대수익률 미입력 — 배당만 반영)" : ""
+        }</p>
+        <p class="stat-sub">월 재투자액 ${fmtW(totalMonthlyInvest)}${totalContributions > 0 ? ` (월매수 ${fmtW(totalMonthlyBuy)} + 월적립 ${fmtW(totalContributions)})` : ""} 반영</p>
       </div>` : ""}
     </div>
     <p class="stat-sub">최신 수집: ${state.manifest.updated} 기준(주간 자동 수집 — 실시간 시세 아님)</p>
@@ -2876,6 +2919,24 @@ function estimateFuture(totalLump, totalMonthly, years, priceCAGR, divYield, div
 
 /* 목표 금액 도달까지 걸리는 개월 수. annualRate는 배당 재투자를 포함한 연평균 TR 수익률.
    반환: {months, contributed} — 도달 불가(600개월=50년 초과)면 months: null */
+/* 종목 최근 N개월 실적(연환산) — 목표 도달 계산의 "개별 수익률" 옵션에 사용 */
+function trailingReturnAnnualized(dates, closes, months) {
+  if (!dates || dates.length < 2) return null;
+  const lastClose = closes[closes.length - 1];
+  const lastDate = dates[dates.length - 1];
+  const cutoff = new Date(lastDate);
+  cutoff.setMonth(cutoff.getMonth() - months);
+  const cutStr = cutoff.toISOString().slice(0, 10);
+  let idx = dates.findIndex((d) => d >= cutStr);
+  if (idx < 0 || idx >= dates.length - 1) idx = 0;
+  const startClose = closes[idx];
+  if (!(startClose > 0)) return null;
+  const periodReturn = lastClose / startClose - 1;
+  const annualized = Math.pow(1 + periodReturn, 12 / months) - 1;
+  // 단기(1~3개월) 등락을 그대로 연율화하면 비현실적으로 큰 값이 나올 수 있어 합리적 범위로 제한
+  return Math.max(-0.7, Math.min(1.5, annualized));
+}
+
 function monthsToGoal(goal, lump, monthly, annualRate) {
   if (!(goal > 0)) return null;
   const rm = Math.pow(1 + annualRate, 1 / 12) - 1;
@@ -3761,6 +3822,10 @@ async function init() {
   updateMyAssetsVersionBadge();
   document.getElementById("myGoalAmount").addEventListener("input", () => { saveMyAssets(); renderMyAssets(); });
   document.getElementById("myExpectedReturn").addEventListener("input", () => { saveMyAssets(); renderMyAssets(); });
+  updateReturnModeUI();
+  document.getElementById("myReturnMode").addEventListener("change", () => {
+    updateReturnModeUI(); saveMyAssets(); renderMyAssets();
+  });
   document.getElementById("myExportBtn").addEventListener("click", () => {
     const blob = new Blob([JSON.stringify(serializeMyAssets(), null, 2)], { type: "application/json" });
     const a = document.createElement("a");
