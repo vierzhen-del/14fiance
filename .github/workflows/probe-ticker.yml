@@ -22,23 +22,29 @@ jobs:
               with urllib.request.urlopen(req, timeout=15) as r:
                   return r.read().decode("utf-8")
 
-          for q in ["코스닥150커버드콜", "KIWOOM 코스닥150", "코스닥150커버드콜액티브"]:
-              url = "https://m.stock.naver.com/api/search/all?query=" + urllib.parse.quote(q)
-              try:
-                  data = json.loads(get(url))
-              except Exception as e:
-                  print(f"QUERY={q} ERROR {e}")
-                  continue
-              print(f"===== QUERY: {q}")
-              def walk(o, depth=0):
-                  if isinstance(o, dict):
-                      keys = set(o.keys())
-                      if {"name", "code"} <= keys or {"itemCode", "stockName"} <= keys or {"reutersCode"} <= keys:
-                          print("  ITEM:", json.dumps(o, ensure_ascii=False)[:300])
-                      for v in o.values():
-                          walk(v, depth + 1)
-                  elif isinstance(o, list):
-                      for v in o:
-                          walk(v, depth + 1)
-              walk(data)
+          def walk(o):
+              if isinstance(o, dict):
+                  keys = set(o.keys())
+                  if keys & {"code", "itemCode", "reutersCode", "cd"} and keys & {"name", "stockName", "nm", "korName"}:
+                      print("  ITEM:", json.dumps(o, ensure_ascii=False)[:300])
+                  for v in o.values():
+                      walk(v)
+              elif isinstance(o, list):
+                  for v in o:
+                      walk(v)
+
+          endpoints = [
+              "https://ac.stock.naver.com/ac?q={q}&target=stock%2Cindex%2Cmarketindicator",
+              "https://m.stock.naver.com/front-api/search/autoComplete?query={q}&target=stock",
+          ]
+          for q in ["코스닥150커버드콜", "KIWOOM 코스닥150"]:
+              for ep in endpoints:
+                  url = ep.format(q=urllib.parse.quote(q))
+                  try:
+                      data = json.loads(get(url))
+                  except Exception as e:
+                      print(f"URL={url} ERROR {e}")
+                      continue
+                  print(f"===== {url}")
+                  walk(data)
           EOF
