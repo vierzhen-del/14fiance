@@ -1393,9 +1393,11 @@ function loadEntry(id) {
 let portfolioRowSeq = 0;
 
 /* 계좌 구분 태그 — 세금 계산은 하지 않고, 어느 계좌에 뭘 담았는지 정리용으로만 쓴다 */
+// 노션에 등록된 실제 계좌명(가져오기 데이터와 동일 표기) — 목록 밖 계좌명도
+// accountOptionsHTML()이 자동 보존하므로, 여기 없는 계좌를 입력해도 안전하다.
 const ACCOUNT_TYPES = [
-  "증권계좌 A", "증권계좌 B", "증권계좌 C", "증권계좌 D", "증권계좌 E", "증권계좌 F", "증권계좌 G",
-  "일반", "DC", "연금저축(세액공제)", "연금저축(세금미공제)", "ISA", "IRP", "외화계좌",
+  "삼성_DC", "삼성_연금", "삼성_연금저축(세금미공제)", "삼성_IRP", "삼성_일반", "삼성_외화",
+  "KB_일반", "KB_ISA", "신한_일반",
 ];
 
 function accountOptionsHTML(selected) {
@@ -2184,19 +2186,41 @@ async function renderMyAssets() {
     </div>`;
   }).join("");
 
-  // 국내/미국 비중 + 자산 성격별(카테고리) 비중 — v534 "비중분석" 탭에 해당
-  let usValue = 0, krValue = 0;
+  // 투자대상 시장 비중(한국/미국/글로벌) + 성장·배당·안전 스타일 비중 + 자산 성격별(카테고리) 비중
+  // — v534 "비중분석" 탭에 해당. 상장 통화(isUsd)가 아니라 실제 투자대상 시장(meta.region)
+  // 기준으로 분류한다 — "TIGER 미국S&P500"처럼 국내 상장이라도 미국에 투자하면 미국 비중으로,
+  // "TIGER 배당커버드콜액티브"처럼 국내 배당주(SK하이닉스·삼성전자 등) 기반이면 한국 비중으로 잡힌다.
+  const regionMap = new Map();
+  const styleMap = new Map();
   const catMap = new Map();
   for (const p of perRow) {
     if (p.value <= 0) continue;
-    if (p.isUsd) usValue += p.value; else krValue += p.value;
+    const region = (p.meta && p.meta.region) || "미분류";
+    const style = (p.meta && p.meta.style) || "미분류";
+    regionMap.set(region, (regionMap.get(region) || 0) + p.value);
+    styleMap.set(style, (styleMap.get(style) || 0) + p.value);
     const cat = p.meta && p.meta.category ? p.meta.category : "기타";
     catMap.set(cat, (catMap.get(cat) || 0) + p.value);
   }
+  const REGION_ORDER = ["한국", "미국", "글로벌", "미분류"];
   const marketKpiHTML = totalValue > 0 ? `<div class="stat-row" style="margin-top:14px;">
-      <div class="stat"><p class="stat-label">국내자산 비중</p><p class="stat-value">${((krValue / totalValue) * 100).toFixed(1)}%</p><p class="stat-sub">${fmtW(krValue)}</p></div>
-      <div class="stat"><p class="stat-label">미국(달러)자산 비중</p><p class="stat-value">${((usValue / totalValue) * 100).toFixed(1)}%</p><p class="stat-sub">${fmtW(usValue)}</p></div>
+      ${REGION_ORDER.filter((r) => regionMap.has(r)).map((r) => `<div class="stat">
+        <p class="stat-label">${r} 투자 비중</p>
+        <p class="stat-value">${((regionMap.get(r) / totalValue) * 100).toFixed(1)}%</p>
+        <p class="stat-sub">${fmtW(regionMap.get(r))}</p>
+      </div>`).join("")}
     </div>` : "";
+  const STYLE_ORDER = ["성장", "배당", "안전", "미분류"];
+  const styleAllocHTML = STYLE_ORDER.filter((s) => styleMap.has(s)).map((s, i) => {
+    const v = styleMap.get(s);
+    const pct = totalValue > 0 ? (v / totalValue) * 100 : 0;
+    const sub = s === "안전" ? "채권혼합·리츠 등" : s === "배당" ? "커버드콜 등 분배 중심" : s === "성장" ? "지수·테마 성장주" : "";
+    return `<div class="bar-row">
+      <span class="bar-label" title="${s}">${s}${sub ? ` <span style="color:var(--text-muted);">(${sub})</span>` : ""}</span>
+      <div class="bar-track"><div class="bar-fill" style="width:${pct.toFixed(1)}%; background:${PALETTE[i % PALETTE.length]}"></div></div>
+      <span class="bar-value">${pct.toFixed(1)}%</span>
+    </div>`;
+  }).join("");
   const categoryAllocHTML = [...catMap.entries()].sort((a, b) => b[1] - a[1]).map(([cat, v], i) => {
     const pct = totalValue > 0 ? (v / totalValue) * 100 : 0;
     return `<div class="bar-row">
@@ -2293,6 +2317,9 @@ async function renderMyAssets() {
       ${marketKpiHTML}
       <p class="chart-title" style="margin-top:20px;">📊 자산배분 비중 (종목별)</p>
       <div class="bar-list">${assetAllocHTML}</div>
+
+      <p class="chart-title" style="margin-top:20px;">🌱 성장·배당·안전 비중</p>
+      <div class="bar-list">${styleAllocHTML}</div>
 
       <p class="chart-title" style="margin-top:20px;">🧩 자산 성격별 비중 (카테고리)</p>
       <div class="bar-list">${categoryAllocHTML}</div>
