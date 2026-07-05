@@ -145,6 +145,41 @@
   .section-title { font-size: 17px; font-weight: 700; margin: 32px 0 4px; }
   .section-lede { font-size: 13px; color: var(--text-muted); margin: 0 0 16px; }
 
+  /* ---- 상단 고정 메뉴바 + 섹션 접기 ---- */
+  .page-nav {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; gap: 6px; overflow-x: auto;
+    padding: 10px 0; margin: 0 0 8px;
+    background: var(--page-plane);
+    border-bottom: 1px solid var(--border);
+  }
+  .page-nav button {
+    font: inherit; font-size: 12.5px; font-weight: 600; white-space: nowrap;
+    padding: 8px 12px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--surface-1);
+    color: var(--text-primary); cursor: pointer;
+  }
+  .page-nav button:active { opacity: 0.7; }
+  .section-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .section-header .section-title { margin: 32px 0 4px; flex: 1; }
+  .section-toggle {
+    font: inherit; font-size: 13px; background: none;
+    border: 1px solid var(--border); border-radius: 8px;
+    width: 30px; height: 30px; margin-top: 14px;
+    color: var(--text-secondary); cursor: pointer; flex-shrink: 0;
+  }
+  .page-section.collapsed .section-body { display: none; }
+  .page-section.collapsed .section-toggle { transform: rotate(-90deg); }
+
+  /* ---- 내 자산 종목 목록 접기(너무 길어질 때) ---- */
+  .myrows-wrap { position: relative; overflow: hidden; }
+  .myrows-wrap.collapsed { max-height: 258px; }
+  .myrows-wrap.collapsed::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 48px;
+    background: linear-gradient(to bottom, transparent, var(--surface-1));
+    pointer-events: none;
+  }
+
   .checklist { display: flex; flex-direction: column; gap: 14px; margin-bottom: 6px; }
   .checklist-group-label { font-size: 11.5px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; margin: 0 0 8px; }
   .checklist-items { display: flex; flex-wrap: wrap; gap: 6px 10px; }
@@ -280,192 +315,234 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>ETF 최대낙폭(MDD) 계산기</h1>
-  <p class="lede">종목을 고르면 선택한 기간 동안의 최대낙폭(고점 대비 최대 하락폭)을 계산해서 보여줍니다.</p>
+  <h1 id="pageTitle">💼 내자산관리 ver0.0</h1>
+  <p class="lede" id="pageUpdated">데이터 업데이트 확인 중…</p>
 
-  <p class="section-title" style="margin-top:8px;">투자 시뮬레이터</p>
-  <p class="section-lede">과거 데이터로 "그때 투자했다면 지금 얼마"를 계산하고(백테스트), 그 실적을 바탕으로 한 미래 추정치도 보여줍니다. 아래에서 기간을 직접 고르거나, 비워두면 "ETF MDD 비교" 등 다른 섹션과 같은 기간 선택을 그대로 씁니다.</p>
+  <nav id="pageNav" class="page-nav">
+    <button type="button" data-target="sec-myassets">💼 내 자산</button>
+    <button type="button" data-target="sec-sim">📈 투자시뮬레이터</button>
+    <button type="button" data-target="sec-mdd">📉 MDD 테스트</button>
+    <button type="button" data-target="sec-portfolio">🎛 커스텀 포트폴리오</button>
+  </nav>
 
-  <div class="card">
-    <p class="checklist-group-label">투자 방식</p>
-    <div class="controls" style="margin-bottom:10px;">
-      <div class="seg" id="simInputModeSeg" role="group" aria-label="투자금 입력 방식">
-        <button type="button" data-input-mode="simple" class="active">간단 (비중으로 배분)</button>
-        <button type="button" data-input-mode="custom">종목별 개별 입력</button>
-      </div>
+  <section class="page-section" id="sec-myassets">
+    <div class="section-header">
+      <p class="section-title">💼 내 자산</p>
+      <button type="button" class="section-toggle" aria-label="섹션 접기/펴기">▾</button>
     </div>
-    <p class="checklist-group-label">투자 종목 (미국·국내 혼합 가능)</p>
-    <div id="simRows" class="portfolio-rows"></div>
-    <button type="button" id="addSimRow" class="btn-add">+ 종목 추가</button>
-    <p id="simSum" class="portfolio-sum"></p>
+    <div class="section-body">
+      <p class="section-lede">계좌별 보유 종목·수량을 입력하면 평가액·수익률·예상 월배당을 자동 계산합니다. <b>입력한 보유 정보는 이 기기(브라우저)에만 저장되며 서버로 전송되지 않습니다.</b></p>
+      <p class="section-lede">월배당은 기본적으로 최근 1년 배당(TTM)÷12로 추정합니다. 시트/노션 배당기준에 기록된 <b>주당 확정 DPS(원)</b>를 알고 있으면 종목별 "확정 DPS(원/주,선택)" 칸에 그대로 입력하세요 — 월배당이 DPS×수량으로 계산되어 추정치보다 우선 적용되고, 수량을 바꿔도 자동으로 따라갑니다.</p>
+      <p class="stat-sub" id="myAssetVersionBadge" style="display:none; margin:0 0 10px;"></p>
 
-    <div class="controls" style="margin-bottom:6px;">
-      <label style="font-size:12.5px; color:var(--text-secondary); display:flex; align-items:center; gap:6px;">시작일 <input type="date" id="simStartDate"></label>
-      <label style="font-size:12.5px; color:var(--text-secondary); display:flex; align-items:center; gap:6px;">종료일 <input type="date" id="simEndDate"></label>
-      <button type="button" id="simDateClear" class="btn-action">기간 초기화</button>
-    </div>
-
-    <div class="controls" style="margin-bottom:6px;">
-      <div class="seg" id="simCurrencySeg" role="group" aria-label="투자금 통화">
-        <button type="button" data-cur="USD" class="active">$ 달러</button>
-        <button type="button" data-cur="KRW">₩ 원화</button>
-      </div>
-      <div class="seg" id="simFxSeg" role="group" aria-label="환율 반영 방식">
-        <button type="button" data-fx="float" class="active">환율 변동 반영</button>
-        <button type="button" data-fx="fixed">고정 환율</button>
-      </div>
-      <div id="simGlobalAmount" style="display:contents;">
-        <select id="simMode" aria-label="투자 방식" style="min-width:150px;">
-          <option value="dca" selected>월적립식 (매월 매수)</option>
-          <option value="lump">거치식 (한 번에 투자)</option>
-        </select>
-        <div class="portfolio-weight-wrap">
-          <input type="number" id="simAmount" class="portfolio-weight" style="width:110px" min="1" step="1" value="1000">
-          <span id="simAmountUnit" style="font-size:12.5px; color:var(--text-muted);">$/월</span>
+      <div class="card">
+        <div id="myAssetRowsWrap" class="myrows-wrap">
+          <div id="myAssetRows" class="portfolio-rows"></div>
         </div>
-      </div>
-      <select id="simFutureYears" aria-label="미래 추정 기간" style="min-width:120px;">
-        <option value="1">향후 1년</option>
-        <option value="3">향후 3년</option>
-        <option value="5">향후 5년</option>
-        <option value="10" selected>향후 10년</option>
-        <option value="11">향후 11년</option>
-        <option value="12">향후 12년</option>
-        <option value="13">향후 13년</option>
-        <option value="14">향후 14년</option>
-        <option value="15">향후 15년</option>
-        <option value="16">향후 16년</option>
-        <option value="20">향후 20년</option>
-        <option value="25">향후 25년</option>
-        <option value="30">향후 30년</option>
-        <option value="35">향후 35년</option>
-        <option value="40">향후 40년</option>
-        <option value="45">향후 45년</option>
-        <option value="50">향후 50년</option>
-      </select>
-      <label style="font-size:12.5px; color:var(--text-secondary); display:flex; align-items:center; gap:6px;">목표일(선택) <input type="date" id="simGoalDate" aria-label="목표일"></label>
-      <div class="portfolio-weight-wrap">
-        <input type="number" id="simGoalAmount" class="portfolio-weight" style="width:130px" min="0" step="1" placeholder="목표 금액 (선택)" aria-label="목표 금액">
-        <span id="simGoalUnit" style="font-size:12.5px; color:var(--text-muted);">$ 목표</span>
-      </div>
-      <div class="portfolio-weight-wrap">
-        <input type="number" id="simExpectedReturn" class="portfolio-weight" style="width:110px" step="1" placeholder="기대수익률(선택)" aria-label="기대 연 수익률">
-        <span style="font-size:12.5px; color:var(--text-muted);">%/년</span>
-      </div>
-      <label style="font-size:12.5px; color:var(--text-secondary); display:flex; align-items:center; gap:6px;">
-        <input type="checkbox" id="simInflationOn"> 물가상승률 반영
-        <input type="number" id="simInflationRate" style="width:60px;" step="1" value="2" aria-label="연간 물가상승률">%
-      </label>
-    </div>
-    <p id="simExpectedReturnHint" class="stat-sub" style="display:none; margin:-4px 0 10px;">기대수익률을 지정하면 "향후 추정"에서 백테스트 CAGR 대신 이 값을 가격 상승률로 씁니다(국내 ETF는 상장 초기 짧은 기간의 급등장이 그대로 연장 추정될 수 있어, 직접 보수적인 값을 넣을 수 있게 한 기능입니다). 배당수익률은 실제 데이터를 그대로 더합니다.</p>
-    <p id="simGoalDateHint" class="stat-sub" style="display:none; margin:-4px 0 10px;">목표일을 지정하면 "향후 N년 추정" 대신 오늘부터 그 날짜까지 남은 기간으로 미래 추정을 계산합니다.</p>
-    <p id="simCustomHint" class="stat-sub" style="display:none; margin:-4px 0 10px;">종목마다 투자 방식(거치·월적립·거치+월적립)과 금액을 따로 입력합니다. 통화·기간·미래 추정 기간은 위 공통 설정을 그대로 씁니다.</p>
-    <p id="simFxHint" class="stat-sub" style="display:none; margin:-4px 0 10px;">고정 환율: 백테스트 시작일의 환율을 전체 기간에 그대로 적용합니다(환율 변동 효과 제외 — 환헤지 가정과 비슷). 투자금 통화와 종목 통화가 다를 때만 결과가 달라집니다.</p>
-    <div class="action-row">
-      <button type="button" id="simSaveBtn" class="btn-action">💾 설정 저장</button>
-      <button type="button" id="simLoadBtn" class="btn-action">📂 불러오기</button>
-      <button type="button" id="simShareBtn" class="btn-action">🔗 설정 링크 공유</button>
-      <span id="simSaveStatus" class="action-status"></span>
-    </div>
-    <div class="action-row">
-      <button type="button" id="simImageBtn" class="btn-action">🖼 이미지 저장</button>
-      <button type="button" id="simCsvBtn" class="btn-action">📄 시트 저장</button>
-      <button type="button" id="simShareAppBtn" class="btn-action">📤 앱으로 공유</button>
-      <button type="button" id="simKakaoBtn" class="btn-action">💬 카카오톡 공유</button>
-      <button type="button" id="simClaudeBtn" class="btn-action">🤖 클로드에 복사</button>
-      <span id="simExportStatus" class="action-status"></span>
-    </div>
-    <div id="simResult"></div>
-  </div>
-
-  <p class="section-title">💼 내 자산</p>
-  <p class="section-lede">계좌별 보유 종목·수량을 입력하면 평가액·수익률·예상 월배당을 자동 계산합니다. <b>입력한 보유 정보는 이 기기(브라우저)에만 저장되며 서버로 전송되지 않습니다.</b></p>
-  <p class="section-lede">월배당은 기본적으로 최근 1년 배당(TTM)÷12로 추정합니다. 시트/노션 배당기준에 기록된 <b>주당 확정 DPS(원)</b>를 알고 있으면 종목별 "확정 DPS(원/주,선택)" 칸에 그대로 입력하세요 — 월배당이 DPS×수량으로 계산되어 추정치보다 우선 적용되고, 수량을 바꿔도 자동으로 따라갑니다.</p>
-
-  <div class="card">
-    <div id="myAssetRows" class="portfolio-rows"></div>
-    <button type="button" id="addMyAssetRow" class="btn-add">+ 종목 추가</button>
-    <div class="controls" style="margin-top:10px; margin-bottom:6px;">
-      <div class="portfolio-weight-wrap">
-        <input type="number" id="myGoalAmount" class="portfolio-weight" style="width:140px" min="0" step="1" placeholder="목표 금액 (선택)" aria-label="자산 목표 금액">
-        <span style="font-size:12.5px; color:var(--text-muted);">₩ 목표</span>
-      </div>
-      <div class="portfolio-weight-wrap">
-        <input type="number" id="myExpectedReturn" class="portfolio-weight" style="width:110px" step="1" placeholder="기대수익률(선택)" aria-label="기대 연 수익률">
-        <span style="font-size:12.5px; color:var(--text-muted);">%/년</span>
+        <button type="button" id="myRowsToggleBtn" class="btn-action" style="display:none; margin-bottom:10px;"></button>
+        <button type="button" id="addMyAssetRow" class="btn-add">+ 종목 추가</button>
+        <div class="controls" style="margin-top:10px; margin-bottom:6px;">
+          <div class="portfolio-weight-wrap">
+            <input type="number" id="myGoalAmount" class="portfolio-weight" style="width:140px" min="0" step="1" placeholder="목표 금액 (선택)" aria-label="자산 목표 금액">
+            <span style="font-size:12.5px; color:var(--text-muted);">₩ 목표</span>
+          </div>
+          <div class="portfolio-weight-wrap">
+            <input type="number" id="myExpectedReturn" class="portfolio-weight" style="width:110px" step="1" placeholder="기대수익률(선택)" aria-label="기대 연 수익률">
+            <span style="font-size:12.5px; color:var(--text-muted);">%/년</span>
+          </div>
+        </div>
+        <p class="stat-sub" id="myContribLabel" style="display:none; margin:6px 0 4px;">계좌별 월 납입금(선택, 연금저축 등 배당 외 현금 납입이 있는 계좌)</p>
+        <div class="controls" id="myContribRows" style="margin-bottom:6px;"></div>
+        <div class="action-row">
+          <button type="button" id="myExportBtn" class="btn-action">📤 내보내기</button>
+          <button type="button" id="myImportBtn" class="btn-action">📂 가져오기</button>
+          <button type="button" id="myClaudeBtn" class="btn-action">🤖 클로드에 복사</button>
+          <button type="button" id="myCsvBtn" class="btn-action">📄 시트 저장</button>
+          <a href="https://app.notion.com/p/3865efd0e46281c49a72c9bbc70dcea0" target="_blank" rel="noopener" class="btn-action" style="text-decoration:none;">📋 배당 기준 SOP 확인</a>
+          <span id="myAssetStatus" class="action-status"></span>
+          <input type="file" id="myImportFile" accept="application/json" style="display:none;">
+        </div>
+        <div id="myAssetResult"></div>
       </div>
     </div>
-    <p class="stat-sub" id="myContribLabel" style="display:none; margin:6px 0 4px;">계좌별 월 납입금(선택, 연금저축 등 배당 외 현금 납입이 있는 계좌)</p>
-    <div class="controls" id="myContribRows" style="margin-bottom:6px;"></div>
-    <div class="action-row">
-      <button type="button" id="myExportBtn" class="btn-action">📤 내보내기</button>
-      <button type="button" id="myImportBtn" class="btn-action">📂 가져오기</button>
-      <button type="button" id="myClaudeBtn" class="btn-action">🤖 클로드에 복사</button>
-      <button type="button" id="myCsvBtn" class="btn-action">📄 시트 저장</button>
-      <a href="https://app.notion.com/p/3865efd0e46281c49a72c9bbc70dcea0" target="_blank" rel="noopener" class="btn-action" style="text-decoration:none;">📋 배당 기준 SOP 확인</a>
-      <span id="myAssetStatus" class="action-status"></span>
-      <input type="file" id="myImportFile" accept="application/json" style="display:none;">
+  </section>
+
+  <section class="page-section" id="sec-sim">
+    <div class="section-header">
+      <p class="section-title">투자 시뮬레이터</p>
+      <button type="button" class="section-toggle" aria-label="섹션 접기/펴기">▾</button>
     </div>
-    <div id="myAssetResult"></div>
-  </div>
+    <div class="section-body">
+      <p class="section-lede">과거 데이터로 "그때 투자했다면 지금 얼마"를 계산하고(백테스트), 그 실적을 바탕으로 한 미래 추정치도 보여줍니다. 아래에서 기간을 직접 고르거나, 비워두면 "MDD 테스트" 등 다른 섹션과 같은 기간 선택을 그대로 씁니다.</p>
 
-  <div class="controls">
-    <div class="seg" id="marketSeg" role="group" aria-label="시장 구분">
-      <button type="button" data-market="all" class="active">전체</button>
-      <button type="button" data-market="us">미국</button>
-      <button type="button" data-market="kr">국내</button>
+      <div class="card">
+        <p class="checklist-group-label">투자 방식</p>
+        <div class="controls" style="margin-bottom:10px;">
+          <div class="seg" id="simInputModeSeg" role="group" aria-label="투자금 입력 방식">
+            <button type="button" data-input-mode="simple" class="active">간단 (비중으로 배분)</button>
+            <button type="button" data-input-mode="custom">종목별 개별 입력</button>
+          </div>
+        </div>
+        <p class="checklist-group-label">투자 종목 (미국·국내 혼합 가능)</p>
+        <div id="simRows" class="portfolio-rows"></div>
+        <button type="button" id="addSimRow" class="btn-add">+ 종목 추가</button>
+        <p id="simSum" class="portfolio-sum"></p>
+
+        <div class="controls" style="margin-bottom:6px;">
+          <label style="font-size:12.5px; color:var(--text-secondary); display:flex; align-items:center; gap:6px;">시작일 <input type="date" id="simStartDate"></label>
+          <label style="font-size:12.5px; color:var(--text-secondary); display:flex; align-items:center; gap:6px;">종료일 <input type="date" id="simEndDate"></label>
+          <button type="button" id="simDateClear" class="btn-action">기간 초기화</button>
+        </div>
+
+        <div class="controls" style="margin-bottom:6px;">
+          <div class="seg" id="simCurrencySeg" role="group" aria-label="투자금 통화">
+            <button type="button" data-cur="USD" class="active">$ 달러</button>
+            <button type="button" data-cur="KRW">₩ 원화</button>
+          </div>
+          <div class="seg" id="simFxSeg" role="group" aria-label="환율 반영 방식">
+            <button type="button" data-fx="float" class="active">환율 변동 반영</button>
+            <button type="button" data-fx="fixed">고정 환율</button>
+          </div>
+          <div id="simGlobalAmount" style="display:contents;">
+            <select id="simMode" aria-label="투자 방식" style="min-width:150px;">
+              <option value="dca" selected>월적립식 (매월 매수)</option>
+              <option value="lump">거치식 (한 번에 투자)</option>
+            </select>
+            <div class="portfolio-weight-wrap">
+              <input type="number" id="simAmount" class="portfolio-weight" style="width:110px" min="1" step="1" value="1000">
+              <span id="simAmountUnit" style="font-size:12.5px; color:var(--text-muted);">$/월</span>
+            </div>
+          </div>
+          <select id="simFutureYears" aria-label="미래 추정 기간" style="min-width:120px;">
+            <option value="1">향후 1년</option>
+            <option value="3">향후 3년</option>
+            <option value="5">향후 5년</option>
+            <option value="10" selected>향후 10년</option>
+            <option value="11">향후 11년</option>
+            <option value="12">향후 12년</option>
+            <option value="13">향후 13년</option>
+            <option value="14">향후 14년</option>
+            <option value="15">향후 15년</option>
+            <option value="16">향후 16년</option>
+            <option value="20">향후 20년</option>
+            <option value="25">향후 25년</option>
+            <option value="30">향후 30년</option>
+            <option value="35">향후 35년</option>
+            <option value="40">향후 40년</option>
+            <option value="45">향후 45년</option>
+            <option value="50">향후 50년</option>
+          </select>
+          <label style="font-size:12.5px; color:var(--text-secondary); display:flex; align-items:center; gap:6px;">목표일(선택) <input type="date" id="simGoalDate" aria-label="목표일"></label>
+          <div class="portfolio-weight-wrap">
+            <input type="number" id="simGoalAmount" class="portfolio-weight" style="width:130px" min="0" step="1" placeholder="목표 금액 (선택)" aria-label="목표 금액">
+            <span id="simGoalUnit" style="font-size:12.5px; color:var(--text-muted);">$ 목표</span>
+          </div>
+          <div class="portfolio-weight-wrap">
+            <input type="number" id="simExpectedReturn" class="portfolio-weight" style="width:110px" step="1" placeholder="기대수익률(선택)" aria-label="기대 연 수익률">
+            <span style="font-size:12.5px; color:var(--text-muted);">%/년</span>
+          </div>
+          <label style="font-size:12.5px; color:var(--text-secondary); display:flex; align-items:center; gap:6px;">
+            <input type="checkbox" id="simInflationOn"> 물가상승률 반영
+            <input type="number" id="simInflationRate" style="width:60px;" step="1" value="2" aria-label="연간 물가상승률">%
+          </label>
+        </div>
+        <p id="simExpectedReturnHint" class="stat-sub" style="display:none; margin:-4px 0 10px;">기대수익률을 지정하면 "향후 추정"에서 백테스트 CAGR 대신 이 값을 가격 상승률로 씁니다(국내 ETF는 상장 초기 짧은 기간의 급등장이 그대로 연장 추정될 수 있어, 직접 보수적인 값을 넣을 수 있게 한 기능입니다). 배당수익률은 실제 데이터를 그대로 더합니다.</p>
+        <p id="simGoalDateHint" class="stat-sub" style="display:none; margin:-4px 0 10px;">목표일을 지정하면 "향후 N년 추정" 대신 오늘부터 그 날짜까지 남은 기간으로 미래 추정을 계산합니다.</p>
+        <p id="simCustomHint" class="stat-sub" style="display:none; margin:-4px 0 10px;">종목마다 투자 방식(거치·월적립·거치+월적립)과 금액을 따로 입력합니다. 통화·기간·미래 추정 기간은 위 공통 설정을 그대로 씁니다.</p>
+        <p id="simFxHint" class="stat-sub" style="display:none; margin:-4px 0 10px;">고정 환율: 백테스트 시작일의 환율을 전체 기간에 그대로 적용합니다(환율 변동 효과 제외 — 환헤지 가정과 비슷). 투자금 통화와 종목 통화가 다를 때만 결과가 달라집니다.</p>
+        <div class="action-row">
+          <button type="button" id="simSaveBtn" class="btn-action">💾 설정 저장</button>
+          <button type="button" id="simLoadBtn" class="btn-action">📂 불러오기</button>
+          <button type="button" id="simShareBtn" class="btn-action">🔗 설정 링크 공유</button>
+          <span id="simSaveStatus" class="action-status"></span>
+        </div>
+        <div class="action-row">
+          <button type="button" id="simImageBtn" class="btn-action">🖼 이미지 저장</button>
+          <button type="button" id="simCsvBtn" class="btn-action">📄 시트 저장</button>
+          <button type="button" id="simShareAppBtn" class="btn-action">📤 앱으로 공유</button>
+          <button type="button" id="simKakaoBtn" class="btn-action">💬 카카오톡 공유</button>
+          <button type="button" id="simClaudeBtn" class="btn-action">🤖 클로드에 복사</button>
+          <span id="simExportStatus" class="action-status"></span>
+        </div>
+        <div id="simResult"></div>
+      </div>
     </div>
-    <select id="etfSelect" aria-label="ETF 선택"></select>
-    <select id="periodSelect" aria-label="기간 선택">
-      <option value="0">전체 기간</option>
-      <option value="3">최근 3개월</option>
-      <option value="6">최근 6개월</option>
-      <option value="12">최근 12개월</option>
-      <option value="36">최근 3년</option>
-      <option value="60" selected>최근 5년</option>
-      <option value="120">최근 10년</option>
-    </select>
-  </div>
+  </section>
 
-  <div id="app">
-    <p style="color:var(--text-muted); font-size:13px;">데이터를 불러오는 중…</p>
-  </div>
-
-  <p class="section-title">ETF MDD 비교</p>
-  <p class="section-lede">최대 5개까지 골라서 최대낙폭을 나란히 비교합니다. 위에서 고른 기간이 그대로 적용되며, 아래 옵션을 켜면 대신 가장 늦게 상장한 종목 기준으로 시작일을 맞춥니다.</p>
-
-  <div class="card">
-    <div id="compareChecklist" class="checklist"></div>
-    <p class="chk-counter"><b id="chkCount">0</b>/5 선택됨</p>
-    <label class="chk-item" for="alignStartToggle" style="margin-bottom:18px;">
-      <input type="checkbox" id="alignStartToggle">
-      가장 늦게 상장한 종목 기준으로 시작일 맞추기
-    </label>
-    <div id="compareResult"></div>
-  </div>
-
-  <p class="section-title">커스텀 포트폴리오</p>
-  <p class="section-lede">ETF를 원하는 비율로 섞어서 그 조합의 최대낙폭을 계산합니다. 비율 합이 100%가 아니어도 자동으로 정규화됩니다. 위에서 고른 기간이 적용됩니다.</p>
-
-  <div class="card">
-    <div id="portfolioRows" class="portfolio-rows"></div>
-    <button type="button" id="addPortfolioRow" class="btn-add">+ 종목 추가</button>
-    <p id="portfolioSum" class="portfolio-sum"></p>
-    <div class="action-row">
-      <button type="button" id="portfolioSaveBtn" class="btn-action">💾 설정 저장</button>
-      <button type="button" id="portfolioLoadBtn" class="btn-action">📂 불러오기</button>
-      <span id="portfolioSaveStatus" class="action-status"></span>
+  <section class="page-section" id="sec-mdd">
+    <div class="section-header">
+      <p class="section-title">MDD 테스트</p>
+      <button type="button" class="section-toggle" aria-label="섹션 접기/펴기">▾</button>
     </div>
-    <div class="action-row">
-      <button type="button" id="portfolioImageBtn" class="btn-action">🖼 이미지 저장</button>
-      <button type="button" id="portfolioCsvBtn" class="btn-action">📄 시트 저장</button>
-      <button type="button" id="portfolioShareAppBtn" class="btn-action">📤 앱으로 공유</button>
-      <button type="button" id="portfolioKakaoBtn" class="btn-action">💬 카카오톡 공유</button>
-      <button type="button" id="portfolioClaudeBtn" class="btn-action">🤖 클로드에 복사</button>
-      <span id="portfolioExportStatus" class="action-status"></span>
+    <div class="section-body">
+      <p class="section-lede">종목을 고르면 선택한 기간 동안의 최대낙폭(고점 대비 최대 하락폭)을 계산해서 보여줍니다. 아래에서 최대 5개까지 골라 나란히 비교할 수도 있습니다.</p>
+
+      <div class="controls">
+        <div class="seg" id="marketSeg" role="group" aria-label="시장 구분">
+          <button type="button" data-market="all" class="active">전체</button>
+          <button type="button" data-market="us">미국</button>
+          <button type="button" data-market="kr">국내</button>
+        </div>
+        <select id="etfSelect" aria-label="ETF 선택"></select>
+        <select id="periodSelect" aria-label="기간 선택">
+          <option value="0">전체 기간</option>
+          <option value="3">최근 3개월</option>
+          <option value="6">최근 6개월</option>
+          <option value="12">최근 12개월</option>
+          <option value="36">최근 3년</option>
+          <option value="60" selected>최근 5년</option>
+          <option value="120">최근 10년</option>
+        </select>
+      </div>
+
+      <div id="app">
+        <p style="color:var(--text-muted); font-size:13px;">데이터를 불러오는 중…</p>
+      </div>
+
+      <p class="chart-title" style="margin-top:24px;">📊 ETF MDD 비교 (최대 5개)</p>
+      <p class="section-lede" style="margin-top:-6px;">최대 5개까지 골라서 최대낙폭을 나란히 비교합니다. 위에서 고른 기간이 그대로 적용되며, 아래 옵션을 켜면 대신 가장 늦게 상장한 종목 기준으로 시작일을 맞춥니다.</p>
+
+      <div class="card">
+        <div id="compareChecklist" class="checklist"></div>
+        <p class="chk-counter"><b id="chkCount">0</b>/5 선택됨</p>
+        <label class="chk-item" for="alignStartToggle" style="margin-bottom:18px;">
+          <input type="checkbox" id="alignStartToggle">
+          가장 늦게 상장한 종목 기준으로 시작일 맞추기
+        </label>
+        <div id="compareResult"></div>
+      </div>
     </div>
-    <div id="portfolioResult"></div>
-  </div>
+  </section>
+
+  <section class="page-section" id="sec-portfolio">
+    <div class="section-header">
+      <p class="section-title">커스텀 포트폴리오</p>
+      <button type="button" class="section-toggle" aria-label="섹션 접기/펴기">▾</button>
+    </div>
+    <div class="section-body">
+      <p class="section-lede">ETF를 원하는 비율로 섞어서 그 조합의 최대낙폭을 계산합니다. 비율 합이 100%가 아니어도 자동으로 정규화됩니다. 위에서 고른 기간이 적용됩니다.</p>
+
+      <div class="card">
+        <div id="portfolioRows" class="portfolio-rows"></div>
+        <button type="button" id="addPortfolioRow" class="btn-add">+ 종목 추가</button>
+        <p id="portfolioSum" class="portfolio-sum"></p>
+        <div class="action-row">
+          <button type="button" id="portfolioSaveBtn" class="btn-action">💾 설정 저장</button>
+          <button type="button" id="portfolioLoadBtn" class="btn-action">📂 불러오기</button>
+          <span id="portfolioSaveStatus" class="action-status"></span>
+        </div>
+        <div class="action-row">
+          <button type="button" id="portfolioImageBtn" class="btn-action">🖼 이미지 저장</button>
+          <button type="button" id="portfolioCsvBtn" class="btn-action">📄 시트 저장</button>
+          <button type="button" id="portfolioShareAppBtn" class="btn-action">📤 앱으로 공유</button>
+          <button type="button" id="portfolioKakaoBtn" class="btn-action">💬 카카오톡 공유</button>
+          <button type="button" id="portfolioClaudeBtn" class="btn-action">🤖 클로드에 복사</button>
+          <span id="portfolioExportStatus" class="action-status"></span>
+        </div>
+        <div id="portfolioResult"></div>
+      </div>
+    </div>
+  </section>
 
   <footer id="footerNote"></footer>
 </div>
@@ -499,7 +576,44 @@ function flashStatus(elId, msg, ms = 2500) {
   el._flashTimer = setTimeout(() => { el.textContent = ""; }, ms);
 }
 
+/* 상단 고정 메뉴바 + 섹션별 접기/펴기 — 접힌 상태는 기기에 기억(localStorage) */
+const UI_COLLAPSE_KEY = "ui_section_collapsed_v1";
+function loadSectionCollapseMap() {
+  try { return JSON.parse(localStorage.getItem(UI_COLLAPSE_KEY) || "{}"); } catch (err) { return {}; }
+}
+function setSectionCollapsed(id, collapsed) {
+  const sec = document.getElementById("sec-" + id);
+  if (!sec) return;
+  sec.classList.toggle("collapsed", collapsed);
+  const btn = sec.querySelector(".section-toggle");
+  if (btn) btn.textContent = collapsed ? "▸" : "▾";
+  const map = loadSectionCollapseMap();
+  map[id] = collapsed;
+  localStorage.setItem(UI_COLLAPSE_KEY, JSON.stringify(map));
+}
+function initSectionCollapse() {
+  const map = loadSectionCollapseMap();
+  document.querySelectorAll(".page-section").forEach((sec) => {
+    const id = sec.id.replace(/^sec-/, "");
+    setSectionCollapsed(id, !!map[id]);
+    const btn = sec.querySelector(".section-toggle");
+    if (btn) btn.addEventListener("click", () => setSectionCollapsed(id, !sec.classList.contains("collapsed")));
+  });
+  document.querySelectorAll("#pageNav button").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.target.replace(/^sec-/, "");
+      setSectionCollapsed(id, false);
+      document.getElementById(btn.dataset.target).scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
+}
+
 function todayStr() { return new Date().toISOString().slice(0, 10); }
+function nowDateTimeStr() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 /* 결과 스냅샷을 캔버스에 그려 PNG로 만든다 (외부 라이브러리 없이 통계+선그래프만 간단히 재현) */
 function buildSnapshotCanvas({ title, subtitle, stats, dates, values, mddIdx }) {
@@ -1410,6 +1524,8 @@ function serializeMyAssets() {
     goalAmount: document.getElementById("myGoalAmount").value,
     expectedReturn: document.getElementById("myExpectedReturn").value,
     contributions: serializeMyContributions(),
+    dataAsOf: state.myAssetsDataAsOf || "",
+    importedAt: state.myAssetsImportedAt || "",
   };
 }
 
@@ -1417,10 +1533,40 @@ function saveMyAssets() {
   localStorage.setItem(MY_ASSETS_KEY, JSON.stringify(serializeMyAssets()));
 }
 
+/* 내 자산 종목 목록이 길어지면(6행 초과) 기본 접어서 스크롤을 줄인다 — 입력값은 그대로 유지, 시각적으로만 숨김 */
+function updateMyRowsCollapseUI() {
+  const wrap = document.getElementById("myAssetRowsWrap");
+  const btn = document.getElementById("myRowsToggleBtn");
+  if (!wrap || !btn) return;
+  const n = wrap.querySelectorAll(".portfolio-row").length;
+  if (n <= 6) {
+    wrap.classList.remove("collapsed");
+    btn.style.display = "none";
+    return;
+  }
+  btn.style.display = "";
+  if (!wrap.dataset.userExpanded) wrap.classList.add("collapsed");
+  btn.textContent = wrap.classList.contains("collapsed") ? `▼ 전체 종목 보기 (${n}개)` : "▲ 목록 접기";
+}
+
+/* "내 자산" 불러온 데이터의 기준일·불러온 시각을 표시 — 추측 없이 있는 값만 보여줌 */
+function updateMyAssetsVersionBadge() {
+  const el = document.getElementById("myAssetVersionBadge");
+  if (!el) return;
+  const parts = [];
+  if (state.myAssetsDataAsOf) parts.push(`📅 데이터 기준일: ${state.myAssetsDataAsOf}`);
+  if (state.myAssetsImportedAt) parts.push(`마지막 불러오기: ${state.myAssetsImportedAt}`);
+  if (!parts.length) { el.style.display = "none"; return; }
+  el.style.display = "";
+  el.textContent = parts.join(" · ");
+}
+
 function applyMyAssets(data) {
   if (!data || !Array.isArray(data.rows)) return false;
   state.myContribSeed = data.contributions || {};
   state.myContribAccounts = null; // 계좌 구성이 바뀌었을 수 있으니 다음 렌더에서 강제로 다시 빌드
+  state.myAssetsDataAsOf = data.dataAsOf || state.myAssetsDataAsOf || "";
+  state.myAssetsImportedAt = data.importedAt || state.myAssetsImportedAt || "";
   document.getElementById("myAssetRows").innerHTML = "";
   for (const r of data.rows) {
     // 구버전(확정 월배당 총액) 데이터는 주당 DPS로 1회 변환
@@ -1585,6 +1731,8 @@ function buildSelfSuffHTML(accountMap, contributions) {
 async function renderMyAssets() {
   const result = document.getElementById("myAssetResult");
   state.myAssetsCsvData = null;
+  updateMyRowsCollapseUI();
+  updateMyAssetsVersionBadge();
   syncMyContribRows();
   const cfg = serializeMyAssets();
   const rows = cfg.rows.filter((r) => r.qty > 0);
@@ -3091,6 +3239,7 @@ async function renderDividendHistory(symbol, full) {
 
 async function init() {
   initKakao();
+  initSectionCollapse();
   try {
     state.manifest = await fetchJSON(`${DATA_DIR}/manifest.json`);
   } catch (err) {
@@ -3098,6 +3247,8 @@ async function init() {
       `<p style="color:var(--critical); font-size:13px;">데이터를 불러오지 못했습니다: ${err.message}</p>`;
     return;
   }
+
+  document.getElementById("pageUpdated").textContent = `데이터 업데이트: ${state.manifest.updated}`;
 
   state.listedEtfs = [
     ...state.manifest.us.map((e) => ({ ...e, market: "us" })),
@@ -3240,7 +3391,14 @@ async function init() {
   } catch (err) { /* 손상된 저장값은 무시하고 새로 시작 */ }
   if (!myAssetsRestored) addMyAssetRow();
   renderMyAssets();
-  document.getElementById("addMyAssetRow").addEventListener("click", () => { addMyAssetRow(); saveMyAssets(); });
+  document.getElementById("addMyAssetRow").addEventListener("click", () => { addMyAssetRow(); saveMyAssets(); updateMyRowsCollapseUI(); });
+  document.getElementById("myRowsToggleBtn").addEventListener("click", () => {
+    const wrap = document.getElementById("myAssetRowsWrap");
+    wrap.classList.toggle("collapsed");
+    wrap.dataset.userExpanded = wrap.classList.contains("collapsed") ? "" : "1";
+    updateMyRowsCollapseUI();
+  });
+  updateMyAssetsVersionBadge();
   document.getElementById("myGoalAmount").addEventListener("input", () => { saveMyAssets(); renderMyAssets(); });
   document.getElementById("myExpectedReturn").addEventListener("input", () => { saveMyAssets(); renderMyAssets(); });
   document.getElementById("myExportBtn").addEventListener("click", () => {
@@ -3261,6 +3419,8 @@ async function init() {
       try {
         const data = JSON.parse(reader.result);
         if (!applyMyAssets(data)) throw new Error("형식이 맞지 않습니다");
+        // 이 파일을 "지금" 불러온 시점을 기록 — 파일 안의 값보다 우선(실제 불러오기 이벤트 시각)
+        state.myAssetsImportedAt = nowDateTimeStr();
         saveMyAssets();
         renderMyAssets();
         flashStatus("myAssetStatus", "가져오기 완료 ✓");
