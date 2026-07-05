@@ -32,7 +32,8 @@
 
 1. 확정 DPS의 SSOT는 노션 "💹 14RAE 배당기준 마스터"(및 금융비서 세션이 그로부터 생성하는 대시보드 HTML의 월별 예상분배금 데이터)다. 위 섹션의 7일 재조회 규칙·확정값 우선순위(①확정 DPS → ②조회 시점 주가 × 등록 배당률)를 그대로 적용해 종목별 DPS를 정한다.
 2. 그 DPS·수량·지급시기(월초/월중/월말)로 "📂 가져오기"용 import JSON을 재생성해서 **채팅 파일(SendUserFile)로만 전달**한다 — 개인 보유 데이터이므로 저장소에 절대 커밋하지 않는다.
-3. JSON 형식: `{"rows":[{"account","symbol","qty","avgPrice","monthlyQty","buyFreq","confirmedDps","payPeriod"}...],"goalAmount","expectedReturn","contributions":{"계좌명":금액}}`. 계좌명은 사용자 시트 표기(삼성_DC, 삼성_연금, 삼성_IRP, KB_일반, KB_ISA, 신한_일반 등)를 그대로 쓴다(사이트가 목록 밖 계좌명도 보존함). `monthlyQty`는 **1회 매수 수량**, `buyFreq`는 매수주기("매월"/"매주"/"매일" — 월횟수 1/4/22회로 환산)다.
+3. JSON 형식: `{"rows":[{"account","symbol","qty","avgPrice","monthlyQty","buyFreq","buyDay","confirmedDps","payPeriod","divType","divExpiry"}...],"goalAmount","expectedReturn","contributions":{"계좌명":금액},"divHistory":{"YYYY-MM":원},"dataAsOf","importedAt"}`. 계좌명은 사용자 시트 표기(삼성_DC, 삼성_연금, 삼성_IRP, KB_일반, KB_ISA, 신한_일반 등)를 그대로 쓴다(사이트가 목록 밖 계좌명도 보존함). `monthlyQty`는 **1회 매수 수량**, `buyFreq`는 매수주기("매월"/"매주"/"매일" — 월횟수 1/4/22회로 환산), `buyDay`는 표시용 요일/일자 문자열("화요일"/"25일" 등, 계산엔 미사용). `divType`(실확/특별/고정)·`divExpiry`(특별배당 만료 YYYY-MM)는 노션 배당기준 마스터 기준, `divHistory`는 월별 확정 배당 총액 이력(연도별 배당추이 표에 표시). 매수계획만 있고 보유수량 미상인 종목은 `qty` 0 + `monthlyQty`>0으로 넣으면 평가액 0·월매수만 집계된다.
+3-1. **지급시기 판정 우선순위**: 노션 배당기준 마스터(월초5일/월중15일/월말30일)가 대시보드 HTML의 월별 예상분배금 탭 표기보다 우선한다. (실사례: SOL 200타겟위클리커버드콜은 마스터=월초5일인데 v534 7월예상 탭에 월말로 잘못 표기돼 있어 월초로 정정함, 2026-07-05.)
 4. DPS 미정 종목은 `confirmedDps`를 0으로 두면 사이트가 TTM 추정치로 대체하고 "추정" 라벨을 붙인다 — 미정임을 지어내지 않는다.
 5. **상장 1개월 이내 신규 ETF 규칙(사용자 확정, 2026-07-05)**: 상장 후 1개월이 지나지 않은 ETF는 DPS를 미정으로 둔다(추정도 하지 않음). 이후 첫 분배금이 공시·확정되면 그때 확정 DPS로 반영한다. (예: KIWOOM 코스닥150커버드콜액티브 0198A0 — 2026-06-30 상장, 4계좌 보유, DPS 미정 상태로 등록.)
 6. **계좌별 월 납입금**(연금저축 등, 배당 외 현금 납입): 노션에서 함께 확인해 `contributions`에 채운다 — 자급률 탭에서 해당 계좌 "수입"에 배당과 함께 합산된다.
