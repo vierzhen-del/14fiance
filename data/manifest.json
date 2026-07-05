@@ -1,5 +1,5 @@
 {
- "updated": "2026-07-05 00:39 UTC",
+ "updated": "2026-07-05 10:41 UTC",
  "us": [
   {
    "symbol": "SPY",
@@ -83,8 +83,8 @@
    "name": "VIG (배당성장)",
    "category": "배당",
    "currency": "USD",
-   "first": "2006-08-14",
-   "last": "2026-06-30",
+   "first": "2006-08-16",
+   "last": "2026-07-02",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -106,8 +106,8 @@
    "category": "배당",
    "currency": "USD",
    "first": "2014-06-12",
-   "last": "2026-06-30",
-   "count": 3030,
+   "last": "2026-07-02",
+   "count": 3032,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   },
@@ -171,8 +171,8 @@
    "name": "IWF (러셀1000 성장)",
    "category": "성장·모멘텀",
    "currency": "USD",
-   "first": "2006-08-14",
-   "last": "2026-06-30",
+   "first": "2006-08-16",
+   "last": "2026-07-02",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -215,8 +215,8 @@
    "name": "QLD (나스닥100 2배)",
    "category": "반도체·레버리지",
    "currency": "USD",
-   "first": "2006-08-16",
-   "last": "2026-07-02",
+   "first": "2006-08-14",
+   "last": "2026-06-30",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -616,6 +616,138 @@
    "first": "2026-06-16",
    "last": "2026-07-03",
    "count": 14,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
+  },
+  {
+   "symbol": "442570.KS",
+   "name": "RISE TDF2050액티브",
+   "category": "TDF·자산배분",
+   "currency": "KRW",
+   "first": "2022-09-22",
+   "last": "2026-07-03",
+   "count": 923,
+   "ttmDividend": 106.0,
+   "dividendYield": 0.0056
+  },
+  {
+   "symbol": "0025N0.KS",
+   "name": "TIGER TDF2045",
+   "category": "TDF·자산배분",
+   "currency": "KRW",
+   "first": "2025-03-25",
+   "last": "2026-07-03",
+   "count": 312,
+   "ttmDividend": 140.0,
+   "dividendYield": 0.0108
+  },
+  {
+   "symbol": "0173Y0.KS",
+   "name": "KODEX 미국AI광통신네트워크",
+   "category": "미국 테마",
+   "currency": "KRW",
+   "first": "2026-03-31",
+   "last": "2026-07-03",
+   "count": 65,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
+  },
+  {
+   "symbol": "0038A0.KS",
+   "name": "KODEX 미국휴머노이드로봇",
+   "category": "미국 테마",
+   "currency": "KRW",
+   "first": "2025-04-15",
+   "last": "2026-07-03",
+   "count": 297,
+   "ttmDividend": 44.0,
+   "dividendYield": 0.0024
+  },
+  {
+   "symbol": "0104H0.KS",
+   "name": "KoAct 미국나스닥채권혼합50액티브",
+   "category": "채권혼합",
+   "currency": "KRW",
+   "first": "2025-09-30",
+   "last": "2026-07-03",
+   "count": 183,
+   "ttmDividend": 33.0,
+   "dividendYield": 0.0025
+  },
+  {
+   "symbol": "0019K0.KS",
+   "name": "TIME 미국나스닥100채권혼합50액티브",
+   "category": "채권혼합",
+   "currency": "KRW",
+   "first": "2025-03-25",
+   "last": "2026-07-03",
+   "count": 312,
+   "ttmDividend": 21.0,
+   "dividendYield": 0.0014
+  },
+  {
+   "symbol": "0144L0.KS",
+   "name": "KODEX 미국성장커버드콜액티브",
+   "category": "커버드콜(국내)",
+   "currency": "KRW",
+   "first": "2025-12-23",
+   "last": "2026-07-03",
+   "count": 128,
+   "ttmDividend": 596.0,
+   "dividendYield": 0.0554
+  },
+  {
+   "symbol": "459560.KS",
+   "name": "KODEX 테슬라밸류체인FactSet",
+   "category": "미국 테마",
+   "currency": "KRW",
+   "first": "2023-06-08",
+   "last": "2026-07-03",
+   "count": 748,
+   "ttmDividend": 123.0,
+   "dividendYield": 0.0045
+  },
+  {
+   "symbol": "483340.KS",
+   "name": "ACE 구글밸류체인액티브",
+   "category": "미국 테마",
+   "currency": "KRW",
+   "first": "2024-06-11",
+   "last": "2026-07-03",
+   "count": 502,
+   "ttmDividend": 79.0,
+   "dividendYield": 0.003
+  },
+  {
+   "symbol": "0137W0.KS",
+   "name": "KIWOOM 미국S&P500&GOLD",
+   "category": "미국 테마",
+   "currency": "KRW",
+   "first": "2025-12-09",
+   "last": "2026-07-03",
+   "count": 138,
+   "ttmDividend": 41.0,
+   "dividendYield": 0.0036
+  },
+  {
+   "symbol": "494340.KS",
+   "name": "ACE 글로벌AI맞춤형반도체",
+   "category": "미국 테마",
+   "currency": "KRW",
+   "first": "2024-10-22",
+   "last": "2026-07-03",
+   "count": 414,
+   "ttmDividend": 26.0,
+   "dividendYield": 0.001
+  },
+  {
+   "symbol": "0190M0.KS",
+   "name": "KIWOOM 미국AI테크하이베타",
+   "category": "미국 테마",
+   "currency": "KRW",
+   "first": "2026-05-12",
+   "last": "2026-07-03",
+   "count": 37,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   }
