@@ -23,8 +23,9 @@
 
 1. **Obsidian 열기** → Settings → Community Plugins
 2. **Disable safe mode** 클릭
-3. **Browse** → "Obsidian Git" 검색 및 설치
-4. **Settings**에서 Obsidian Git 활성화
+3. **Browse** → **"Git"** 검색
+4. **"Obsidian Git"** by **denolehov** 선택 및 Install
+5. **Enable** 클릭 (토글 활성화)
 
 ### 자동 커밋 설정
 
