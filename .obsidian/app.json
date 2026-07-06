@@ -1,0 +1,19 @@
+{
+  "baseFontSize": 16,
+  "cssTheme": "",
+  "theme": "obsidian",
+  "pluginEnabledStatus": {
+    "obsidian-git": true,
+    "obsidian-git": true
+  },
+  "foldIndent": true,
+  "lineNumbers": true,
+  "defaultViewMode": "preview",
+  "strictLineBreaks": false,
+  "showFrontmatter": false,
+  "showUnsupportedFiles": true,
+  "promptDelete": true,
+  "alwaysUpdateLinks": true,
+  "newFileLocation": "current",
+  "newLinkFormat": "markdown-links"
+}

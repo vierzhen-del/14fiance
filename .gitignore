@@ -1,0 +1,19 @@
+# Obsidian-specific files
+.obsidian/plugins/obsidian-git/
+.obsidian/plugins/*/
+.DS_Store
+
+# Obsidian caches
+.obsidian/cache
+.obsidian/metadata
+
+# Local git settings (if using gitignore conflict)
+/.git/
+
+# Notion API credentials (if using)
+.env
+.env.local
+
+# OS-specific
+Thumbs.db
+.DS_Store

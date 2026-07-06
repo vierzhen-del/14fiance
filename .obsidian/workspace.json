@@ -1,0 +1,48 @@
+{
+  "main": {
+    "id": "root",
+    "type": "split",
+    "children": [
+      {
+        "id": "ribbon",
+        "type": "ribbon",
+        "collapsed": false
+      },
+      {
+        "id": "sidebar-left",
+        "type": "sidebar",
+        "children": [
+          {
+            "id": "file-explorer",
+            "type": "view",
+            "active": true
+          }
+        ]
+      },
+      {
+        "id": "main",
+        "type": "view"
+      },
+      {
+        "id": "sidebar-right",
+        "type": "sidebar",
+        "children": [
+          {
+            "id": "backlink",
+            "type": "view"
+          },
+          {
+            "id": "tag-pane",
+            "type": "view"
+          },
+          {
+            "id": "outline",
+            "type": "view"
+          }
+        ]
+      }
+    ]
+  },
+  "active": "main",
+  "lastOpenFiles": ["README.md"]
+}
