@@ -384,6 +384,7 @@ def main() -> int:
                 "category": etf["category"],
                 "region": etf.get("region", ""),  # 실제 투자대상 시장(한국/미국/글로벌) — 상장국가(listing)와 다를 수 있음
                 "style": etf.get("style", ""),  # 성장/배당/안전(채권혼합·리츠 등)
+                "assetType": etf.get("assetType", "etf"),  # etf(기본) | stock(개별 상장주식, ETF 배당 API 대상 아님)
                 "currency": series["currency"],
                 "first": series["first"],
                 "last": series["last"],
