@@ -1786,11 +1786,17 @@ function buildReturnAnalysisHTML(regionRetMap, styleRetMap, accountMap, history)
       <td style="color:${profit == null ? "var(--text-muted)" : profit >= 0 ? "var(--good)" : "var(--critical)"}">${profit == null ? "매입단가 미입력" : `${profit >= 0 ? "+" : ""}${fmtW(profit)} (${pct.toFixed(1)}%)`}</td></tr>`;
   }).join("");
 
+  // 시가배당률 = 연배당 ÷ 평가액(현재가·"최신시세" 켜져있으면 실시간 조회가 기준)
+  // 투자배당률(YOC) = 연배당 ÷ 매입원가 — 매입단가 입력분에서만 계산 가능
+  const marketYield = (div, value) => value > 0 ? (div * 12 / value) * 100 : 0;
+  const costYield = (div, cost) => cost > 0 ? (div * 12 / cost) * 100 : null;
+
   const accountYieldEntries = [...accountMap.entries()].filter(([, g]) => g.value > 0)
-    .sort((a, b) => (b[1].monthlyDiv / b[1].value) - (a[1].monthlyDiv / a[1].value));
+    .sort((a, b) => marketYield(b[1].monthlyDiv, b[1].value) - marketYield(a[1].monthlyDiv, a[1].value));
   const accountYieldRows = accountYieldEntries.map(([acc, g]) => {
-    const yieldPct = (g.monthlyDiv * 12 / g.value) * 100;
-    return `<tr><td>${acc}</td><td>${fmtW(g.value)}</td><td>${g.monthlyDiv > 0 ? fmtW(g.monthlyDiv) : "—"}</td><td>${yieldPct.toFixed(2)}%</td></tr>`;
+    const cy = costYield(g.monthlyDiv, g.cost);
+    return `<tr><td>${acc}</td><td>${fmtW(g.value)}</td><td>${g.monthlyDiv > 0 ? fmtW(g.monthlyDiv) : "—"}</td>
+      <td>${marketYield(g.monthlyDiv, g.value).toFixed(2)}%</td><td>${cy == null ? "매입단가 미입력" : cy.toFixed(2) + "%"}</td></tr>`;
   }).join("");
 
   const STYLE_ORDER = ["성장", "배당", "안전", "개별주", "미분류"];
@@ -1798,8 +1804,9 @@ function buildReturnAnalysisHTML(regionRetMap, styleRetMap, accountMap, history)
     ...REGION_ORDER.filter((r) => regionRetMap.has(r)).map((r) => [r, regionRetMap.get(r)]),
     ...STYLE_ORDER.filter((s) => styleRetMap.has(s)).map((s) => [s, styleRetMap.get(s)]),
   ].map(([label, g]) => {
-    const yieldPct = g.value > 0 ? (g.div * 12 / g.value) * 100 : 0;
-    return `<tr><td>${label}</td><td>${fmtW(g.value)}</td><td>${g.div > 0 ? fmtW(g.div) : "—"}</td><td>${yieldPct.toFixed(2)}%</td></tr>`;
+    const cy = costYield(g.div, g.cost);
+    return `<tr><td>${label}</td><td>${fmtW(g.value)}</td><td>${g.div > 0 ? fmtW(g.div) : "—"}</td>
+      <td>${marketYield(g.div, g.value).toFixed(2)}%</td><td>${cy == null ? "매입단가 미입력" : cy.toFixed(2) + "%"}</td></tr>`;
   }).join("");
 
   return `<p class="chart-title" style="margin-top:20px;">📈 자산 수익률</p>
@@ -1816,7 +1823,7 @@ function buildReturnAnalysisHTML(regionRetMap, styleRetMap, accountMap, history)
     <p class="chart-title" style="margin-top:20px;">💰 배당수익률 (계좌별, 연환산)</p>
     <div style="overflow-x:auto;">
     <table class="account-summary-table">
-      <thead><tr><th>계좌</th><th>평가액</th><th>월배당</th><th>연환산 배당수익률</th></tr></thead>
+      <thead><tr><th>계좌</th><th>평가액</th><th>월배당</th><th>시가배당률</th><th>투자배당률(매입원가 기준)</th></tr></thead>
       <tbody>${accountYieldRows}</tbody>
     </table>
     </div>
@@ -1824,10 +1831,11 @@ function buildReturnAnalysisHTML(regionRetMap, styleRetMap, accountMap, history)
     <p class="chart-title" style="margin-top:20px;">💰 배당수익률 (비중별: 지역·스타일, 연환산)</p>
     <div style="overflow-x:auto;">
     <table class="account-summary-table">
-      <thead><tr><th>구분</th><th>평가액</th><th>월배당</th><th>연환산 배당수익률</th></tr></thead>
+      <thead><tr><th>구분</th><th>평가액</th><th>월배당</th><th>시가배당률</th><th>투자배당률(매입원가 기준)</th></tr></thead>
       <tbody>${weightYieldRows}</tbody>
     </table>
-    </div>`;
+    </div>
+    <p class="stat-sub" style="margin-top:6px;">시가배당률 = 연배당 ÷ 평가액(현재 조회 주가 기준 — "🔄 최신시세" 켜면 실시간 조회가로 계산). 투자배당률(YOC) = 연배당 ÷ 매입원가(매입단가 입력분만).</p>`;
 }
 
 function buildHeatmapHTML(perRow, accountMap) {
