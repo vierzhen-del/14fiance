@@ -1,0 +1,17 @@
+{
+  "name": "14RAE 계좌·월매수 캡처",
+  "short_name": "캡처앱",
+  "description": "계좌·월매수 스크린샷을 내 자산 대시보드로 변환(M1: 대시보드 골격, AI 파싱은 M2 예정)",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f9f9f7",
+  "theme_color": "#2a78d6",
+  "lang": "ko",
+  "icons": [
+    { "src": "../icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "../icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "../icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
