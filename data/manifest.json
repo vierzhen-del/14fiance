@@ -1,5 +1,5 @@
 {
- "updated": "2026-07-06 01:18 UTC",
+ "updated": "2026-07-06 02:11 UTC",
  "us": [
   {
    "symbol": "SPY",
@@ -348,6 +348,20 @@
    "first": "2017-01-25",
    "last": "2026-07-02",
    "count": 2372,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
+  },
+  {
+   "symbol": "CHPY",
+   "name": "CHPY (YieldMax 반도체 옵션인컴)",
+   "category": "커버드콜(미국)",
+   "region": "미국",
+   "style": "배당",
+   "assetType": "etf",
+   "currency": "USD",
+   "first": "2025-04-03",
+   "last": "2026-07-02",
+   "count": 313,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   }
@@ -982,6 +996,62 @@
    "count": 7368,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
+  },
+  {
+   "symbol": "0193W0.KS",
+   "name": "KODEX 삼성전자단일종목레버리지",
+   "category": "단일종목 레버리지",
+   "region": "한국",
+   "style": "성장",
+   "assetType": "etf",
+   "currency": "KRW",
+   "first": "2026-05-27",
+   "last": "2026-07-06",
+   "count": 28,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
+  },
+  {
+   "symbol": "0193T0.KS",
+   "name": "KODEX SK하이닉스단일종목레버리지",
+   "category": "단일종목 레버리지",
+   "region": "한국",
+   "style": "성장",
+   "assetType": "etf",
+   "currency": "KRW",
+   "first": "2026-05-27",
+   "last": "2026-07-06",
+   "count": 28,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
+  },
+  {
+   "symbol": "0194R0.KS",
+   "name": "KIWOOM SK하이닉스선물단일종목레버리지",
+   "category": "단일종목 레버리지",
+   "region": "한국",
+   "style": "성장",
+   "assetType": "etf",
+   "currency": "KRW",
+   "first": "2026-05-27",
+   "last": "2026-07-06",
+   "count": 28,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
+  },
+  {
+   "symbol": "451060.KS",
+   "name": "1Q 200액티브",
+   "category": "국내 지수",
+   "region": "한국",
+   "style": "성장",
+   "assetType": "etf",
+   "currency": "KRW",
+   "first": "2023-01-31",
+   "last": "2026-07-06",
+   "count": 836,
+   "ttmDividend": 394.0,
+   "dividendYield": 0.0094
   }
  ]
 }
