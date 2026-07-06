@@ -401,6 +401,7 @@
           <button type="button" id="myCsvBtn" class="btn-action">📄 시트 저장</button>
           <a href="https://app.notion.com/p/3865efd0e46281c49a72c9bbc70dcea0" target="_blank" rel="noopener" class="btn-action" style="text-decoration:none;">📋 배당 기준 SOP 확인</a>
           <button type="button" id="myIncludeStocksBtn" class="btn-action"></button>
+          <button type="button" id="myLiveQuotesBtn" class="btn-action"></button>
           <span id="myAssetStatus" class="action-status"></span>
           <input type="file" id="myImportFile" accept="application/json" style="display:none;">
         </div>
@@ -915,8 +916,9 @@ function fmtPct(x) {
   return (x * 100).toFixed(1) + "%";
 }
 function fmtPrice(x, currency) {
-  const sym = currency === "KRW" ? "₩" : "$";
-  return sym + x.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  // 원화는 소수점이 의미 없어 반올림 표기(달러 환산 합산 시 0.08원 같은 끝자리 방지)
+  if (currency === "KRW") return "₩" + Math.round(x).toLocaleString();
+  return "$" + x.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 function fmtDate(d) { return d; }
 function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
@@ -1522,6 +1524,40 @@ function updateIncludeStocksBtn() {
   const includeStocks = localStorage.getItem(MY_INCLUDE_STOCKS_KEY) !== "0";
   btn.textContent = includeStocks ? "🏢 일반종목: 포함" : "🏢 일반종목: 제외";
   btn.title = "국내 개별 상장주식(삼성전자·SK하이닉스 등) 보유분을 평가액·목표 계산에 포함할지 전환합니다.";
+}
+
+/* 🔄 최신시세 — 장중 30분 주기 GitHub Actions가 live 브랜치에 올린 국내 현재가.
+   정적 사이트라 진짜 실시간은 아니고, GitHub 실행 지연까지 30~45분 늦을 수 있다.
+   실패하면 조용히 주간 수집 종가로 폴백한다(값을 지어내지 않음). */
+const MY_LIVE_QUOTES_KEY = "my_assets_live_quotes_v1";
+const LIVE_KR_URL = "https://raw.githubusercontent.com/vierzhen-del/14fiance/live/latest_kr.json";
+
+function liveQuotesEnabled() { return localStorage.getItem(MY_LIVE_QUOTES_KEY) === "1"; }
+
+function updateLiveQuotesBtn() {
+  const btn = document.getElementById("myLiveQuotesBtn");
+  if (!btn) return;
+  btn.textContent = liveQuotesEnabled() ? "🔄 최신시세: 켬" : "🔄 최신시세: 끔";
+  btn.title = "켜면 국내 종목 현재가를 장중 30분 주기 수집분(있을 때)으로 바꿔 계산합니다. GitHub 실행 지연으로 30~45분 늦을 수 있고, 실패 시 주간 수집 종가로 자동 폴백합니다.";
+}
+
+async function loadLiveKrQuotes() {
+  if (!liveQuotesEnabled()) return null;
+  const now = Date.now();
+  if (state.liveKr && now - state.liveKr.fetchedAt < 3 * 60 * 1000) return state.liveKr.data;
+  try {
+    const resp = await fetch(LIVE_KR_URL, { cache: "no-store" });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    if (!data || typeof data.prices !== "object") throw new Error("형식 오류");
+    state.liveKr = { data, fetchedAt: now };
+    state.liveKrError = null;
+    return data;
+  } catch (err) {
+    state.liveKr = null;
+    state.liveKrError = err.message;
+    return null;
+  }
 }
 const MY_ASSETS_PALETTE = ["#2a78d6", "#e5484d", "#2a9d5c", "#c98a2c", "#7b5ec9", "#1aa8a0", "#c9527b", "#5c7ac9"];
 
@@ -2190,6 +2226,7 @@ async function renderMyAssets() {
   syncMyContribRows();
   const cfg = serializeMyAssets();
   updateIncludeStocksBtn();
+  updateLiveQuotesBtn();
   // 보유(qty)뿐 아니라 매수계획만 있는 행(monthlyQty)도 포함 — 평가액은 0, 월매수만 집계됨
   const rows = cfg.rows.filter((r) => r.qty > 0 || r.monthlyQty > 0);
   if (!rows.length) {
@@ -2210,8 +2247,10 @@ async function renderMyAssets() {
 
   let fx = null;
   const items = [];
+  let liveKr = null;
   try {
     fx = await loadFx();
+    liveKr = await loadLiveKrQuotes(); // 켜져 있을 때만, 실패 시 null(주간 데이터 폴백)
     for (const r of knownRows) {
       const full = await loadSymbol(r.symbol);
       items.push({ ...r, full });
@@ -2241,9 +2280,12 @@ async function renderMyAssets() {
   const accountMap = new Map();
   const periodMap = new Map(); // 지급시기(월초/월중/월말)별 월배당 합계
 
+  let liveApplied = 0;
   for (const it of items) {
     const meta = state.metaBySymbol.get(it.symbol);
-    const close = it.full.closes[it.full.closes.length - 1];
+    let close = it.full.closes[it.full.closes.length - 1];
+    // 🔄 최신시세 켜짐 + 해당 국내 종목의 장중 가격이 있으면 주간 종가 대신 사용
+    if (liveKr && liveKr.prices[it.symbol] > 0) { close = liveKr.prices[it.symbol]; liveApplied += 1; }
     const isUsd = (it.full.currency || "USD") === "USD";
     if (isUsd && latestRate == null) {
       result.innerHTML = `<p class="compare-empty" style="color:var(--critical)">환율 데이터가 아직 없어 달러 종목을 환산할 수 없습니다.</p>`;
@@ -2523,7 +2565,10 @@ async function renderMyAssets() {
         <p class="stat-sub">월 재투자액 ${fmtW(totalMonthlyInvest)}${totalContributions > 0 ? ` (월매수 ${fmtW(totalMonthlyBuy)} + 월적립 ${fmtW(totalContributions)})` : ""} 반영</p>
       </div>` : ""}
     </div>
-    <p class="stat-sub">최신 수집: ${state.manifest.updated} 기준(주간 자동 수집 — 실시간 시세 아님)</p>
+    <p class="stat-sub">최신 수집: ${state.manifest.updated} 기준(주간 자동 수집 — 실시간 시세 아님)${
+      liveKr ? ` · <b style="color:var(--good)">🔄 최신시세 ${liveKr.updated} 적용(국내 ${liveApplied}종목, 30~45분 지연 가능)</b>`
+      : liveQuotesEnabled() ? ` · <span style="color:var(--critical)">🔄 최신시세 불러오기 실패(${state.liveKrError || "데이터 없음"}) — 주간 종가 사용</span>` : ""
+    }</p>
     ${excludedStockHTML}
     ${unknownHTML}
 
@@ -2611,7 +2656,7 @@ async function renderMyAssets() {
       ${suffHTML}
       <p class="chart-title" style="margin-top:24px;">🗓️ 계좌별 매수계획 상세 (ETF모으기)</p>
       ${buyPlanHTML}
-      <p class="stat-sub" style="margin-top:8px;"><a href="https://app.notion.com/p/3865efd0e46281c49a72c9bbc70dcea0" target="_blank" rel="noopener">📋 월매수(ETF모으기) SOP(노션) 확인</a></p>
+      <p class="stat-sub" style="margin-top:8px;"><a href="https://app.notion.com/p/38f5efd0e46281e8a1a0e35bfb864dc6" target="_blank" rel="noopener">📈 월매수(월자동매수 현황) SOP(노션) 확인</a></p>
     </div>
 
     <div class="dash-panel" data-tab="divbasis" hidden>
@@ -2646,8 +2691,11 @@ async function renderMyAssets() {
     </div>
 
     <div class="dash-panel" data-tab="settings" hidden>
-      <p class="chart-title" style="margin-top:20px;">📋 참조 노션 SOP</p>
-      <p class="stat-sub"><a href="https://app.notion.com/p/3865efd0e46281c49a72c9bbc70dcea0" target="_blank" rel="noopener">💹 14RAE 배당기준 마스터 (배당기준·월매수 ETF모으기 현황 포함)</a></p>
+      <p class="chart-title" style="margin-top:20px;">📋 참조 노션 SOP (공통 SSOT 3종)</p>
+      <p class="stat-sub"><a href="https://app.notion.com/p/3955efd0e46281dab7f3cbd905a15dfd" target="_blank" rel="noopener">📊 계좌 종목 현황 SOP — 계좌×종목×수량 단일 기록처</a></p>
+      <p class="stat-sub"><a href="https://app.notion.com/p/3865efd0e46281c49a72c9bbc70dcea0" target="_blank" rel="noopener">💹 배당금 SOP — 14RAE 배당기준 마스터 (확정 DPS·배당률·지급시기)</a></p>
+      <p class="stat-sub"><a href="https://app.notion.com/p/38f5efd0e46281e8a1a0e35bfb864dc6" target="_blank" rel="noopener">📈 월매수 SOP — 월자동매수 현황 & 월배당 비교</a></p>
+      <p class="stat-sub" style="margin-top:6px;">금융지식 세션이나 앱에서 위 3개 페이지를 갱신한 뒤, 클로드 코드 세션에 "자산 업데이트"를 요청하면 가져오기 파일이 재생성됩니다.</p>
 
       <p class="chart-title" style="margin-top:20px;">📂 불러오기 파일 버전</p>
       <p class="stat-sub">${state.myAssetsDataAsOf ? `데이터 기준일: <b>${state.myAssetsDataAsOf}</b>` : "데이터 기준일: — (가져오기 파일에 dataAsOf 없음)"}</p>
@@ -2655,6 +2703,7 @@ async function renderMyAssets() {
 
       <p class="chart-title" style="margin-top:20px;">📈 주가·배당 데이터 업데이트</p>
       <p class="stat-sub">최신 수집: <b>${state.manifest.updated}</b> (매주 자동 수집 — 실시간 시세 아님)</p>
+      <p class="stat-sub">🔄 최신시세(장중 30분 주기): <b>${liveQuotesEnabled() ? (liveKr ? `켬 — ${liveKr.updated} 기준 국내 ${liveApplied}종목 적용` : `켬 — 불러오기 실패, 주간 종가 사용`) : "끔"}</b> — 국내 장중(평일 09:00~15:30)에만 갱신되며 GitHub 실행 지연으로 30~45분 늦을 수 있습니다.</p>
 
       <p class="chart-title" style="margin-top:20px;">🏢 일반종목(개별주) 반영 상태</p>
       <p class="stat-sub">현재: <b>${includeStocks ? "포함" : "제외"}</b> — 위쪽 "일반종목: 포함/제외" 버튼으로 전환할 수 있습니다.</p>
@@ -4156,6 +4205,11 @@ async function init() {
   document.getElementById("myIncludeStocksBtn").addEventListener("click", () => {
     const includeStocks = localStorage.getItem(MY_INCLUDE_STOCKS_KEY) !== "0";
     localStorage.setItem(MY_INCLUDE_STOCKS_KEY, includeStocks ? "0" : "1");
+    renderMyAssets();
+  });
+  document.getElementById("myLiveQuotesBtn").addEventListener("click", () => {
+    localStorage.setItem(MY_LIVE_QUOTES_KEY, liveQuotesEnabled() ? "0" : "1");
+    state.liveKr = null; // 토글 시 캐시 비우고 새로 가져옴
     renderMyAssets();
   });
 

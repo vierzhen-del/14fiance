@@ -1,0 +1,42 @@
+name: Intraday KR Prices
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 국내 장중(09:00~15:30 KST = 00:00~06:30 UTC) 평일 30분 주기.
+    # GitHub cron은 실행이 수 분~수십 분 지연될 수 있음(베스트 에포트).
+    - cron: "*/30 0-6 * * 1-5"
+
+permissions:
+  contents: write
+
+jobs:
+  intraday:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch intraday KR prices
+        run: python scripts/fetch_intraday_kr.py latest_kr.json
+
+      # 개발 브랜치 이력을 오염시키지 않도록 전용 live 브랜치에
+      # 항상 단일 커밋으로 force-push 한다(사이트는 raw URL로 읽음).
+      - name: Publish to live branch
+        run: |
+          mkdir /tmp/live
+          cp latest_kr.json /tmp/live/
+          cd /tmp/live
+          git init -b live
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add latest_kr.json
+          git commit -m "chore: intraday KR prices"
+          git push --force "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" live
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -174,6 +174,13 @@
       "category": "메모리 배당",
       "region": "미국",
       "style": "배당"
+    },
+    {
+      "symbol": "CHPY",
+      "name": "CHPY (YieldMax 반도체 옵션인컴)",
+      "category": "커버드콜(미국)",
+      "region": "미국",
+      "style": "배당"
     }
   ],
   "kr": [
@@ -493,6 +500,34 @@
       "region": "한국",
       "style": "개별주",
       "assetType": "stock"
+    },
+    {
+      "symbol": "0193W0.KS",
+      "name": "KODEX 삼성전자단일종목레버리지",
+      "category": "단일종목 레버리지",
+      "region": "한국",
+      "style": "성장"
+    },
+    {
+      "symbol": "0193T0.KS",
+      "name": "KODEX SK하이닉스단일종목레버리지",
+      "category": "단일종목 레버리지",
+      "region": "한국",
+      "style": "성장"
+    },
+    {
+      "symbol": "0194R0.KS",
+      "name": "KIWOOM SK하이닉스선물단일종목레버리지",
+      "category": "단일종목 레버리지",
+      "region": "한국",
+      "style": "성장"
+    },
+    {
+      "symbol": "451060.KS",
+      "name": "1Q 200액티브",
+      "category": "국내 지수",
+      "region": "한국",
+      "style": "성장"
     }
   ]
 }
