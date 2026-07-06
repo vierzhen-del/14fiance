@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>📸 계좌·월매수 캡처 (M1 골격)</title>
+<title>📸 계좌·월매수 캡처 앱</title>
 <link rel="stylesheet" href="../shared/myassets.css">
 <link rel="manifest" href="manifest.json">
 <style>
@@ -13,14 +13,83 @@
 </head>
 <body>
 <div class="wrap">
-  <h1 id="pageTitle">📸 계좌·월매수 캡처 앱 (M1 골격)</h1>
+  <h1 id="pageTitle">📸 계좌·월매수 캡처 앱</h1>
   <p class="lede" id="pageUpdated">데이터 업데이트 확인 중…</p>
   <p class="stat-sub" style="margin:-16px 0 20px;">
-    M1 단계 골격입니다 — 아직 스크린샷 자동 파싱(AI 비전) 기능은 없고, 기존 index.html과 동일한
-    "📂 가져오기" / "📤 내보내기"로 대시보드가 index.html과 동일하게 렌더되는지만 확인하는 용도입니다.
-    (계산·렌더 로직은 <code>../shared/myassets*.js</code>를 index.html과 공유합니다 — 원본은
-    <a href="../index.html">../index.html</a>이며, 이 페이지는 그 로직의 사본을 재사용합니다.)
+    스크린샷을 업로드하면 AI가 종목·수량·평가금액을 읽어 아래 "내 자산" 폼에 채워줍니다.
+    자동 파싱이 막히면(API 키 미설정·CORS 등) 붙여넣기 모드로도 동일하게 쓸 수 있습니다.
+    (대시보드 계산·렌더 로직은 <code>../shared/myassets*.js</code>를 <a href="../index.html">../index.html</a>과 공유합니다.)
   </p>
+
+  <section class="page-section" id="sec-ai-settings">
+    <div class="section-header">
+      <p class="section-title">🤖 AI 파싱 설정</p>
+      <button type="button" class="section-toggle" aria-label="섹션 접기/펴기">▾</button>
+    </div>
+    <div class="section-body">
+      <p class="section-lede">계좌·월매수 스크린샷을 자동으로 읽어줄 AI를 선택하고 API 키를 입력하세요. <b>키는 이 기기(브라우저)에만 저장되며, 서버를 거치지 않고 선택한 AI사에 직접 전송됩니다.</b> 타인과 공유하지 마세요.</p>
+      <div class="controls" style="margin-bottom:8px;">
+        <select id="captureAiProvider" aria-label="AI 제공자 선택">
+          <option value="claude">Claude API</option>
+          <option value="gemini">Gemini API</option>
+        </select>
+      </div>
+      <div class="controls" style="margin-bottom:8px;">
+        <input type="password" id="captureClaudeKey" class="portfolio-weight" style="width:100%; max-width:420px; text-align:left;" placeholder="Claude API 키(sk-ant-...)" autocomplete="off">
+      </div>
+      <div class="controls" style="margin-bottom:8px;">
+        <input type="password" id="captureGeminiKey" class="portfolio-weight" style="width:100%; max-width:420px; text-align:left;" placeholder="Gemini API 키" autocomplete="off">
+      </div>
+      <div class="action-row">
+        <button type="button" id="captureSaveKeysBtn" class="btn-action">💾 키 저장</button>
+        <button type="button" id="captureClearKeysBtn" class="btn-action">🗑️ 키 삭제</button>
+        <span id="captureKeysStatus" class="action-status"></span>
+      </div>
+    </div>
+  </section>
+
+  <section class="page-section" id="sec-capture-upload">
+    <div class="section-header">
+      <p class="section-title">📸 캡처 업로드·파싱</p>
+      <button type="button" class="section-toggle" aria-label="섹션 접기/펴기">▾</button>
+    </div>
+    <div class="section-body">
+      <div class="card">
+        <p class="chart-title" style="margin-top:0;">💼 계좌 캡처 (여러 장 가능)</p>
+        <div class="action-row">
+          <input type="file" id="captureAccountFiles" accept="image/*" multiple>
+          <button type="button" id="captureAccountParseBtn" class="btn-action">🤖 자동 파싱 시도</button>
+          <span id="captureAccountStatus" class="action-status"></span>
+        </div>
+        <p class="stat-sub">자동 파싱이 안 되면(API 키 미입력·CORS 등) 붙여넣기 모드를 쓰세요: 프롬프트를 복사해 Claude/Gemini 채팅에 스크린샷과 함께 붙여넣고, 받은 JSON 응답을 아래 칸에 붙여넣으세요.</p>
+        <div class="action-row">
+          <button type="button" id="captureAccountCopyPromptBtn" class="btn-action">📋 프롬프트 복사</button>
+        </div>
+        <textarea id="captureAccountPaste" rows="4" style="width:100%; font:inherit; font-size:12.5px; padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--surface-1); color:var(--text-primary);" placeholder="AI가 응답한 JSON을 여기 붙여넣고 아래 버튼을 누르세요"></textarea>
+        <div class="action-row" style="margin-top:8px;">
+          <button type="button" id="captureAccountParsePasteBtn" class="btn-action">📋 붙여넣은 JSON 파싱</button>
+        </div>
+        <div id="captureAccountResult"></div>
+      </div>
+
+      <div class="card">
+        <p class="chart-title" style="margin-top:0;">📈 월매수(ETF모으기) 캡처</p>
+        <div class="action-row">
+          <input type="file" id="captureBuyPlanFiles" accept="image/*" multiple>
+          <button type="button" id="captureBuyPlanParseBtn" class="btn-action">🤖 자동 파싱 시도</button>
+          <span id="captureBuyPlanStatus" class="action-status"></span>
+        </div>
+        <div class="action-row">
+          <button type="button" id="captureBuyPlanCopyPromptBtn" class="btn-action">📋 프롬프트 복사</button>
+        </div>
+        <textarea id="captureBuyPlanPaste" rows="4" style="width:100%; font:inherit; font-size:12.5px; padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--surface-1); color:var(--text-primary);" placeholder="AI가 응답한 JSON을 여기 붙여넣고 아래 버튼을 누르세요"></textarea>
+        <div class="action-row" style="margin-top:8px;">
+          <button type="button" id="captureBuyPlanParsePasteBtn" class="btn-action">📋 붙여넣은 JSON 파싱</button>
+        </div>
+        <div id="captureBuyPlanResult"></div>
+      </div>
+    </div>
+  </section>
 
   <section class="page-section" id="sec-myassets">
     <div class="section-header">
@@ -89,6 +158,7 @@
 <script src="../shared/myassets-utils.js"></script>
 <script src="../shared/price-data.js"></script>
 <script src="../shared/myassets.js"></script>
+<script src="capture-parse.js"></script>
 <script>
 // capture/index.html 전용 초기화 — index.html의 init() 중 "내 자산" 관련 부분만 재현
 const DATA_DIR = "../data";
@@ -194,7 +264,7 @@ async function init() {
     renderMyAssets();
   });
 
-  document.querySelectorAll("#sec-myassets .section-toggle").forEach((btn) => {
+  document.querySelectorAll(".page-section .section-toggle").forEach((btn) => {
     btn.addEventListener("click", () => {
       const sec = btn.closest(".page-section");
       sec.classList.toggle("collapsed");
@@ -203,6 +273,196 @@ async function init() {
 }
 
 init();
+initCapture();
+
+/* ---------- capture: AI 설정 키 UI ---------- */
+function initCapture() {
+  document.getElementById("captureAiProvider").value = localStorage.getItem(CAPTURE_AI_PROVIDER_KEY) || "claude";
+  document.getElementById("captureClaudeKey").value = localStorage.getItem(CAPTURE_CLAUDE_KEY) || "";
+  document.getElementById("captureGeminiKey").value = localStorage.getItem(CAPTURE_GEMINI_KEY) || "";
+
+  document.getElementById("captureSaveKeysBtn").addEventListener("click", () => {
+    localStorage.setItem(CAPTURE_AI_PROVIDER_KEY, document.getElementById("captureAiProvider").value);
+    localStorage.setItem(CAPTURE_CLAUDE_KEY, document.getElementById("captureClaudeKey").value.trim());
+    localStorage.setItem(CAPTURE_GEMINI_KEY, document.getElementById("captureGeminiKey").value.trim());
+    flashStatus("captureKeysStatus", "저장됨 — 이 기기에만 보관됩니다");
+  });
+  document.getElementById("captureClearKeysBtn").addEventListener("click", () => {
+    localStorage.removeItem(CAPTURE_CLAUDE_KEY);
+    localStorage.removeItem(CAPTURE_GEMINI_KEY);
+    document.getElementById("captureClaudeKey").value = "";
+    document.getElementById("captureGeminiKey").value = "";
+    flashStatus("captureKeysStatus", "키 삭제됨");
+  });
+
+  document.getElementById("captureAccountCopyPromptBtn").addEventListener("click", () =>
+    copyToClipboard(ACCOUNT_CAPTURE_PROMPT, "captureAccountStatus", "프롬프트 복사됨 — AI 채팅에 스크린샷과 함께 붙여넣으세요"));
+  document.getElementById("captureBuyPlanCopyPromptBtn").addEventListener("click", () =>
+    copyToClipboard(BUY_PLAN_CAPTURE_PROMPT, "captureBuyPlanStatus", "프롬프트 복사됨 — AI 채팅에 스크린샷과 함께 붙여넣으세요"));
+
+  document.getElementById("captureAccountParsePasteBtn").addEventListener("click", () => {
+    const text = document.getElementById("captureAccountPaste").value.trim();
+    if (!text) { flashStatus("captureAccountStatus", "붙여넣은 JSON이 없습니다"); return; }
+    try { runAccountParse(text); flashStatus("captureAccountStatus", "파싱 완료 ✓"); }
+    catch (err) { flashStatus("captureAccountStatus", "JSON 파싱 실패: " + err.message); }
+  });
+  document.getElementById("captureBuyPlanParsePasteBtn").addEventListener("click", () => {
+    const text = document.getElementById("captureBuyPlanPaste").value.trim();
+    if (!text) { flashStatus("captureBuyPlanStatus", "붙여넣은 JSON이 없습니다"); return; }
+    try { runBuyPlanParse(text); flashStatus("captureBuyPlanStatus", "파싱 완료 ✓"); }
+    catch (err) { flashStatus("captureBuyPlanStatus", "JSON 파싱 실패: " + err.message); }
+  });
+
+  document.getElementById("captureAccountParseBtn").addEventListener("click", async () => {
+    const files = document.getElementById("captureAccountFiles").files;
+    if (!files.length) { flashStatus("captureAccountStatus", "스크린샷을 먼저 선택하세요"); return; }
+    flashStatus("captureAccountStatus", "AI 파싱 중…", 30000);
+    try {
+      const images = await resizeFilesToImages(files);
+      const text = await callVisionAPI(images, ACCOUNT_CAPTURE_PROMPT);
+      runAccountParse(text);
+      flashStatus("captureAccountStatus", "AI 파싱 완료 ✓");
+    } catch (err) {
+      flashStatus("captureAccountStatus", "자동 파싱 실패(" + err.message + ") — 아래 붙여넣기 모드를 이용하세요", 6000);
+    }
+  });
+  document.getElementById("captureBuyPlanParseBtn").addEventListener("click", async () => {
+    const files = document.getElementById("captureBuyPlanFiles").files;
+    if (!files.length) { flashStatus("captureBuyPlanStatus", "스크린샷을 먼저 선택하세요"); return; }
+    flashStatus("captureBuyPlanStatus", "AI 파싱 중…", 30000);
+    try {
+      const images = await resizeFilesToImages(files);
+      const text = await callVisionAPI(images, BUY_PLAN_CAPTURE_PROMPT);
+      runBuyPlanParse(text);
+      flashStatus("captureBuyPlanStatus", "AI 파싱 완료 ✓");
+    } catch (err) {
+      flashStatus("captureBuyPlanStatus", "자동 파싱 실패(" + err.message + ") — 아래 붙여넣기 모드를 이용하세요", 6000);
+    }
+  });
+}
+
+async function copyToClipboard(text, statusId, label) {
+  try {
+    await navigator.clipboard.writeText(text);
+    flashStatus(statusId, label || "복사됨");
+  } catch (err) {
+    window.prompt("아래 내용을 복사하세요:", text);
+  }
+}
+
+async function resizeFilesToImages(fileList) {
+  const images = [];
+  for (const f of [...fileList]) images.push(await resizeImageFile(f));
+  return images;
+}
+
+function runAccountParse(text) {
+  const parsed = parseAIJsonResponse(text);
+  const validated = validateAccountCapture(parsed);
+  renderCaptureAccountResult(validated);
+}
+function runBuyPlanParse(text) {
+  const parsed = parseAIJsonResponse(text);
+  const validated = validateBuyPlanCapture(parsed);
+  renderCaptureBuyPlanResult(validated);
+}
+
+function issueBadgeHTML(issues) {
+  if (!issues || !issues.length) return `<span style="color:var(--positive); font-size:12px;">✓ 이상 없음</span>`;
+  return issues.map((msg) =>
+    `<span style="display:inline-block; color:var(--critical); font-size:12px; background:rgba(220,53,69,.12); border-radius:6px; padding:2px 6px; margin:2px 4px 2px 0;">⚠️ ${msg}</span>`
+  ).join("");
+}
+
+/* 검토표는 확인용일 뿐 자동 반영은 하지 않는다 — 매칭된 종목만, 체크한 행만, 사람이
+   계좌를 골라 "폼에 채우기"를 눌러야 실제 내 자산 폼에 행이 추가된다(자동 병합 금지 원칙). */
+function renderCaptureAccountResult(validated) {
+  const el = document.getElementById("captureAccountResult");
+  if (!validated.holdings.length) { el.innerHTML = `<p class="stat-sub">파싱된 종목이 없습니다.</p>`; return; }
+  const totalRow = validated.totalCheck
+    ? `<p class="stat-sub" style="margin:10px 0 0; color:${validated.totalCheck.ok ? "var(--positive)" : "var(--critical)"};">
+        합계 대조: Σ평가액 ${Math.round(validated.totalCheck.sumEval).toLocaleString()} vs 화면합계 ${Math.round(validated.totalCheck.reported).toLocaleString()}
+        (오차 ${(validated.totalCheck.diffPct * 100).toFixed(2)}%) ${validated.totalCheck.ok ? "✓" : "— 누락 종목 가능성"}
+      </p>`
+    : "";
+  const rows = validated.holdings.map((h, i) => `
+    <tr data-idx="${i}">
+      <td>${h.name || ""}${h.symbol ? ` (${h.symbol})` : ""}</td>
+      <td>${h.qty ?? ""}</td>
+      <td>${h.evalAmount != null ? Math.round(h.evalAmount).toLocaleString() : ""}</td>
+      <td>${issueBadgeHTML(h.issues)}</td>
+      <td>${h.matchedSymbol ? `<select class="capture-account-select">${accountOptionsHTML("")}</select>` : `<span class="stat-sub">매칭 필요</span>`}</td>
+      <td>${h.matchedSymbol ? `<label style="font-size:12px;"><input type="checkbox" class="capture-row-check" checked> 채우기</label>` : ""}</td>
+    </tr>`).join("");
+  el.innerHTML = `
+    ${validated.accountLabel ? `<p class="stat-sub">화면 계좌명: ${validated.accountLabel}</p>` : ""}
+    ${totalRow}
+    <div style="overflow-x:auto;"><table class="account-summary-table" style="margin-top:10px; width:100%;">
+      <thead><tr><th>종목</th><th>수량</th><th>평가액</th><th>검증</th><th>계좌</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+    <div class="action-row" style="margin-top:10px;">
+      <button type="button" id="captureAccountFillBtn" class="btn-action">📥 선택 항목 폼에 채우기</button>
+    </div>`;
+  document.getElementById("captureAccountFillBtn").addEventListener("click", () => {
+    let count = 0;
+    el.querySelectorAll("tbody tr").forEach((tr) => {
+      const h = validated.holdings[Number(tr.dataset.idx)];
+      const check = tr.querySelector(".capture-row-check");
+      if (!check || !check.checked || !h.matchedSymbol) return;
+      const accSel = tr.querySelector(".capture-account-select");
+      addMyAssetRow({ account: accSel ? accSel.value : "", symbol: h.matchedSymbol, qty: h.qty || 0, avgPrice: h.avgPrice || 0 });
+      count++;
+    });
+    if (count > 0) {
+      saveMyAssets(); renderMyAssets(); updateMyRowsCollapseUI();
+      flashStatus("captureAccountStatus", `${count}건 폼에 채움 — 아래 "내 자산"에서 확인하세요`);
+    } else {
+      flashStatus("captureAccountStatus", "채울 항목을 선택하세요(매칭된 종목만 가능)");
+    }
+  });
+}
+
+function renderCaptureBuyPlanResult(validated) {
+  const el = document.getElementById("captureBuyPlanResult");
+  if (!validated.holdings.length) { el.innerHTML = `<p class="stat-sub">파싱된 종목이 없습니다.</p>`; return; }
+  const rows = validated.holdings.map((h, i) => `
+    <tr data-idx="${i}">
+      <td>${h.name || ""}${h.symbol ? ` (${h.symbol})` : ""}</td>
+      <td>${h.buyQtyPerTime ?? ""}</td>
+      <td>${h.buyFreq || ""}</td>
+      <td>${h.nextBuyDate || ""}</td>
+      <td>${issueBadgeHTML(h.issues)}</td>
+      <td>${h.matchedSymbol ? `<select class="capture-account-select">${accountOptionsHTML("")}</select>` : `<span class="stat-sub">매칭 필요</span>`}</td>
+      <td>${h.matchedSymbol ? `<label style="font-size:12px;"><input type="checkbox" class="capture-row-check" checked> 채우기</label>` : ""}</td>
+    </tr>`).join("");
+  el.innerHTML = `
+    ${validated.reportedTotal != null ? `<p class="stat-sub">화면 월 총 매수금액: ${Math.round(validated.reportedTotal).toLocaleString()}원</p>` : ""}
+    <div style="overflow-x:auto;"><table class="account-summary-table" style="margin-top:10px; width:100%;">
+      <thead><tr><th>종목</th><th>1회수량</th><th>주기</th><th>다음매수일</th><th>검증</th><th>계좌</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+    <div class="action-row" style="margin-top:10px;">
+      <button type="button" id="captureBuyPlanFillBtn" class="btn-action">📥 선택 항목 폼에 채우기</button>
+    </div>`;
+  document.getElementById("captureBuyPlanFillBtn").addEventListener("click", () => {
+    let count = 0;
+    el.querySelectorAll("tbody tr").forEach((tr) => {
+      const h = validated.holdings[Number(tr.dataset.idx)];
+      const check = tr.querySelector(".capture-row-check");
+      if (!check || !check.checked || !h.matchedSymbol) return;
+      const accSel = tr.querySelector(".capture-account-select");
+      addMyAssetRow({ account: accSel ? accSel.value : "", symbol: h.matchedSymbol, monthlyQty: h.buyQtyPerTime || 0, buyFreq: h.buyFreq || "매월", buyDay: h.buyDay || "" });
+      count++;
+    });
+    if (count > 0) {
+      saveMyAssets(); renderMyAssets(); updateMyRowsCollapseUI();
+      flashStatus("captureBuyPlanStatus", `${count}건 폼에 채움 — 아래 "내 자산"에서 확인하세요`);
+    } else {
+      flashStatus("captureBuyPlanStatus", "채울 항목을 선택하세요(매칭된 종목만 가능)");
+    }
+  });
+}
 
 // capture/ 전용 서비스워커 — 루트 sw.js와 별개 scope("/capture/")로 등록
 if ("serviceWorker" in navigator) {
