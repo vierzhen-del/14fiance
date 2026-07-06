@@ -14,6 +14,9 @@
 .env
 .env.local
 
+# Test files
+test-*.py
+
 # OS-specific
 Thumbs.db
 .DS_Store
