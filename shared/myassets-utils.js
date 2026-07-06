@@ -230,6 +230,17 @@ const BUY_FREQ_TIMES = { "매월": 1, "매주": 4, "매일": 22 };
 
 const MY_ASSETS_PALETTE = ["#2a78d6", "#e5484d", "#2a9d5c", "#c98a2c", "#7b5ec9", "#1aa8a0", "#c9527b", "#5c7ac9"];
 
+/* 계좌별 고정 색상 — 순위 기반(PALETTE[i])이 아니라 계좌명 자체로 색을 정해서
+   "계좌별 월배당"·"계좌별 비중"·"월배당 TOP10" 등 여러 그래프에서 같은 계좌는 항상 같은 색으로 보이게 한다. */
+function accountColor(account) {
+  const idx = ACCOUNT_TYPES.indexOf(account);
+  if (idx >= 0) return MY_ASSETS_PALETTE[idx % MY_ASSETS_PALETTE.length];
+  let hash = 0;
+  const s = account || "";
+  for (let i = 0; i < s.length; i++) hash = (hash * 31 + s.charCodeAt(i)) >>> 0;
+  return MY_ASSETS_PALETTE[(ACCOUNT_TYPES.length + hash) % MY_ASSETS_PALETTE.length];
+}
+
 function monthsToGoal(goal, lump, monthly, annualRate) {
   if (!(goal > 0)) return null;
   const rm = Math.pow(1 + annualRate, 1 / 12) - 1;

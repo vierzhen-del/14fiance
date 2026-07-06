@@ -922,11 +922,11 @@ async function renderMyAssets() {
 
   // 계좌별 비중 — 첨부 대시보드의 "연금자산 히트맵" 탭을 막대 강도로 대체 표현
   const byAccountValue = [...accountMap.entries()].sort((a, b) => b[1].value - a[1].value);
-  const accountAllocHTML = byAccountValue.map(([acc, g], i) => {
+  const accountAllocHTML = byAccountValue.map(([acc, g]) => {
     const pct = totalValue > 0 ? (g.value / totalValue) * 100 : 0;
     return `<div class="bar-row">
       <span class="bar-label" title="${acc}">${acc}</span>
-      <div class="bar-track"><div class="bar-fill" style="width:${pct.toFixed(1)}%; background:${PALETTE[i % PALETTE.length]}"></div></div>
+      <div class="bar-track"><div class="bar-fill" style="width:${pct.toFixed(1)}%; background:${accountColor(acc)}"></div></div>
       <span class="bar-value">${pct.toFixed(1)}%</span>
     </div>`;
   }).join("");
@@ -947,12 +947,12 @@ async function renderMyAssets() {
   // 월배당 TOP10 — 첨부 대시보드의 "월배당 현황차트" 탭 중 TOP10 항목
   const top10Div = perRow.filter((p) => p.monthlyDiv > 0).sort((a, b) => b.monthlyDiv - a.monthlyDiv).slice(0, 10);
   const maxDiv = top10Div.length ? top10Div[0].monthlyDiv : 0;
-  const top10HTML = top10Div.map((p, i) => {
+  const top10HTML = top10Div.map((p) => {
     const pct = maxDiv > 0 ? (p.monthlyDiv / maxDiv) * 100 : 0;
     const label = p.meta ? p.meta.name : p.symbol;
     return `<div class="bar-row">
       <span class="bar-label" title="${label}">${label}</span>
-      <div class="bar-track"><div class="bar-fill" style="width:${pct.toFixed(1)}%; background:${PALETTE[i % PALETTE.length]}"></div></div>
+      <div class="bar-track"><div class="bar-fill" style="width:${pct.toFixed(1)}%; background:${accountColor(p.account || "계좌 미지정")}"></div></div>
       <span class="bar-value">${fmtW(p.monthlyDiv)}</span>
     </div>`;
   }).join("");
@@ -960,11 +960,11 @@ async function renderMyAssets() {
   // 계좌별 월배당 — v534 "월배당현황차트"의 계좌별 비교 차트에 해당
   const byAccountDiv = [...accountMap.entries()].filter(([, g]) => g.monthlyDiv > 0).sort((a, b) => b[1].monthlyDiv - a[1].monthlyDiv);
   const maxAccDiv = byAccountDiv.length ? byAccountDiv[0][1].monthlyDiv : 0;
-  const accountDivHTML = byAccountDiv.map(([acc, g], i) => {
+  const accountDivHTML = byAccountDiv.map(([acc, g]) => {
     const pct = maxAccDiv > 0 ? (g.monthlyDiv / maxAccDiv) * 100 : 0;
     return `<div class="bar-row">
       <span class="bar-label" title="${acc}">${acc}</span>
-      <div class="bar-track"><div class="bar-fill" style="width:${pct.toFixed(1)}%; background:${PALETTE[i % PALETTE.length]}"></div></div>
+      <div class="bar-track"><div class="bar-fill" style="width:${pct.toFixed(1)}%; background:${accountColor(acc)}"></div></div>
       <span class="bar-value">${fmtW(g.monthlyDiv)}</span>
     </div>`;
   }).join("");
