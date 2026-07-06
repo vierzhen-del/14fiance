@@ -1,5 +1,5 @@
 {
- "updated": "2026-07-06 02:11 UTC",
+ "updated": "2026-07-06 06:30 UTC",
  "us": [
   {
    "symbol": "SPY",
@@ -1052,6 +1052,118 @@
    "count": 836,
    "ttmDividend": 394.0,
    "dividendYield": 0.0094
+  },
+  {
+   "symbol": "411060.KS",
+   "name": "ACE KRX금현물",
+   "category": "원자재",
+   "region": "글로벌",
+   "style": "안전",
+   "assetType": "etf",
+   "currency": "KRW",
+   "first": "2021-12-15",
+   "last": "2026-07-06",
+   "count": 1113,
+   "ttmDividend": 1.0,
+   "dividendYield": 0.0
+  },
+  {
+   "symbol": "438080.KS",
+   "name": "ACE 미국S&P500미국채혼합50액티브",
+   "category": "채권혼합",
+   "region": "미국",
+   "style": "안전",
+   "assetType": "etf",
+   "currency": "KRW",
+   "first": "2022-08-26",
+   "last": "2026-07-06",
+   "count": 941,
+   "ttmDividend": 334.0,
+   "dividendYield": 0.0217
+  },
+  {
+   "symbol": "486290.KS",
+   "name": "TIGER 미국나스닥100타겟데일리커버드콜",
+   "category": "커버드콜(미국)",
+   "region": "미국",
+   "style": "배당",
+   "assetType": "etf",
+   "currency": "KRW",
+   "first": "2024-06-25",
+   "last": "2026-07-06",
+   "count": 493,
+   "ttmDividend": 1620.0,
+   "dividendYield": 0.1355
+  },
+  {
+   "symbol": "0199C0.KS",
+   "name": "ACE 고배당주Plus커버드콜액티브",
+   "category": "커버드콜(국내)",
+   "region": "한국",
+   "style": "배당",
+   "assetType": "etf",
+   "currency": "KRW",
+   "first": "2026-06-02",
+   "last": "2026-07-06",
+   "count": 24,
+   "ttmDividend": 168.0,
+   "dividendYield": 0.0168
+  },
+  {
+   "symbol": "0046A0.KS",
+   "name": "TIGER 미국초단기(3개월이하)국채",
+   "category": "채권",
+   "region": "미국",
+   "style": "안전",
+   "assetType": "etf",
+   "currency": "KRW",
+   "first": "2025-04-29",
+   "last": "2026-07-06",
+   "count": 288,
+   "ttmDividend": 357.0,
+   "dividendYield": 0.0339
+  },
+  {
+   "symbol": "0049M0.KS",
+   "name": "ACE 미국배당퀄리티+커버드콜액티브",
+   "category": "커버드콜(미국)",
+   "region": "미국",
+   "style": "배당",
+   "assetType": "etf",
+   "currency": "KRW",
+   "first": "2025-05-13",
+   "last": "2026-07-06",
+   "count": 281,
+   "ttmDividend": 822.0,
+   "dividendYield": 0.0663
+  },
+  {
+   "symbol": "0162Z0.KS",
+   "name": "RISE 삼성전자SK하이닉스채권혼합50",
+   "category": "채권혼합",
+   "region": "한국",
+   "style": "안전",
+   "assetType": "etf",
+   "currency": "KRW",
+   "first": "2026-02-26",
+   "last": "2026-07-06",
+   "count": 88,
+   "ttmDividend": 11.0,
+   "dividendYield": 0.0007
+  },
+  {
+   "symbol": "0167Z0.KS",
+   "name": "KODEX 미국우주항공",
+   "category": "미국·글로벌 테마 액티브(국내상장)",
+   "region": "미국",
+   "style": "성장",
+   "assetType": "etf",
+   "currency": "KRW",
+   "first": "2026-03-17",
+   "last": "2026-07-06",
+   "count": 76,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
   }
  ]
 }
