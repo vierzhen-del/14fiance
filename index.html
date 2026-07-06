@@ -400,6 +400,7 @@
           </select>
           <button type="button" id="myCsvBtn" class="btn-action">📄 시트 저장</button>
           <a href="https://app.notion.com/p/3865efd0e46281c49a72c9bbc70dcea0" target="_blank" rel="noopener" class="btn-action" style="text-decoration:none;">📋 배당 기준 SOP 확인</a>
+          <button type="button" id="myIncludeStocksBtn" class="btn-action"></button>
           <span id="myAssetStatus" class="action-status"></span>
           <input type="file" id="myImportFile" accept="application/json" style="display:none;">
         </div>
@@ -1511,7 +1512,17 @@ function loadPortfolioSettings() {
    구조적으로 불가능하다(14RAE 지침 A-13: 코드 기준 1:1 대조). */
 const MY_ASSETS_KEY = "my_assets_v1";
 const MY_ASSETS_HISTORY_KEY = "my_assets_history_v1";
+const MY_ASSETS_DAILY_HISTORY_KEY = "my_assets_daily_history_v1";
+const MY_INCLUDE_STOCKS_KEY = "my_assets_include_stocks_v1"; // "0"이면 일반종목(개별주) 제외
 const BUY_FREQ_TIMES = { "매월": 1, "매주": 4, "매일": 22 };
+
+function updateIncludeStocksBtn() {
+  const btn = document.getElementById("myIncludeStocksBtn");
+  if (!btn) return;
+  const includeStocks = localStorage.getItem(MY_INCLUDE_STOCKS_KEY) !== "0";
+  btn.textContent = includeStocks ? "🏢 일반종목: 포함" : "🏢 일반종목: 제외";
+  btn.title = "국내 개별 상장주식(삼성전자·SK하이닉스 등) 보유분을 평가액·목표 계산에 포함할지 전환합니다.";
+}
 const MY_ASSETS_PALETTE = ["#2a78d6", "#e5484d", "#2a9d5c", "#c98a2c", "#7b5ec9", "#1aa8a0", "#c9527b", "#5c7ac9"];
 
 function addMyAssetRow(a = {}) {
@@ -1698,6 +1709,80 @@ function showMyDashTab(id) {
 }
 
 /* 계좌 히트맵 — 계좌별로 그룹핑해 비중이 클수록 큰 셀로 표시 */
+/* 수익률 분석 — ① 스냅샷 이력 기반 전체 자산 변동, ② 지역별 수익률(매입단가 입력분),
+   ③ 배당수익률(계좌별), ④ 배당수익률(지역·스타일 비중별) */
+function buildReturnAnalysisHTML(regionRetMap, styleRetMap, accountMap, history) {
+  const fmtW = (v) => fmtPrice(v, "KRW");
+
+  let historyReturnHTML = `<p class="compare-empty">"추이" 탭에서 월별 스냅샷을 2개월 이상 저장하면 기간 자산 변동률을 계산합니다.</p>`;
+  if (history.length >= 2) {
+    const sorted = history.slice().sort((a, b) => a.month.localeCompare(b.month));
+    const first = sorted[0], last = sorted[sorted.length - 1];
+    const diff = last.value - first.value;
+    const pct = first.value > 0 ? (diff / first.value) * 100 : 0;
+    historyReturnHTML = `<div class="stat-row">
+      <div class="stat">
+        <p class="stat-label">평가액 변동 (${first.month} → ${last.month})</p>
+        <p class="stat-value" style="color:${diff >= 0 ? "var(--good)" : "var(--critical)"}">${diff >= 0 ? "+" : ""}${fmtW(diff)} (${pct.toFixed(1)}%)</p>
+        <p class="stat-sub">${fmtW(first.value)} → ${fmtW(last.value)}</p>
+      </div>
+    </div>
+    <p class="stat-sub">참고: 스냅샷 시점 평가액을 단순 비교한 값입니다(추가 납입·매도 등 현금흐름은 반영하지 않음) — 정확한 수익률은 매입단가 기준 손익을 참고하세요.</p>`;
+  }
+
+  const REGION_ORDER = ["한국", "미국", "글로벌", "미분류"];
+  const regionReturnRows = REGION_ORDER.filter((r) => regionRetMap.has(r)).map((r) => {
+    const g = regionRetMap.get(r);
+    const profit = g.cost > 0 ? g.costedValue - g.cost : null;
+    const pct = g.cost > 0 ? (profit / g.cost) * 100 : null;
+    return `<tr><td>${r}</td><td>${fmtW(g.value)}</td>
+      <td style="color:${profit == null ? "var(--text-muted)" : profit >= 0 ? "var(--good)" : "var(--critical)"}">${profit == null ? "매입단가 미입력" : `${profit >= 0 ? "+" : ""}${fmtW(profit)} (${pct.toFixed(1)}%)`}</td></tr>`;
+  }).join("");
+
+  const accountYieldEntries = [...accountMap.entries()].filter(([, g]) => g.value > 0)
+    .sort((a, b) => (b[1].monthlyDiv / b[1].value) - (a[1].monthlyDiv / a[1].value));
+  const accountYieldRows = accountYieldEntries.map(([acc, g]) => {
+    const yieldPct = (g.monthlyDiv * 12 / g.value) * 100;
+    return `<tr><td>${acc}</td><td>${fmtW(g.value)}</td><td>${g.monthlyDiv > 0 ? fmtW(g.monthlyDiv) : "—"}</td><td>${yieldPct.toFixed(2)}%</td></tr>`;
+  }).join("");
+
+  const STYLE_ORDER = ["성장", "배당", "안전", "개별주", "미분류"];
+  const weightYieldRows = [
+    ...REGION_ORDER.filter((r) => regionRetMap.has(r)).map((r) => [r, regionRetMap.get(r)]),
+    ...STYLE_ORDER.filter((s) => styleRetMap.has(s)).map((s) => [s, styleRetMap.get(s)]),
+  ].map(([label, g]) => {
+    const yieldPct = g.value > 0 ? (g.div * 12 / g.value) * 100 : 0;
+    return `<tr><td>${label}</td><td>${fmtW(g.value)}</td><td>${g.div > 0 ? fmtW(g.div) : "—"}</td><td>${yieldPct.toFixed(2)}%</td></tr>`;
+  }).join("");
+
+  return `<p class="chart-title" style="margin-top:20px;">📈 자산 수익률</p>
+    ${historyReturnHTML}
+
+    <p class="chart-title" style="margin-top:20px;">🌍 지역별 수익률 (매입단가 입력분 기준)</p>
+    <div style="overflow-x:auto;">
+    <table class="account-summary-table">
+      <thead><tr><th>투자대상 시장</th><th>평가액</th><th>손익</th></tr></thead>
+      <tbody>${regionReturnRows}</tbody>
+    </table>
+    </div>
+
+    <p class="chart-title" style="margin-top:20px;">💰 배당수익률 (계좌별, 연환산)</p>
+    <div style="overflow-x:auto;">
+    <table class="account-summary-table">
+      <thead><tr><th>계좌</th><th>평가액</th><th>월배당</th><th>연환산 배당수익률</th></tr></thead>
+      <tbody>${accountYieldRows}</tbody>
+    </table>
+    </div>
+
+    <p class="chart-title" style="margin-top:20px;">💰 배당수익률 (비중별: 지역·스타일, 연환산)</p>
+    <div style="overflow-x:auto;">
+    <table class="account-summary-table">
+      <thead><tr><th>구분</th><th>평가액</th><th>월배당</th><th>연환산 배당수익률</th></tr></thead>
+      <tbody>${weightYieldRows}</tbody>
+    </table>
+    </div>`;
+}
+
 function buildHeatmapHTML(perRow, accountMap) {
   const byAccount = new Map();
   for (const p of perRow) {
@@ -1875,6 +1960,98 @@ function buildYearlyDivHTML(divHistory) {
     </div>${momHTML}`;
 }
 
+/* 일별 자산변동 캡처 이력 테이블 — "오늘 자산 스냅샷" 버튼으로 쌓은 이력을 최근순으로 표시 */
+function buildDailyAssetHTML(dailyHistory) {
+  if (!dailyHistory.length) {
+    return `<p class="compare-empty">"오늘 자산 스냅샷" 버튼을 매일 눌러두면 일별 평가액·월배당 변동이 여기 쌓입니다. 이 사이트는 정적 페이지라 자동 캡처는 불가능하니(서버가 없어 매일 자동 실행할 수 없음), 확인할 때마다 직접 눌러야 이력이 쌓입니다.</p>`;
+  }
+  const fmtW = (v) => fmtPrice(v, "KRW");
+  const sorted = dailyHistory.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 60);
+  const rows = sorted.map((h, i) => {
+    const prev = sorted[i + 1];
+    const diff = prev ? h.value - prev.value : null;
+    return `<tr>
+      <td>${h.date}</td><td>${fmtW(h.value)}</td>
+      <td style="color:${diff == null ? "var(--text-muted)" : diff >= 0 ? "var(--good)" : "var(--critical)"}">${diff == null ? "—" : (diff >= 0 ? "+" : "") + fmtW(diff)}</td>
+      <td>${h.monthlyDiv > 0 ? fmtW(h.monthlyDiv) : "—"}</td>
+    </tr>`;
+  }).join("");
+  return `<div style="overflow-x:auto;">
+    <table class="account-summary-table">
+      <thead><tr><th>날짜</th><th>평가액</th><th>전일 대비</th><th>월배당(그 시점)</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    </div>
+    <p class="stat-sub" style="margin-top:6px;">최근 ${sorted.length}일 기록(총 ${dailyHistory.length}일 캡처됨).</p>`;
+}
+
+/* ISO 주(월요일 시작) 기준 "YYYY-Www" 키로 일별 이력을 묶어 주간 평균 변동을 보여줌 */
+function buildWeeklyAssetHTML(dailyHistory) {
+  if (dailyHistory.length < 2) {
+    return `<p class="compare-empty">일별 캡처가 최소 2건 이상 쌓이면(서로 다른 주) 주간 자산변동을 계산할 수 있습니다. 현재 ${dailyHistory.length}일 기록됨.</p>`;
+  }
+  const isoWeekKey = (dateStr) => {
+    const d = new Date(dateStr + "T00:00:00Z");
+    const day = (d.getUTCDay() + 6) % 7; // 월=0 ... 일=6
+    d.setUTCDate(d.getUTCDate() - day + 3); // 그 주의 목요일로 이동(ISO 주 규칙)
+    const firstThursday = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+    const week = 1 + Math.round(((d - firstThursday) / 86400000 - 3 + ((firstThursday.getUTCDay() + 6) % 7)) / 7);
+    return `${d.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
+  };
+  const byWeek = new Map();
+  for (const h of dailyHistory.slice().sort((a, b) => a.date.localeCompare(b.date))) {
+    byWeek.set(isoWeekKey(h.date), h); // 그 주의 마지막 기록으로 덮어씀
+  }
+  const weeks = [...byWeek.entries()];
+  const fmtW = (v) => fmtPrice(v, "KRW");
+  const rows = weeks.map(([wk, h], i) => {
+    const prev = weeks[i - 1];
+    const diff = prev ? h.value - prev[1].value : null;
+    const pct = prev && prev[1].value > 0 ? (diff / prev[1].value) * 100 : null;
+    return `<tr>
+      <td>${wk}</td><td>${h.date}</td><td>${fmtW(h.value)}</td>
+      <td style="color:${diff == null ? "var(--text-muted)" : diff >= 0 ? "var(--good)" : "var(--critical)"}">${diff == null ? "—" : `${diff >= 0 ? "+" : ""}${fmtW(diff)} (${pct.toFixed(2)}%)`}</td>
+    </tr>`;
+  }).join("");
+  return `<div style="overflow-x:auto;">
+    <table class="account-summary-table">
+      <thead><tr><th>주(ISO)</th><th>기준일</th><th>평가액</th><th>전주 대비</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    </div>`;
+}
+
+/* 월별 스냅샷(MY_ASSETS_HISTORY_KEY)을 연도로 묶어 연초 대비 변동을 보여줌 */
+function buildYearlyAssetHTML(monthlyHistory) {
+  const byYear = new Map();
+  for (const h of monthlyHistory) {
+    const y = h.month.slice(0, 4);
+    if (!byYear.has(y)) byYear.set(y, []);
+    byYear.get(y).push(h);
+  }
+  const years = [...byYear.keys()].sort();
+  if (!years.length) return `<p class="compare-empty">월별 스냅샷이 쌓이면 연간 자산변동을 계산할 수 있습니다.</p>`;
+  const fmtW = (v) => fmtPrice(v, "KRW");
+  const rows = years.map((y, i) => {
+    const list = byYear.get(y).slice().sort((a, b) => a.month.localeCompare(b.month));
+    const first = list[0], last = list[list.length - 1];
+    const prevYear = i > 0 ? byYear.get(years[i - 1]) : null;
+    const base = prevYear ? prevYear[prevYear.length - 1].value : first.value;
+    const diff = last.value - base;
+    const pct = base > 0 ? (diff / base) * 100 : 0;
+    return `<tr>
+      <td>${y}</td><td>${first.month} ~ ${last.month} (${list.length}개월)</td><td>${fmtW(last.value)}</td>
+      <td style="color:${diff >= 0 ? "var(--good)" : "var(--critical)"}">${diff >= 0 ? "+" : ""}${fmtW(diff)} (${pct.toFixed(1)}%)</td>
+    </tr>`;
+  }).join("");
+  return `<div style="overflow-x:auto;">
+    <table class="account-summary-table">
+      <thead><tr><th>연도</th><th>기록 범위</th><th>연말(최신) 평가액</th><th>전년 대비</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    </div>`;
+}
+
 /* 통합 탭 — 도넛(종목 비중) SVG (라이브러리 없이 stroke-dasharray로) */
 function buildDonutSVG(items, centerLabel) {
   const total = items.reduce((a, b) => a + b.value, 0);
@@ -1956,10 +2133,15 @@ function buildCategoryStackHTML(perRow) {
 function renderMyOverview() {
   const box = document.getElementById("myOverviewBody");
   const sel = document.getElementById("myOverviewAccount");
+  const typeSel = document.getElementById("myOverviewAssetType");
   if (!box || !sel || !state.myAssetsCsvData) return;
   const { perRow, totalValue } = state.myAssetsCsvData;
   const acc = sel.value;
-  const rows = acc === "__all__" ? perRow : perRow.filter((p) => (p.account || "계좌 미지정") === acc);
+  const assetType = typeSel ? typeSel.value : "__all__";
+  let rows = acc === "__all__" ? perRow : perRow.filter((p) => (p.account || "계좌 미지정") === acc);
+  if (assetType !== "__all__") {
+    rows = rows.filter((p) => (assetType === "stock" ? p.meta && p.meta.assetType === "stock" : !(p.meta && p.meta.assetType === "stock")));
+  }
   const fmtW = (v) => fmtPrice(v, "KRW");
   const value = rows.reduce((a, b) => a + b.value, 0);
   const costed = rows.filter((p) => p.cost != null);
@@ -2007,6 +2189,7 @@ async function renderMyAssets() {
   updateMyAssetsVersionBadge();
   syncMyContribRows();
   const cfg = serializeMyAssets();
+  updateIncludeStocksBtn();
   // 보유(qty)뿐 아니라 매수계획만 있는 행(monthlyQty)도 포함 — 평가액은 0, 월매수만 집계됨
   const rows = cfg.rows.filter((r) => r.qty > 0 || r.monthlyQty > 0);
   if (!rows.length) {
@@ -2018,7 +2201,12 @@ async function renderMyAssets() {
   // 아직 수집 목록(state.listedEtfs)에 없는 종목코드는 계산에서 제외하고
   // 별도로 안내한다 — 조용히 다른 종목으로 바뀌거나 전체 계산이 멈추지 않도록
   const unknownRows = rows.filter((r) => !state.metaBySymbol.has(r.symbol));
-  const knownRows = rows.filter((r) => state.metaBySymbol.has(r.symbol));
+  let knownRows = rows.filter((r) => state.metaBySymbol.has(r.symbol));
+
+  // 일반종목(개별주) 반영/미반영 토글 — 꺼두면 ETF만으로 평가액·배당·목표계산을 함
+  const includeStocks = localStorage.getItem(MY_INCLUDE_STOCKS_KEY) !== "0";
+  const stockRows = knownRows.filter((r) => state.metaBySymbol.get(r.symbol).assetType === "stock");
+  if (!includeStocks) knownRows = knownRows.filter((r) => state.metaBySymbol.get(r.symbol).assetType !== "stock");
 
   let fx = null;
   const items = [];
@@ -2033,6 +2221,9 @@ async function renderMyAssets() {
     return;
   }
 
+  const excludedStockHTML = !includeStocks && stockRows.length
+    ? `<p class="stat-sub" style="margin-top:6px;">🏢 일반종목 ${stockRows.length}건(${stockRows.map((r) => (state.metaBySymbol.get(r.symbol) || {}).name || r.symbol).join(", ")})은 "일반종목: 제외" 상태라 계산에서 빠졌습니다.</p>`
+    : "";
   const unknownHTML = unknownRows.length
     ? `<p class="stat-sub" style="color:var(--critical); margin-top:10px;">⚠️ 아직 수집 목록에 없는 종목 ${unknownRows.length}건은 계산에서 제외했습니다: ${unknownRows.map((r) => r.symbol).join(", ")} — 클로드에게 "이 종목 추가해줘"라고 요청하면 다음 데이터 수집 때 반영됩니다.</p>`
     : "";
@@ -2232,6 +2423,9 @@ async function renderMyAssets() {
   const regionMap = new Map();
   const styleMap = new Map();
   const catMap = new Map();
+  // 수익률 분석(비중별)용 — 매입원가/월배당도 region·style별로 함께 집계
+  const regionRetMap = new Map(); // region -> {cost, costedValue, div, value}
+  const styleRetMap = new Map();
   for (const p of perRow) {
     if (p.value <= 0) continue;
     const region = (p.meta && p.meta.region) || "미분류";
@@ -2240,6 +2434,16 @@ async function renderMyAssets() {
     styleMap.set(style, (styleMap.get(style) || 0) + p.value);
     const cat = p.meta && p.meta.category ? p.meta.category : "기타";
     catMap.set(cat, (catMap.get(cat) || 0) + p.value);
+
+    if (!regionRetMap.has(region)) regionRetMap.set(region, { cost: 0, costedValue: 0, div: 0, value: 0 });
+    const rr = regionRetMap.get(region);
+    rr.value += p.value; rr.div += p.monthlyDiv;
+    if (p.cost != null) { rr.cost += p.cost; rr.costedValue += p.value; }
+
+    if (!styleRetMap.has(style)) styleRetMap.set(style, { cost: 0, costedValue: 0, div: 0, value: 0 });
+    const sr = styleRetMap.get(style);
+    sr.value += p.value; sr.div += p.monthlyDiv;
+    if (p.cost != null) { sr.cost += p.cost; sr.costedValue += p.value; }
   }
   const REGION_ORDER = ["한국", "미국", "글로벌", "미분류"];
   const marketKpiHTML = totalValue > 0 ? `<div class="stat-row" style="margin-top:14px;">
@@ -2249,11 +2453,11 @@ async function renderMyAssets() {
         <p class="stat-sub">${fmtW(regionMap.get(r))}</p>
       </div>`).join("")}
     </div>` : "";
-  const STYLE_ORDER = ["성장", "배당", "안전", "미분류"];
+  const STYLE_ORDER = ["성장", "배당", "안전", "개별주", "미분류"];
   const styleAllocHTML = STYLE_ORDER.filter((s) => styleMap.has(s)).map((s, i) => {
     const v = styleMap.get(s);
     const pct = totalValue > 0 ? (v / totalValue) * 100 : 0;
-    const sub = s === "안전" ? "채권혼합·리츠 등" : s === "배당" ? "커버드콜 등 분배 중심" : s === "성장" ? "지수·테마 성장주" : "";
+    const sub = s === "안전" ? "채권혼합·리츠 등" : s === "배당" ? "커버드콜 등 분배 중심" : s === "성장" ? "지수·테마 성장주" : s === "개별주" ? "국내 상장 개별 종목(비ETF)" : "";
     return `<div class="bar-row">
       <span class="bar-label" title="${s}">${s}${sub ? ` <span style="color:var(--text-muted);">(${sub})</span>` : ""}</span>
       <div class="bar-track"><div class="bar-fill" style="width:${pct.toFixed(1)}%; background:${PALETTE[i % PALETTE.length]}"></div></div>
@@ -2281,6 +2485,11 @@ async function renderMyAssets() {
   const trendHTML = history.length >= 2
     ? `<div id="myAssetTrendChart"></div>`
     : `<p class="compare-empty">"이번 달 스냅샷 저장"을 매달 눌러두면 평가액·월배당 추이 그래프가 여기 쌓입니다(현재 ${history.length}개월 기록).</p>`;
+  // 일별 자산변동 캡처 이력 — "오늘 자산 스냅샷" 버튼으로 누적(기기 저장, 매일 직접 눌러야 함)
+  const dailyHistory = JSON.parse(localStorage.getItem(MY_ASSETS_DAILY_HISTORY_KEY) || "[]");
+
+  // 수익률 분석 — 자산 수익률(스냅샷 이력) + 지역별 수익률 + 배당수익률(계좌별·비중별)
+  const returnAnalysisHTML = buildReturnAnalysisHTML(regionRetMap, styleRetMap, accountMap, history);
 
   // 배당기준·이력 — 확정/추정 DPS, 다음달 기대월배당, 배당상승률
   const divBasisHTML = buildDividendBasisHTML(perRow, history);
@@ -2315,6 +2524,7 @@ async function renderMyAssets() {
       </div>` : ""}
     </div>
     <p class="stat-sub">최신 수집: ${state.manifest.updated} 기준(주간 자동 수집 — 실시간 시세 아님)</p>
+    ${excludedStockHTML}
     ${unknownHTML}
 
     <div class="dash-tabs" id="myDashTabs">
@@ -2326,6 +2536,7 @@ async function renderMyAssets() {
       <button type="button" class="dash-tab-btn" data-tab="suff">⚖️ 자급률·월매수</button>
       <button type="button" class="dash-tab-btn" data-tab="divbasis">💹 배당기준·이력</button>
       <button type="button" class="dash-tab-btn" data-tab="trend">📈 추이</button>
+      <button type="button" class="dash-tab-btn" data-tab="settings">⚙️ 설정</button>
     </div>
 
     <div class="dash-panel" data-tab="overview" hidden>
@@ -2333,6 +2544,11 @@ async function renderMyAssets() {
         <select id="myOverviewAccount" aria-label="통합 보기 계좌 선택" style="min-width:180px;">
           <option value="__all__">전체 계좌</option>
           ${[...accountMap.keys()].map((acc) => `<option value="${acc}">${acc}</option>`).join("")}
+        </select>
+        <select id="myOverviewAssetType" aria-label="자산 종류 보기 선택" style="min-width:150px;">
+          <option value="__all__">통합(ETF+일반주식)</option>
+          <option value="etf">ETF만</option>
+          <option value="stock">국내일반주식만</option>
         </select>
       </div>
       <div id="myOverviewBody"></div>
@@ -2370,6 +2586,8 @@ async function renderMyAssets() {
       <p class="chart-title" style="margin-top:20px;">🗺️ 계좌별 비중</p>
       <div class="bar-list">${accountAllocHTML}</div>
       <p class="stat-sub" style="margin-top:8px;">시장 전망(드러켄밀러 OS·매크로 스코어)은 외부 시장데이터가 필요해 이 사이트 범위 밖입니다 — 클로드 세션(금융비서)에서 제공됩니다.</p>
+
+      ${returnAnalysisHTML}
     </div>
 
     <div class="dash-panel" data-tab="heatmap" hidden>
@@ -2393,6 +2611,7 @@ async function renderMyAssets() {
       ${suffHTML}
       <p class="chart-title" style="margin-top:24px;">🗓️ 계좌별 매수계획 상세 (ETF모으기)</p>
       ${buyPlanHTML}
+      <p class="stat-sub" style="margin-top:8px;"><a href="https://app.notion.com/p/3865efd0e46281c49a72c9bbc70dcea0" target="_blank" rel="noopener">📋 월매수(ETF모으기) SOP(노션) 확인</a></p>
     </div>
 
     <div class="dash-panel" data-tab="divbasis" hidden>
@@ -2409,6 +2628,36 @@ async function renderMyAssets() {
         <span id="mySnapshotStatus" class="action-status"></span>
       </div>
       ${trendHTML}
+
+      <p class="chart-title" style="margin-top:24px;">📅 자산변동 이력 (일별·주간·연간)</p>
+      <div class="action-row" style="margin-bottom:8px;">
+        <button type="button" id="myDailySnapshotBtn" class="btn-action">📅 오늘 자산 스냅샷</button>
+        <span id="myDailySnapshotStatus" class="action-status"></span>
+      </div>
+      <div class="controls" style="margin-bottom:10px;">
+        <select id="myAssetChangeGranularity" aria-label="자산변동 보기 단위">
+          <option value="daily">일별</option>
+          <option value="weekly">주간</option>
+          <option value="yearly">연간</option>
+        </select>
+      </div>
+      <div id="myAssetChangeBody"></div>
+      <p class="stat-sub" style="margin-top:6px;">이 사이트는 정적 페이지(서버 없음)라 일별 캡처는 자동으로 쌓이지 않습니다 — 확인할 때마다 "오늘 자산 스냅샷"을 눌러야 이력이 쌓입니다. 주간은 일별 캡처가 서로 다른 주에 2건 이상 쌓여야 계산됩니다.</p>
+    </div>
+
+    <div class="dash-panel" data-tab="settings" hidden>
+      <p class="chart-title" style="margin-top:20px;">📋 참조 노션 SOP</p>
+      <p class="stat-sub"><a href="https://app.notion.com/p/3865efd0e46281c49a72c9bbc70dcea0" target="_blank" rel="noopener">💹 14RAE 배당기준 마스터 (배당기준·월매수 ETF모으기 현황 포함)</a></p>
+
+      <p class="chart-title" style="margin-top:20px;">📂 불러오기 파일 버전</p>
+      <p class="stat-sub">${state.myAssetsDataAsOf ? `데이터 기준일: <b>${state.myAssetsDataAsOf}</b>` : "데이터 기준일: — (가져오기 파일에 dataAsOf 없음)"}</p>
+      <p class="stat-sub">마지막 불러오기: ${state.myAssetsImportedAt ? `<b>${state.myAssetsImportedAt}</b>` : "— (아직 가져오기 파일을 불러온 적 없음, 현재 화면은 직접 입력분)"}</p>
+
+      <p class="chart-title" style="margin-top:20px;">📈 주가·배당 데이터 업데이트</p>
+      <p class="stat-sub">최신 수집: <b>${state.manifest.updated}</b> (매주 자동 수집 — 실시간 시세 아님)</p>
+
+      <p class="chart-title" style="margin-top:20px;">🏢 일반종목(개별주) 반영 상태</p>
+      <p class="stat-sub">현재: <b>${includeStocks ? "포함" : "제외"}</b> — 위쪽 "일반종목: 포함/제외" 버튼으로 전환할 수 있습니다.</p>
     </div>
 
     <p class="stat-sub" style="margin-top:10px;">현재가는 주간 수집 데이터의 마지막 종가 기준입니다. 월배당은 종목별 "확정 DPS(원/주)"를 입력하면 DPS×수량으로 계산해 우선 적용하고, 비워두면 최근 1년 배당(TTM)÷12 추정치를 사용합니다. 신규 상장·특별배당 종목은 TTM 추정이 실제보다 크게 낮을 수 있으니 시트/노션 배당기준의 확정 DPS 입력을 권장합니다.</p>
@@ -2424,6 +2673,9 @@ async function renderMyAssets() {
     ovSel.value = state.myOverviewAccount;
   }
   ovSel.addEventListener("change", () => { state.myOverviewAccount = ovSel.value; renderMyOverview(); });
+  const ovTypeSel = document.getElementById("myOverviewAssetType");
+  if (state.myOverviewAssetType) ovTypeSel.value = state.myOverviewAssetType;
+  ovTypeSel.addEventListener("change", () => { state.myOverviewAssetType = ovTypeSel.value; renderMyOverview(); });
   renderMyOverview();
 
   if (history.length >= 2) {
@@ -2450,6 +2702,29 @@ async function renderMyAssets() {
     flashStatus("mySnapshotStatus", `${month} 스냅샷 저장 ✓ (이 브라우저에만 보관)`);
     renderMyAssets();
   });
+  document.getElementById("myDailySnapshotBtn").addEventListener("click", () => {
+    const date = todayStr();
+    const hist = JSON.parse(localStorage.getItem(MY_ASSETS_DAILY_HISTORY_KEY) || "[]");
+    const idx = hist.findIndex((h) => h.date === date);
+    const entry = { date, value: totalValue, monthlyDiv: totalMonthlyDiv };
+    if (idx >= 0) hist[idx] = entry; else hist.push(entry);
+    hist.sort((a, b) => a.date.localeCompare(b.date));
+    localStorage.setItem(MY_ASSETS_DAILY_HISTORY_KEY, JSON.stringify(hist));
+    flashStatus("myDailySnapshotStatus", `${date} 일별 스냅샷 저장 ✓ (이 브라우저에만 보관)`);
+    renderMyAssets();
+  });
+  const changeSel = document.getElementById("myAssetChangeGranularity");
+  const renderAssetChange = () => {
+    const body = document.getElementById("myAssetChangeBody");
+    if (!body) return;
+    const g = changeSel.value;
+    body.innerHTML = g === "daily" ? buildDailyAssetHTML(dailyHistory)
+      : g === "weekly" ? buildWeeklyAssetHTML(dailyHistory)
+      : buildYearlyAssetHTML(history);
+  };
+  if (state.myAssetChangeGranularity) changeSel.value = state.myAssetChangeGranularity;
+  changeSel.addEventListener("change", () => { state.myAssetChangeGranularity = changeSel.value; renderAssetChange(); });
+  renderAssetChange();
 }
 
 function buildMyAssetsText() {
@@ -3877,6 +4152,11 @@ async function init() {
     }
     downloadBlob(new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" }), `my-assets${suffix}-${todayStr()}.csv`);
     flashStatus("myAssetStatus", "시트 저장 완료 ✓");
+  });
+  document.getElementById("myIncludeStocksBtn").addEventListener("click", () => {
+    const includeStocks = localStorage.getItem(MY_INCLUDE_STOCKS_KEY) !== "0";
+    localStorage.setItem(MY_INCLUDE_STOCKS_KEY, includeStocks ? "0" : "1");
+    renderMyAssets();
   });
 
   // 시뮬레이터: 공유 링크가 있으면 그 설정으로, 없으면 기본값(SPY 100%, 간단 모드)으로 시작
