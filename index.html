@@ -391,7 +391,7 @@
         <p class="stat-sub" id="myReturnModeHint" style="display:none; margin:-4px 0 10px;">종목별 실적 반영을 고르면 위 기대수익률 입력 대신, 보유 종목 각각의 최근 실제 가격 등락률(연환산)을 평가금액 비중으로 가중평균해 목표 도달 계산에 씁니다.</p>
         <p class="stat-sub" id="myContribLabel" style="display:none; margin:6px 0 4px;">계좌별 월 납입금(선택, 연금저축 등 배당 외 현금 납입이 있는 계좌)</p>
         <div class="controls" id="myContribRows" style="margin-bottom:6px;"></div>
-        <div class="action-row">
+        <div class="action-row" id="myAssetActionRow">
           <button type="button" id="myExportBtn" class="btn-action">📤 내보내기</button>
           <button type="button" id="myImportBtn" class="btn-action">📂 가져오기</button>
           <button type="button" id="myClaudeBtn" class="btn-action">🤖 클로드에 복사</button>
@@ -4158,7 +4158,12 @@ async function init() {
     myAssetsRestored = applyMyAssets(savedAssets);
   } catch (err) { /* 손상된 저장값은 무시하고 새로 시작 */ }
   if (!myAssetsRestored) addMyAssetRow();
-  renderMyAssets();
+  // 시작화면 고정 — 보유 데이터가 있으면 새로고침 시 제목·입력폼을 지나 대시보드(액션바)로 바로 스크롤
+  renderMyAssets().then(() => {
+    if (myAssetsRestored) {
+      document.getElementById("myAssetActionRow")?.scrollIntoView({ behavior: "instant", block: "start" });
+    }
+  });
   document.getElementById("addMyAssetRow").addEventListener("click", () => { addMyAssetRow(); saveMyAssets(); updateMyRowsCollapseUI(); });
   document.getElementById("myRowsToggleBtn").addEventListener("click", () => {
     const wrap = document.getElementById("myAssetRowsWrap");
