@@ -166,3 +166,40 @@ function validateBuyPlanCapture(parsed) {
   });
   return { holdings, reportedTotal: parsed.reported_total_monthly_amount ?? null };
 }
+
+/* ---------- 노션 SOP 갱신용 요약 텍스트 (앱은 이 텍스트만 만들고, 실제 노션 반영은
+   계속 클로드 코드 세션이 담당 — CLAUDE.md/계획서의 역할분리 원칙) ---------- */
+function buildAccountCaptureSummaryText(validated) {
+  const lines = [];
+  lines.push(`📸 계좌 캡처 파싱 결과${validated.accountLabel ? ` — ${validated.accountLabel}` : ""} (${todayStr()})`);
+  if (validated.totalCheck) {
+    const t = validated.totalCheck;
+    lines.push(`합계 대조: Σ평가액 ${Math.round(t.sumEval).toLocaleString()}원 vs 화면합계 ${Math.round(t.reported).toLocaleString()}원 (오차 ${(t.diffPct * 100).toFixed(2)}%, ${t.ok ? "정상" : "누락 종목 가능성 있음"})`);
+  }
+  for (const h of validated.holdings) {
+    const label = h.matchedName || h.name;
+    const symbolPart = h.matchedSymbol ? ` (${h.matchedSymbol})` : "";
+    const issuePart = h.issues && h.issues.length ? ` [⚠️ ${h.issues.join("; ")}]` : " [정상]";
+    lines.push(`- ${label}${symbolPart}: ${h.qty ?? "?"}주, 평가액 ${h.evalAmount != null ? Math.round(h.evalAmount).toLocaleString() : "?"}원${issuePart}`);
+  }
+  lines.push("");
+  lines.push('이 결과를 노션 "계좌 종목 현황 SOP"에 반영해줘.');
+  return lines.join("\n");
+}
+
+function buildBuyPlanCaptureSummaryText(validated) {
+  const lines = [];
+  lines.push(`📈 월매수 캡처 파싱 결과 (${todayStr()})`);
+  if (validated.reportedTotal != null) {
+    lines.push(`화면 월 총 매수금액: ${Math.round(validated.reportedTotal).toLocaleString()}원`);
+  }
+  for (const h of validated.holdings) {
+    const label = h.matchedName || h.name;
+    const symbolPart = h.matchedSymbol ? ` (${h.matchedSymbol})` : "";
+    const issuePart = h.issues && h.issues.length ? ` [⚠️ ${h.issues.join("; ")}]` : " [정상]";
+    lines.push(`- ${label}${symbolPart}: 1회 ${h.buyQtyPerTime ?? "?"}주 × ${h.buyFreq || "?"}${h.buyDay ? ` (${h.buyDay})` : ""}${issuePart}`);
+  }
+  lines.push("");
+  lines.push('이 결과를 노션 "월자동매수 현황"에 반영해줘.');
+  return lines.join("\n");
+}

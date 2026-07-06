@@ -88,6 +88,14 @@
         </div>
         <div id="captureBuyPlanResult"></div>
       </div>
+
+      <div class="card">
+        <p class="chart-title" style="margin-top:0;">🕒 최근 파싱 이력</p>
+        <div id="captureHistoryList"></div>
+        <div class="action-row" style="margin-top:8px;">
+          <button type="button" id="captureHistoryClearBtn" class="btn-action">🗑️ 이력 지우기</button>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -339,6 +347,21 @@ function initCapture() {
       flashStatus("captureBuyPlanStatus", "자동 파싱 실패(" + err.message + ") — 아래 붙여넣기 모드를 이용하세요", 6000);
     }
   });
+
+  // M3: 원본 스크린샷 썸네일 — 파일을 고르는 즉시 만들어 둬서 파싱 결과와 대조할 수 있게 한다
+  document.getElementById("captureAccountFiles").addEventListener("change", () => refreshCaptureThumbs("captureAccountFiles", "captureAccountThumbs"));
+  document.getElementById("captureBuyPlanFiles").addEventListener("change", () => refreshCaptureThumbs("captureBuyPlanFiles", "captureBuyPlanThumbs"));
+
+  // M4: 파싱 이력 로그
+  renderCaptureHistory();
+  document.getElementById("captureHistoryClearBtn").addEventListener("click", () => {
+    localStorage.removeItem(CAPTURE_HISTORY_KEY);
+    renderCaptureHistory();
+  });
+
+  // M4: Web Share Target — 갤러리 등에서 이 앱으로 스크린샷을 공유하면 sw.js가 Cache Storage에
+  // 저장해두고 ?shared=1로 리다이렉트한다. 여기서 꺼내 파일 입력에 채워준다.
+  checkSharedFiles();
 }
 
 async function copyToClipboard(text, statusId, label) {
@@ -356,15 +379,187 @@ async function resizeFilesToImages(fileList) {
   return images;
 }
 
+/* ---------- M3: 원본-파싱 대조 뷰 — 스크린샷 썸네일 갤러리 ---------- */
+async function refreshCaptureThumbs(fileInputId, stateKey) {
+  const files = document.getElementById(fileInputId).files;
+  if (!files.length) { state[stateKey] = []; return; }
+  const thumbs = [];
+  for (const f of [...files]) {
+    const { dataUrl } = await resizeImageFile(f, 480, 0.7);
+    thumbs.push(dataUrl);
+  }
+  state[stateKey] = thumbs;
+}
+
+function thumbGalleryHTML(thumbs) {
+  if (!thumbs || !thumbs.length) return "";
+  return `<p class="stat-sub" style="margin:10px 0 4px;">원본 스크린샷(페이지 배지를 눌러 대조)</p>
+    <div class="capture-thumb-gallery" style="display:flex; gap:8px; overflow-x:auto; padding-bottom:4px;">
+      ${thumbs.map((src, i) => `<img src="${src}" data-page="${i + 1}" class="capture-thumb" style="height:110px; border-radius:8px; border:2px solid transparent; flex-shrink:0;" title="${i + 1}페이지">`).join("")}
+    </div>`;
+}
+
+function wireThumbHighlight(container) {
+  container.querySelectorAll(".capture-page-badge").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const img = container.querySelector(`.capture-thumb[data-page="${btn.dataset.page}"]`);
+      if (!img) return;
+      img.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+      img.style.borderColor = "var(--series-price)";
+      setTimeout(() => { img.style.borderColor = "transparent"; }, 1500);
+    });
+  });
+}
+
+/* ---------- M3: 계좌+심볼 upsert — 이미 폼에 있는 (계좌,종목)이면 새 행 추가 대신 값만 갱신 ---------- */
+function findExistingAssetRow(account, symbol) {
+  return [...document.querySelectorAll("#myAssetRows .portfolio-row")].find(
+    (row) => row.querySelector(".my-account").value === account && row.querySelector(".my-symbol").value === symbol
+  ) || null;
+}
+
+function upsertAccountHolding(account, symbol, qty, avgPrice) {
+  const existing = findExistingAssetRow(account, symbol);
+  if (existing) {
+    existing.querySelector(".my-qty").value = qty || 0;
+    if (avgPrice) existing.querySelector(".my-avg").value = avgPrice;
+    return "updated";
+  }
+  addMyAssetRow({ account, symbol, qty: qty || 0, avgPrice: avgPrice || 0 });
+  return "added";
+}
+
+function upsertBuyPlanHolding(account, symbol, monthlyQty, buyFreq, buyDay) {
+  const existing = findExistingAssetRow(account, symbol);
+  if (existing) {
+    existing.querySelector(".my-monthly").value = monthlyQty || 0;
+    existing.querySelector(".my-buy-freq").value = buyFreq || "매월";
+    existing.querySelector(".my-buy-day").value = buyDay || "";
+    return "updated";
+  }
+  addMyAssetRow({ account, symbol, monthlyQty: monthlyQty || 0, buyFreq: buyFreq || "매월", buyDay: buyDay || "" });
+  return "added";
+}
+
+function accountPreviewHTML(account, h) {
+  if (!account) return `<span class="stat-sub">계좌 선택 필요</span>`;
+  const existing = findExistingAssetRow(account, h.matchedSymbol);
+  if (!existing) return `<span style="color:var(--good); font-size:12px;">신규 추가</span>`;
+  const oldQty = parseFloat(existing.querySelector(".my-qty").value) || 0;
+  const oldAvg = parseFloat(existing.querySelector(".my-avg").value) || 0;
+  const newQty = h.qty || 0, newAvg = h.avgPrice || 0;
+  if (oldQty === newQty && (!newAvg || oldAvg === newAvg)) return `<span class="stat-sub">기존과 동일(변경 없음)</span>`;
+  return `<span style="color:var(--critical); font-size:12px;">갱신: ${oldQty.toLocaleString()}주→${newQty.toLocaleString()}주${newAvg ? `, 단가 ${oldAvg.toLocaleString()}→${newAvg.toLocaleString()}` : ""}</span>`;
+}
+
+function buyPlanPreviewHTML(account, h) {
+  if (!account) return `<span class="stat-sub">계좌 선택 필요</span>`;
+  const existing = findExistingAssetRow(account, h.matchedSymbol);
+  if (!existing) return `<span style="color:var(--good); font-size:12px;">신규 추가</span>`;
+  const oldMonthly = parseFloat(existing.querySelector(".my-monthly").value) || 0;
+  const oldFreq = existing.querySelector(".my-buy-freq").value;
+  const newMonthly = h.buyQtyPerTime || 0, newFreq = h.buyFreq || "매월";
+  if (oldMonthly === newMonthly && oldFreq === newFreq) return `<span class="stat-sub">기존과 동일(변경 없음)</span>`;
+  return `<span style="color:var(--critical); font-size:12px;">갱신: ${oldMonthly}주×${oldFreq}→${newMonthly}주×${newFreq}</span>`;
+}
+
+/* ---------- M4: 파싱 이력 로그(이 기기에만 저장) ---------- */
+const CAPTURE_HISTORY_KEY = "capture_parse_history_v1";
+function pushCaptureHistory(entry) {
+  let hist = [];
+  try { hist = JSON.parse(localStorage.getItem(CAPTURE_HISTORY_KEY) || "[]"); } catch (err) { hist = []; }
+  hist.unshift({ ts: nowDateTimeStr(), ...entry });
+  localStorage.setItem(CAPTURE_HISTORY_KEY, JSON.stringify(hist.slice(0, 20)));
+  renderCaptureHistory();
+}
+function renderCaptureHistory() {
+  const el = document.getElementById("captureHistoryList");
+  if (!el) return;
+  let hist = [];
+  try { hist = JSON.parse(localStorage.getItem(CAPTURE_HISTORY_KEY) || "[]"); } catch (err) { hist = []; }
+  if (!hist.length) { el.innerHTML = `<p class="stat-sub">아직 파싱 이력이 없습니다.</p>`; return; }
+  el.innerHTML = hist.map((h) => `<div class="stat-sub" style="padding:5px 0; border-bottom:1px solid var(--gridline);">
+    ${h.ts} · ${h.type === "account" ? "💼 계좌" : "📈 월매수"} · ${h.count}종목${h.issues ? `, 이슈 ${h.issues}건` : ""}${h.label ? ` · ${h.label}` : ""}
+  </div>`).join("");
+}
+
+/* ---------- M4: Web Share Target — sw.js가 Cache Storage에 저장해둔 공유 파일을 꺼내온다 ---------- */
+function setInputFiles(inputEl, files) {
+  const dt = new DataTransfer();
+  files.forEach((f) => dt.items.add(f));
+  inputEl.files = dt.files;
+  inputEl.dispatchEvent(new Event("change"));
+}
+
+async function checkSharedFiles() {
+  if (!location.search.includes("shared=1") || !("caches" in window)) return;
+  history.replaceState(null, "", location.pathname);
+  try {
+    const cache = await caches.open("share-target-cache");
+    const indexRes = await cache.match("./shared-index");
+    if (!indexRes) return;
+    const keys = await indexRes.json();
+    const files = [];
+    for (const key of keys) {
+      const res = await cache.match(key);
+      if (!res) continue;
+      const blob = await res.blob();
+      files.push(new File([blob], key.replace("./", "") + ".jpg", { type: blob.type || "image/jpeg" }));
+      await cache.delete(key);
+    }
+    await cache.delete("./shared-index");
+    if (!files.length) return;
+    showSharedFilesPrompt(files);
+  } catch (err) { /* 공유 캐시가 없거나 지원 안 되는 브라우저 — 조용히 무시 */ }
+}
+
+function showSharedFilesPrompt(files) {
+  const banner = document.createElement("div");
+  banner.className = "card";
+  banner.style.cssText = "position:sticky; top:8px; z-index:5; border:2px solid var(--series-price);";
+  banner.innerHTML = `
+    <p class="chart-title" style="margin-top:0;">📥 공유받은 스크린샷 ${files.length}장</p>
+    <p class="stat-sub">어느 캡처에 사용할까요?</p>
+    <div class="action-row">
+      <button type="button" id="sharedUseAccountBtn" class="btn-action">💼 계좌 캡처로 사용</button>
+      <button type="button" id="sharedUseBuyPlanBtn" class="btn-action">📈 월매수 캡처로 사용</button>
+      <button type="button" id="sharedDismissBtn" class="btn-action">닫기</button>
+    </div>`;
+  document.querySelector(".wrap").insertBefore(banner, document.getElementById("sec-ai-settings"));
+  banner.querySelector("#sharedUseAccountBtn").addEventListener("click", () => {
+    setInputFiles(document.getElementById("captureAccountFiles"), files);
+    banner.remove();
+    document.getElementById("captureAccountFiles").scrollIntoView({ behavior: "smooth", block: "center" });
+  });
+  banner.querySelector("#sharedUseBuyPlanBtn").addEventListener("click", () => {
+    setInputFiles(document.getElementById("captureBuyPlanFiles"), files);
+    banner.remove();
+    document.getElementById("captureBuyPlanFiles").scrollIntoView({ behavior: "smooth", block: "center" });
+  });
+  banner.querySelector("#sharedDismissBtn").addEventListener("click", () => banner.remove());
+}
+
 function runAccountParse(text) {
   const parsed = parseAIJsonResponse(text);
   const validated = validateAccountCapture(parsed);
   renderCaptureAccountResult(validated);
+  pushCaptureHistory({
+    type: "account",
+    count: validated.holdings.length,
+    issues: validated.holdings.filter((h) => h.issues.length).length,
+    label: validated.accountLabel || "",
+  });
 }
 function runBuyPlanParse(text) {
   const parsed = parseAIJsonResponse(text);
   const validated = validateBuyPlanCapture(parsed);
   renderCaptureBuyPlanResult(validated);
+  pushCaptureHistory({
+    type: "buyplan",
+    count: validated.holdings.length,
+    issues: validated.holdings.filter((h) => h.issues.length).length,
+    label: "",
+  });
 }
 
 function issueBadgeHTML(issues) {
@@ -388,39 +583,54 @@ function renderCaptureAccountResult(validated) {
   const rows = validated.holdings.map((h, i) => `
     <tr data-idx="${i}">
       <td>${h.name || ""}${h.symbol ? ` (${h.symbol})` : ""}</td>
+      <td>${h.page ? `<button type="button" class="capture-page-badge" data-page="${h.page}" style="font-size:11px; padding:2px 6px; border-radius:6px; border:1px solid var(--border); background:var(--surface-1); cursor:pointer;">p.${h.page}</button>` : ""}</td>
       <td>${h.qty ?? ""}</td>
       <td>${h.evalAmount != null ? Math.round(h.evalAmount).toLocaleString() : ""}</td>
       <td>${issueBadgeHTML(h.issues)}</td>
       <td>${h.matchedSymbol ? `<select class="capture-account-select">${accountOptionsHTML("")}</select>` : `<span class="stat-sub">매칭 필요</span>`}</td>
+      <td class="capture-preview-cell">${h.matchedSymbol ? accountPreviewHTML("", h) : ""}</td>
       <td>${h.matchedSymbol ? `<label style="font-size:12px;"><input type="checkbox" class="capture-row-check" checked> 채우기</label>` : ""}</td>
     </tr>`).join("");
   el.innerHTML = `
     ${validated.accountLabel ? `<p class="stat-sub">화면 계좌명: ${validated.accountLabel}</p>` : ""}
     ${totalRow}
+    ${thumbGalleryHTML(state.captureAccountThumbs)}
     <div style="overflow-x:auto;"><table class="account-summary-table" style="margin-top:10px; width:100%;">
-      <thead><tr><th>종목</th><th>수량</th><th>평가액</th><th>검증</th><th>계좌</th><th></th></tr></thead>
+      <thead><tr><th>종목</th><th>원본</th><th>수량</th><th>평가액</th><th>검증</th><th>계좌</th><th>반영 예상</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>
     <div class="action-row" style="margin-top:10px;">
       <button type="button" id="captureAccountFillBtn" class="btn-action">📥 선택 항목 폼에 채우기</button>
+      <button type="button" id="captureAccountSummaryBtn" class="btn-action">📋 노션 SOP 요약 복사</button>
     </div>`;
+  wireThumbHighlight(el);
+  el.querySelectorAll("tbody tr").forEach((tr) => {
+    const h = validated.holdings[Number(tr.dataset.idx)];
+    const accSel = tr.querySelector(".capture-account-select");
+    if (!accSel) return;
+    accSel.addEventListener("change", () => {
+      tr.querySelector(".capture-preview-cell").innerHTML = accountPreviewHTML(accSel.value, h);
+    });
+  });
   document.getElementById("captureAccountFillBtn").addEventListener("click", () => {
-    let count = 0;
+    let added = 0, updated = 0;
     el.querySelectorAll("tbody tr").forEach((tr) => {
       const h = validated.holdings[Number(tr.dataset.idx)];
       const check = tr.querySelector(".capture-row-check");
       if (!check || !check.checked || !h.matchedSymbol) return;
       const accSel = tr.querySelector(".capture-account-select");
-      addMyAssetRow({ account: accSel ? accSel.value : "", symbol: h.matchedSymbol, qty: h.qty || 0, avgPrice: h.avgPrice || 0 });
-      count++;
+      const result = upsertAccountHolding(accSel ? accSel.value : "", h.matchedSymbol, h.qty || 0, h.avgPrice || 0);
+      if (result === "updated") updated++; else added++;
     });
-    if (count > 0) {
+    if (added + updated > 0) {
       saveMyAssets(); renderMyAssets(); updateMyRowsCollapseUI();
-      flashStatus("captureAccountStatus", `${count}건 폼에 채움 — 아래 "내 자산"에서 확인하세요`);
+      flashStatus("captureAccountStatus", `${added}건 추가, ${updated}건 갱신 — 아래 "내 자산"에서 확인하세요`);
     } else {
       flashStatus("captureAccountStatus", "채울 항목을 선택하세요(매칭된 종목만 가능)");
     }
   });
+  document.getElementById("captureAccountSummaryBtn").addEventListener("click", () =>
+    copyToClipboard(buildAccountCaptureSummaryText(validated), "captureAccountStatus", "요약 복사됨 — 클로드 세션에 붙여넣어 노션 SOP 갱신을 요청하세요"));
 }
 
 function renderCaptureBuyPlanResult(validated) {
@@ -434,34 +644,48 @@ function renderCaptureBuyPlanResult(validated) {
       <td>${h.nextBuyDate || ""}</td>
       <td>${issueBadgeHTML(h.issues)}</td>
       <td>${h.matchedSymbol ? `<select class="capture-account-select">${accountOptionsHTML("")}</select>` : `<span class="stat-sub">매칭 필요</span>`}</td>
+      <td class="capture-preview-cell">${h.matchedSymbol ? buyPlanPreviewHTML("", h) : ""}</td>
       <td>${h.matchedSymbol ? `<label style="font-size:12px;"><input type="checkbox" class="capture-row-check" checked> 채우기</label>` : ""}</td>
     </tr>`).join("");
   el.innerHTML = `
     ${validated.reportedTotal != null ? `<p class="stat-sub">화면 월 총 매수금액: ${Math.round(validated.reportedTotal).toLocaleString()}원</p>` : ""}
+    ${thumbGalleryHTML(state.captureBuyPlanThumbs)}
     <div style="overflow-x:auto;"><table class="account-summary-table" style="margin-top:10px; width:100%;">
-      <thead><tr><th>종목</th><th>1회수량</th><th>주기</th><th>다음매수일</th><th>검증</th><th>계좌</th><th></th></tr></thead>
+      <thead><tr><th>종목</th><th>1회수량</th><th>주기</th><th>다음매수일</th><th>검증</th><th>계좌</th><th>반영 예상</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>
     <div class="action-row" style="margin-top:10px;">
       <button type="button" id="captureBuyPlanFillBtn" class="btn-action">📥 선택 항목 폼에 채우기</button>
+      <button type="button" id="captureBuyPlanSummaryBtn" class="btn-action">📋 노션 SOP 요약 복사</button>
     </div>`;
+  wireThumbHighlight(el);
+  el.querySelectorAll("tbody tr").forEach((tr) => {
+    const h = validated.holdings[Number(tr.dataset.idx)];
+    const accSel = tr.querySelector(".capture-account-select");
+    if (!accSel) return;
+    accSel.addEventListener("change", () => {
+      tr.querySelector(".capture-preview-cell").innerHTML = buyPlanPreviewHTML(accSel.value, h);
+    });
+  });
   document.getElementById("captureBuyPlanFillBtn").addEventListener("click", () => {
-    let count = 0;
+    let added = 0, updated = 0;
     el.querySelectorAll("tbody tr").forEach((tr) => {
       const h = validated.holdings[Number(tr.dataset.idx)];
       const check = tr.querySelector(".capture-row-check");
       if (!check || !check.checked || !h.matchedSymbol) return;
       const accSel = tr.querySelector(".capture-account-select");
-      addMyAssetRow({ account: accSel ? accSel.value : "", symbol: h.matchedSymbol, monthlyQty: h.buyQtyPerTime || 0, buyFreq: h.buyFreq || "매월", buyDay: h.buyDay || "" });
-      count++;
+      const result = upsertBuyPlanHolding(accSel ? accSel.value : "", h.matchedSymbol, h.buyQtyPerTime || 0, h.buyFreq || "매월", h.buyDay || "");
+      if (result === "updated") updated++; else added++;
     });
-    if (count > 0) {
+    if (added + updated > 0) {
       saveMyAssets(); renderMyAssets(); updateMyRowsCollapseUI();
-      flashStatus("captureBuyPlanStatus", `${count}건 폼에 채움 — 아래 "내 자산"에서 확인하세요`);
+      flashStatus("captureBuyPlanStatus", `${added}건 추가, ${updated}건 갱신 — 아래 "내 자산"에서 확인하세요`);
     } else {
       flashStatus("captureBuyPlanStatus", "채울 항목을 선택하세요(매칭된 종목만 가능)");
     }
   });
+  document.getElementById("captureBuyPlanSummaryBtn").addEventListener("click", () =>
+    copyToClipboard(buildBuyPlanCaptureSummaryText(validated), "captureBuyPlanStatus", "요약 복사됨 — 클로드 세션에 붙여넣어 노션 SOP 갱신을 요청하세요"));
 }
 
 // capture/ 전용 서비스워커 — 루트 sw.js와 별개 scope("/capture/")로 등록
