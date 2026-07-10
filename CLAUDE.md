@@ -1,5 +1,17 @@
 # 작업 방식 메모 (이 저장소 전용)
 
+## 개발 도구 — rtk (Claude Code 토큰 절감 CLI, 기본 사용)
+
+Windows 로컬 개발 환경에서는 [rtk-ai/rtk](https://github.com/rtk-ai/rtk)를 기본으로 설치해 사용한다. Bash 명령 출력을 필터링/축약해 Claude Code 컨텍스트로 들어가는 토큰을 60~90% 줄여주는 단일 바이너리 CLI로, `PreToolUse` 훅으로 동작해 git/npm/docker 등 흔한 명령 출력을 자동으로 rtk 버전으로 재작성한다.
+
+- **설치**: `scripts/setup-rtk-windows.ps1`을 PowerShell에서 실행하면 최신 릴리스의 `*-pc-windows-msvc.zip`을 받아 `%LOCALAPPDATA%\rtk`에 풀고, 사용자 PATH에 등록한 뒤 `rtk init -g`(Claude Code 훅 전역 설치)까지 자동으로 수행한다.
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File scripts/setup-rtk-windows.ps1
+  ```
+- **설치 확인**: `rtk init --show`로 훅/설정 상태를 확인한다(위 스크립트가 마지막 단계로 자동 실행함).
+- **주의**: 훅 설치·PATH 변경 후에는 열려 있는 터미널과 Claude Code를 재시작해야 반영된다. `Read`/`Grep`/`Glob` 같은 Claude Code 내장 툴은 Bash 훅을 거치지 않으므로 rtk 축약 효과가 적용되지 않는다 — 파일 탐색은 가능하면 내장 툴을 그대로 쓰고, 셸 명령 출력 절감 목적으로는 rtk를 신뢰한다.
+- 이 저장소를 다루는 세션(로컬 Windows 환경)에서는 별도 요청 없이 rtk가 설치·활성화되어 있다고 가정하고 작업한다. 미설치가 확인되면 사용자에게 위 스크립트 실행을 안내한다.
+
 ## 공통 SSOT — 노션 SOP 3종 (자산 데이터의 단일 기록처, 2026-07-06 제정)
 
 사이트 "내 자산" 데이터의 원본은 아래 노션 페이지 3개다. 금융지식 세션(계좌캡처 반영)·이 코드 세션·추후 제작할 앱이 **모두 이 3페이지를 공통으로 갱신·참조**한다:
