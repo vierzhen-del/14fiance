@@ -652,6 +652,102 @@ function issueBadgeHTML(issues) {
   ).join("");
 }
 
+/* ---------- A3b: 계좌캡처 ↔ 기존 SOP(현재 폼) 대조 — 더미데이터 오염 방지 ----------
+   폼에 채우기 전, 캡처 결과를 계좌별로 기존 폼 데이터와 대조해 신규/수량변경/동일/캡처누락
+   4분류로 보여준다. 캡처누락(폼엔 있는데 캡처엔 없는 종목)은 매도 또는 파싱누락일 수 있어
+   여기서 자동 삭제하지 않는다 — 사용자가 직접 판단해서 지우거나 남겨두게 한다. */
+function existingHoldingsForAccount(account) {
+  const map = new Map();
+  document.querySelectorAll("#myAssetRows .portfolio-row").forEach((row) => {
+    if (row.querySelector(".my-account").value !== account) return;
+    const symbol = row.querySelector(".my-symbol").value;
+    if (!symbol) return;
+    map.set(symbol, (map.get(symbol) || 0) + (parseFloat(row.querySelector(".my-qty").value) || 0));
+  });
+  return map;
+}
+
+/* 캡처 검토표(tbody)의 현재 행 상태를 계좌별로 묶는다 — 체크박스 상태와 무관하게 매칭된
+   전체 캡처 결과를 기준으로 비교해야 "캡처누락(=매도 의심)" 탐지가 체크 여부에 좌우되지 않는다. */
+function collectCapturedByAccount(el, validated) {
+  const groups = new Map();
+  el.querySelectorAll("tbody tr").forEach((tr) => {
+    const h = validated.holdings[Number(tr.dataset.idx)];
+    const accSel = tr.querySelector(".capture-account-select");
+    if (!accSel || !accSel.value || !h.matchedSymbol) return;
+    if (!groups.has(accSel.value)) groups.set(accSel.value, []);
+    groups.get(accSel.value).push({ symbol: h.matchedSymbol, qty: h.qty || 0, evalAmount: h.evalAmount });
+  });
+  return groups;
+}
+
+function computeAccountComparison(account, captured) {
+  const existing = existingHoldingsForAccount(account);
+  const capturedMap = new Map();
+  let newEval = 0;
+  for (const c of captured) {
+    capturedMap.set(c.symbol, (capturedMap.get(c.symbol) || 0) + c.qty);
+    if (c.evalAmount != null) newEval += c.evalAmount;
+  }
+  const added = [], changed = [], same = [], missing = [];
+  for (const [symbol, newQty] of capturedMap) {
+    if (!existing.has(symbol)) { added.push({ symbol, newQty }); continue; }
+    const oldQty = existing.get(symbol);
+    if (oldQty === newQty) same.push({ symbol, qty: newQty });
+    else changed.push({ symbol, oldQty, newQty });
+  }
+  for (const [symbol, oldQty] of existing) {
+    if (!capturedMap.has(symbol)) missing.push({ symbol, oldQty });
+  }
+  const accData = state.myAssetsCsvData && state.myAssetsCsvData.accountMap ? state.myAssetsCsvData.accountMap.get(account) : null;
+  const oldEval = accData ? accData.value : 0;
+  const evalDiffPct = oldEval > 0 ? (newEval - oldEval) / oldEval : null;
+  const warnEval = evalDiffPct != null && Math.abs(evalDiffPct) >= 0.3;
+  const warnOmission = missing.length >= 2;
+  return { account, added, changed, same, missing, oldEval, newEval, evalDiffPct, warnEval, warnOmission };
+}
+
+function renderComparisonSummaryHTML(comparisons) {
+  if (!comparisons.length) return `<p class="stat-sub" style="margin-top:8px;">각 종목의 "계좌"를 선택하면 기존 SOP 데이터와 자동 대조됩니다.</p>`;
+  return comparisons.map((c) => {
+    const warn = c.warnEval || c.warnOmission;
+    const evalLine = c.oldEval > 0
+      ? `평가액 ${Math.round(c.oldEval).toLocaleString()} → ${Math.round(c.newEval).toLocaleString()}원${c.evalDiffPct != null ? ` (${c.evalDiffPct >= 0 ? "+" : ""}${(c.evalDiffPct * 100).toFixed(1)}%)` : ""}`
+      : `신규 계좌 데이터(기존 평가액 없음)`;
+    const missingLine = c.missing.length
+      ? `<p style="color:var(--critical); font-size:12.5px; margin:4px 0;">⚠️ 캡처누락 ${c.missing.length}건(폼엔 있는데 캡처엔 없음 — 매도 또는 파싱누락 의심, 자동 삭제 안 함): ${c.missing.map((m) => m.symbol).join(", ")}</p>`
+      : "";
+    const changedLine = c.changed.length
+      ? `<p style="font-size:12.5px; margin:4px 0;">🔁 수량변경 ${c.changed.length}건: ${c.changed.map((x) => `${x.symbol}(${x.oldQty}→${x.newQty})`).join(", ")}</p>`
+      : "";
+    const addedLine = c.added.length ? `<p style="font-size:12.5px; margin:4px 0; color:var(--good);">🆕 신규 ${c.added.length}건: ${c.added.map((x) => x.symbol).join(", ")}</p>` : "";
+    const sameLine = c.same.length ? `<p class="stat-sub" style="margin:4px 0;">동일 ${c.same.length}건</p>` : "";
+    return `<div class="card" style="margin-top:10px; ${warn ? "border:1px solid var(--critical);" : ""}">
+      <p class="chart-title" style="margin-top:0; font-size:13.5px;">${warn ? "⚠️ " : ""}${c.account} 대조 결과</p>
+      <p class="stat-sub" style="margin:2px 0;">${evalLine}${c.warnEval ? ` <span style="color:var(--critical);">— 평가액 급변 확인 필요</span>` : ""}</p>
+      ${addedLine}${changedLine}${sameLine}${missingLine}
+    </div>`;
+  }).join("");
+}
+
+function refreshCaptureComparison(el, validated) {
+  const groups = collectCapturedByAccount(el, validated);
+  const comparisons = [...groups.entries()].map(([acc, holds]) => computeAccountComparison(acc, holds));
+  document.getElementById("captureAccountComparison").innerHTML = renderComparisonSummaryHTML(comparisons);
+  const anyWarn = comparisons.some((c) => c.warnEval || c.warnOmission);
+  const confirmWrap = document.getElementById("captureConfirmWrap");
+  const confirmCheck = document.getElementById("captureConfirmChanges");
+  const fillBtn = document.getElementById("captureAccountFillBtn");
+  if (anyWarn) {
+    confirmWrap.style.display = "";
+    confirmCheck.checked = false;
+    fillBtn.disabled = true;
+  } else {
+    confirmWrap.style.display = "none";
+    fillBtn.disabled = false;
+  }
+}
+
 /* 검토표는 확인용일 뿐 자동 반영은 하지 않는다 — 매칭된 종목만, 체크한 행만, 사람이
    계좌를 골라 "폼에 채우기"를 눌러야 실제 내 자산 폼에 행이 추가된다(자동 병합 금지 원칙). */
 function renderCaptureAccountResult(validated) {
@@ -682,7 +778,11 @@ function renderCaptureAccountResult(validated) {
       <thead><tr><th>종목</th><th>원본</th><th>수량</th><th>평가액</th><th>검증</th><th>계좌</th><th>반영 예상</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>
+    <div id="captureAccountComparison"></div>
     <div class="action-row" style="margin-top:10px;">
+      <label id="captureConfirmWrap" style="display:none; font-size:12.5px; color:var(--critical);">
+        <input type="checkbox" id="captureConfirmChanges"> 변경 내용을 확인했습니다
+      </label>
       <button type="button" id="captureAccountFillBtn" class="btn-action">📥 선택 항목 폼에 채우기</button>
       <button type="button" id="captureAccountSummaryBtn" class="btn-action">📋 노션 SOP 요약 복사</button>
     </div>`;
@@ -693,8 +793,13 @@ function renderCaptureAccountResult(validated) {
     if (!accSel) return;
     accSel.addEventListener("change", () => {
       tr.querySelector(".capture-preview-cell").innerHTML = accountPreviewHTML(accSel.value, h);
+      refreshCaptureComparison(el, validated);
     });
   });
+  document.getElementById("captureConfirmChanges").addEventListener("change", (e) => {
+    document.getElementById("captureAccountFillBtn").disabled = !e.target.checked;
+  });
+  refreshCaptureComparison(el, validated);
   document.getElementById("captureAccountFillBtn").addEventListener("click", () => {
     let added = 0, updated = 0;
     el.querySelectorAll("tbody tr").forEach((tr) => {
