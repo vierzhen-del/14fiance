@@ -16,9 +16,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Node.js 24.x LTS (22.x는 Maintenance — 신규 작업에 사용 금지)
 - n8n 1.70.0 (self-hosted; 웹 커넥터 불가 → Claude Code CLI + n8n-MCP 조합)
 - PostgreSQL 17
-- 실행 환경: Tab S9 proot · Galaxy Book · Colab · **S26(모바일, Galaxy S26)** — 작업 전 실행 대상 선확인
-- S26(모바일)에서는 개발 빌드/네이티브 설치 불가 — 커넥터 설치, 앱 설정, 웹 UI 확인, 크레덴셜 발급 등 브라우저·앱 기반 작업만 가능. Node/n8n-MCP 설치 등은 Tab S9 proot·Galaxy Book에서 진행
-- proot 환경: 절대경로 + nohup + 로그 필수
+- 실행 환경 (실사용 기준, 2026-07-10 확정):
+  - **Tab S9 (태블릿, proot)** — n8n 서버 설치·구동 위치. Node/n8n-MCP 설치 등 개발 작업은 여기서 진행. 절대경로 + nohup + 로그 필수
+  - **S26 (모바일)** — 주 사용 환경. 개발 빌드/네이티브 설치 불가. 커넥터 설치, 앱 설정, 웹 UI 확인, 크레덴셜 발급 등 브라우저·앱 기반 작업만 가능
+  - **Galaxy Book (노트북)** — 거의 사용 안 함. 필요시에만 보조로 활용
+  - Colab — 확인 필요
+- 작업 지시 시 "이 작업 어느 환경에서?"를 Tab S9(개발) vs S26(설정·확인)로 먼저 구분
 - 외부 노출: cloudflared 기준. localhost 하드코딩 금지
 
 ## 코딩 규칙 (CODE-MODE)
@@ -43,7 +46,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - 신규 패키지는 사전 승인 필요 (이유 + 대안 1개 제시)
 - 버전 pin 필수 (Node 24.x LTS · n8n 1.70.0 · PG 17)
-- Termux/proot 환경은 네이티브 빌드 가능 여부 선확인
+- Termux/proot(Tab S9) 환경은 네이티브 빌드 가능 여부 선확인
 
 ## 에러 처리 · 버전 관리
 
@@ -72,11 +75,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | 커넥터 | 상태 | 비고 |
 |---|---|---|
 | context7 | ✅ 연결됨 | 최신 공식 문서 참조 |
-| agent-browser | ❌ 존재하지 않음 | 노션 v5.8에 기재됐지만 Claude 커넥터 디렉토리에 실재하지 않음(AI가 자동 기록한 항목의 오기로 추정). n8n 배포 전 브라우저 검증이 목적이면 **Playwright MCP**(self-hosted, Tab S9 proot·Galaxy Book에서 설치)로 대체 |
+| agent-browser | ❌ 존재하지 않음 | 노션 v5.8에 기재됐지만 Claude 커넥터 디렉토리에 실재하지 않음(AI가 자동 기록한 항목의 오기로 추정). n8n 배포 전 브라우저 검증이 목적이면 **Playwright MCP**(self-hosted)로 대체 — n8n 서버가 있는 **Tab S9**에 설치 |
 
 ## 예정 작업 (노션 세션 로그 기준)
 
 - n8n-MCP 서버 연결 (`npx n8n-mcp` + n8n API Key, cloudflared URL 헬스체크 선행)
 - Notion DB → n8n → Obsidian vault 동기화 워크플로우 설계
-- 환경별 Node 22 → 24.x 전환 (Tab S9 proot 등)
+- Node 22 → 24.x 전환 (Tab S9 proot — n8n 서버 구동 환경, 최우선)
 - 노션 "MCP 설치 현황" 표의 agent-browser 항목 정정 필요 (실재하지 않는 커넥터명)
