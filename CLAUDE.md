@@ -67,8 +67,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - [vierzhen-del/githubinstall](https://github.com/vierzhen-del/githubinstall) — 설치 참조 repo (현재 placeholder 상태, 설치 명령어·GitHub 링크 모음 예정)
 
+## MCP 커넥터 현황 (2026-07-10 확인)
+
+| 커넥터 | 상태 | 비고 |
+|---|---|---|
+| context7 | ✅ 연결됨 | 최신 공식 문서 참조 |
+| agent-browser | ❌ 존재하지 않음 | 노션 v5.8에 기재됐지만 Claude 커넥터 디렉토리에 실재하지 않음(AI가 자동 기록한 항목의 오기로 추정). n8n 배포 전 브라우저 검증이 목적이면 **Playwright MCP**(self-hosted, Tab S9 proot·Galaxy Book에서 설치)로 대체 |
+
 ## 예정 작업 (노션 세션 로그 기준)
 
 - n8n-MCP 서버 연결 (`npx n8n-mcp` + n8n API Key, cloudflared URL 헬스체크 선행)
 - Notion DB → n8n → Obsidian vault 동기화 워크플로우 설계
 - 환경별 Node 22 → 24.x 전환 (Tab S9 proot 등)
+- 노션 "MCP 설치 현황" 표의 agent-browser 항목 정정 필요 (실재하지 않는 커넥터명)
