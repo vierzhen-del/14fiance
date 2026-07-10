@@ -241,9 +241,11 @@ function accountColor(account) {
   return MY_ASSETS_PALETTE[(ACCOUNT_TYPES.length + hash) % MY_ASSETS_PALETTE.length];
 }
 
-/* scripts/fetch_intraday_kr.py가 평일 KST 09:00~15:30 30분마다(정시·30분) 실행되는 것과
+/* scripts/fetch_intraday_kr.py가 평일 KST 09:05~15:35 30분마다(매시 5분·35분) 실행되는 것과
    동일한 규칙으로 "다음 수집까지 남은 시간"을 계산한다 — 방문자의 로컬 시간대와 무관하게
-   Asia/Seoul 기준으로 판단해야 하므로 Intl로 KST 구성요소를 뽑아 쓴다. */
+   Asia/Seoul 기준으로 판단해야 하므로 Intl로 KST 구성요소를 뽑아 쓴다.
+   ⚠️ 이건 "예정 시각"일 뿐이다 — GitHub 무료 스케줄 큐가 정시·30분 congestion 때문에
+   실제로는 수 시간까지 밀리거나 통째로 드롭되는 경우가 실측(2026-07-06~10)으로 확인됨. */
 function nextIntradayCollectionText() {
   const fmt = new Intl.DateTimeFormat("en-US", {
     timeZone: "Asia/Seoul", hour12: false, hour: "2-digit", minute: "2-digit", weekday: "short",
@@ -253,15 +255,15 @@ function nextIntradayCollectionText() {
   const minute = Number(parts.minute);
   const isWeekday = ["Mon", "Tue", "Wed", "Thu", "Fri"].includes(parts.weekday);
   const minutesOfDay = hour * 60 + minute;
-  const OPEN = 9 * 60, CLOSE = 15 * 60 + 30;
+  const OPEN = 9 * 60 + 5, CLOSE = 15 * 60 + 35;
   if (isWeekday && minutesOfDay >= OPEN && minutesOfDay < CLOSE) {
-    const nextMark = minute < 30 ? hour * 60 + 30 : (hour + 1) * 60;
+    const nextMark = minute < 5 ? hour * 60 + 5 : minute < 35 ? hour * 60 + 35 : (hour + 1) * 60 + 5;
     const remain = nextMark - minutesOfDay;
     const hh = String(Math.floor(nextMark / 60)).padStart(2, "0");
     const mm = String(nextMark % 60).padStart(2, "0");
-    return `다음 수집까지 약 ${remain}분(${hh}:${mm} 예정)`;
+    return `다음 예정 수집까지 약 ${remain}분(${hh}:${mm}, GitHub 사정으로 더 늦어지거나 건너뛸 수 있음)`;
   }
-  return "휴장 중(평일 09:00~15:30 외) — 다음 수집은 개장 후 30분 주기로 갱신";
+  return "휴장 중(평일 09:05~15:35 외) — 다음 수집은 개장 후 30분 주기 예정(지연 가능)";
 }
 
 function monthsToGoal(goal, lump, monthly, annualRate) {

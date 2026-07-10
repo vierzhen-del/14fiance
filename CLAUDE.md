@@ -12,9 +12,11 @@
 
 사용자가 **"자산 업데이트"**를 요청하면: 위 3페이지를 조회 → 매도이력 대장(`38d5efd0-e462-81ff-a961-cb9ce0f22f4f`) 우선 확인 → import JSON을 재생성해 SendUserFile로만 전달한다(개인 보유 데이터라 저장소 커밋 금지). 이 3페이지 밖의 계좌·수량 출처(오래된 세션 기록 등)는 참고만 하고 SSOT와 충돌하면 SSOT를 따르되, 애매하면 사용자에게 확인한다.
 
-## 실시간(30분) 국내시세 파이프라인
+## 실시간(30분 예정) 국내시세 파이프라인
 
-`.github/workflows/intraday-kr.yml`이 국내 장중(KST 09:00~15:30) 30분 주기로 `scripts/fetch_intraday_kr.py`를 실행해 국내 전 종목 현재가를 **전용 `live` 브랜치에 단일 커밋 force-push** 한다(`latest_kr.json` — 개발 브랜치 이력을 오염시키지 않기 위한 구조이므로 live 브랜치에 다른 파일을 넣지 말 것). 사이트 "🔄 최신시세" 토글이 raw.githubusercontent.com으로 이 파일을 읽는다.
+`.github/workflows/intraday-kr.yml`이 국내 장중(KST 09:05~15:35) 30분 주기(매시 5분·35분 — 전 세계 cron이 몰리는 정각·30분 congestion을 피하려 5분 offset)로 `scripts/fetch_intraday_kr.py`를 실행해 국내 전 종목 현재가를 **전용 `live` 브랜치에 단일 커밋 force-push** 한다(`latest_kr.json` — 개발 브랜치 이력을 오염시키지 않기 위한 구조이므로 live 브랜치에 다른 파일을 넣지 말 것). 사이트 "🔄 최신시세" 토글이 raw.githubusercontent.com으로 이 파일을 읽고, "⏱️ 지금 확인" 버튼은 브라우저 캐시만 무시하고 재조회할 뿐 GitHub 쪽 재실행을 강제하지는 않는다.
+
+**⚠️ 스케줄 신뢰도 낮음(2026-07-06~10 실측 확인)**: GitHub 무료 스케줄 큐가 congestion 시 실행을 크게 지연시키거나(수 시간~반나절) 아예 드롭한다 — 하루 14회(30분×평일 6.5시간) 예정인데 실제로는 하루 2~4회만 실행된 사례가 확인됨. 정각 offset(5분·35분)으로 일부 완화를 시도했지만 근본 해결은 아니다. 사용자가 "시세가 안 갱신되는 것 같다"고 하면: (1) 먼저 `mcp__github__actions_list`로 `intraday-kr.yml`의 최근 실행 이력을 확인해 실제로 최근에 돌았는지 확인하고, (2) 안 돌았으면 `mcp__github__actions_run_trigger`(`run_workflow`)로 즉시 수동 실행해 당장의 데이터를 갱신해 줄 것 — 사이트 자체의 표시 로직 버그가 아니라 GitHub 스케줄 큐 문제일 가능성이 높다.
 
 ## 종목 조회 시 노션 자동 기록 (기본 켜짐)
 

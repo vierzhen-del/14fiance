@@ -3,9 +3,11 @@ name: Intraday KR Prices
 on:
   workflow_dispatch:
   schedule:
-    # 국내 장중(09:00~15:30 KST = 00:00~06:30 UTC) 평일 30분 주기.
-    # GitHub cron은 실행이 수 분~수십 분 지연될 수 있음(베스트 에포트).
-    - cron: "*/30 0-6 * * 1-5"
+    # 국내 장중(09:00~15:30 KST = 00:00~06:30 UTC) 평일 30분 주기, 매시 정각/30분에서
+    # 5분 offset(정시·30분은 전 세계 cron이 몰려 GitHub 큐가 가장 혼잡한 시각 —
+    # 2026-07-06~10 실측 결과 정각 스케줄로는 지연이 수 시간~반나절까지 발생해 offset 적용).
+    # 그래도 GitHub 무료 스케줄 큐는 지연·드롭이 흔한 best-effort라 100% 신뢰 불가.
+    - cron: "5,35 0-6 * * 1-5"
 
 permissions:
   contents: write

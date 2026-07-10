@@ -16,7 +16,8 @@ function updateIncludeStocksBtn() {
 }
 
 /* 🔄 최신시세 — 장중 30분 주기 GitHub Actions가 live 브랜치에 올린 국내 현재가.
-   정적 사이트라 진짜 실시간은 아니고, GitHub 실행 지연까지 30~45분 늦을 수 있다.
+   정적 사이트라 진짜 실시간은 아니고, GitHub 무료 스케줄 큐 혼잡으로 실행이 수 시간까지
+   지연되거나 일부 주기는 아예 건너뛸 수 있다(2026-07-06~10 실측으로 확인됨).
    실패하면 조용히 주간 수집 종가로 폴백한다(값을 지어내지 않음). */
 
 
@@ -25,7 +26,7 @@ function updateLiveQuotesBtn() {
   if (!btn) return;
   const on = liveQuotesEnabled();
   btn.textContent = on ? "🔄 최신시세: 켬" : "🔄 최신시세: 끔";
-  btn.title = "켜면 국내 종목 현재가를 장중 30분 주기 수집분(있을 때)으로 바꿔 계산합니다. GitHub 실행 지연으로 30~45분 늦을 수 있고, 실패 시 주간 수집 종가로 자동 폴백합니다.";
+  btn.title = "켜면 국내 종목 현재가를 장중 30분 주기 수집분(있을 때)으로 바꿔 계산합니다. GitHub 무료 스케줄 큐 혼잡으로 수 시간까지 지연되거나 일부 주기는 건너뛸 수 있고, 실패 시 주간 수집 종가로 자동 폴백합니다.";
   const nowBtn = document.getElementById("myLiveQuotesNowBtn");
   if (nowBtn) nowBtn.style.display = on ? "" : "none";
   const statusEl = document.getElementById("myLiveQuotesTimeStatus");
@@ -1083,7 +1084,7 @@ async function renderMyAssets() {
       </div>` : ""}
     </div>
     <p class="stat-sub">최신 수집: ${state.manifest.updated} 기준(주간 자동 수집 — 실시간 시세 아님)${
-      liveKr ? ` · <b style="color:var(--good)">🔄 최신시세 ${liveKr.updated} 적용(국내 ${liveApplied}종목, 30~45분 지연 가능)</b>`
+      liveKr ? ` · <b style="color:var(--good)">🔄 최신시세 ${liveKr.updated} 적용(국내 ${liveApplied}종목, GitHub 사정에 따라 수 시간 지연 가능)</b>`
       : liveQuotesEnabled() ? ` · <span style="color:var(--critical)">🔄 최신시세 불러오기 실패(${state.liveKrError || "데이터 없음"}) — 주간 종가 사용</span>` : ""
     }</p>
     ${excludedStockHTML}
@@ -1221,7 +1222,7 @@ async function renderMyAssets() {
 
       <p class="chart-title" style="margin-top:20px;">📈 주가·배당 데이터 업데이트</p>
       <p class="stat-sub">최신 수집: <b>${state.manifest.updated}</b> (매주 자동 수집 — 실시간 시세 아님)</p>
-      <p class="stat-sub">🔄 최신시세(장중 30분 주기): <b>${liveQuotesEnabled() ? (liveKr ? `켬 — ${liveKr.updated} 기준 국내 ${liveApplied}종목 적용` : `켬 — 불러오기 실패, 주간 종가 사용`) : "끔"}</b> — 국내 장중(평일 09:00~15:30)에만 갱신되며 GitHub 실행 지연으로 30~45분 늦을 수 있습니다.</p>
+      <p class="stat-sub">🔄 최신시세(장중 30분 주기 예정): <b>${liveQuotesEnabled() ? (liveKr ? `켬 — ${liveKr.updated} 기준 국내 ${liveApplied}종목 적용` : `켬 — 불러오기 실패, 주간 종가 사용`) : "끔"}</b> — 국내 장중(평일 09:05~15:35)에만 갱신되며 GitHub 무료 스케줄 큐 혼잡으로 수 시간까지 지연되거나 일부 주기는 건너뛸 수 있습니다.</p>
 
       <p class="chart-title" style="margin-top:20px;">🏢 일반종목(개별주) 반영 상태</p>
       <p class="stat-sub">현재: <b>${includeStocks ? "포함" : "제외"}</b> — 위쪽 "일반종목: 포함/제외" 버튼으로 전환할 수 있습니다.</p>
