@@ -292,13 +292,16 @@ async function init() {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       try {
+        const beforeHoldings = snapshotHoldingsMap();
+        const beforeSnap = snapshotAccountValues();
         const data = JSON.parse(reader.result);
         if (!applyMyAssets(data)) throw new Error("형식이 맞지 않습니다");
         state.myAssetsImportedAt = nowDateTimeStr();
         saveMyAssets();
-        renderMyAssets();
+        await renderMyAssets();
+        pushAssetChangelog("import", beforeHoldings, beforeSnap, snapshotHoldingsMap(), snapshotAccountValues());
         flashStatus("myAssetStatus", "가져오기 완료 ✓");
       } catch (err) {
         flashStatus("myAssetStatus", "파일을 읽지 못했습니다: " + err.message);
@@ -800,7 +803,9 @@ function renderCaptureAccountResult(validated) {
     document.getElementById("captureAccountFillBtn").disabled = !e.target.checked;
   });
   refreshCaptureComparison(el, validated);
-  document.getElementById("captureAccountFillBtn").addEventListener("click", () => {
+  document.getElementById("captureAccountFillBtn").addEventListener("click", async () => {
+    const beforeHoldings = snapshotHoldingsMap();
+    const beforeSnap = snapshotAccountValues();
     let added = 0, updated = 0;
     el.querySelectorAll("tbody tr").forEach((tr) => {
       const h = validated.holdings[Number(tr.dataset.idx)];
@@ -811,7 +816,10 @@ function renderCaptureAccountResult(validated) {
       if (result === "updated") updated++; else added++;
     });
     if (added + updated > 0) {
-      saveMyAssets(); renderMyAssets(); updateMyRowsCollapseUI();
+      saveMyAssets();
+      await renderMyAssets();
+      updateMyRowsCollapseUI();
+      pushAssetChangelog("capture-account", beforeHoldings, beforeSnap, snapshotHoldingsMap(), snapshotAccountValues());
       flashStatus("captureAccountStatus", `${added}건 추가, ${updated}건 갱신 — 아래 "내 자산"에서 확인하세요`);
     } else {
       flashStatus("captureAccountStatus", "채울 항목을 선택하세요(매칭된 종목만 가능)");

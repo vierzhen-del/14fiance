@@ -6,6 +6,76 @@ const MY_ASSETS_KEY = "my_assets_v1";
 const MY_ASSETS_HISTORY_KEY = "my_assets_history_v1";
 const MY_ASSETS_DAILY_HISTORY_KEY = "my_assets_daily_history_v1";
 const MY_INCLUDE_STOCKS_KEY = "my_assets_include_stocks_v1"; // "0"이면 일반종목(개별주) 제외
+const MY_ASSETS_CHANGELOG_KEY = "my_assets_changelog_v1"; // 최대 300건, A3b/c: 폼 채우기·가져오기 시 변경 이력
+
+/* ---------- A3c: 변동이력(🗂️) — 폼 채우기(캡처 반영)·가져오기 시마다 자동 기록되는 변경 로그.
+   위 MY_ASSETS_HISTORY_KEY(월별 수동 스냅샷)와 달리, 이건 "무엇이 바뀌었는지" 이벤트 자체를
+   자동으로 남긴다 — 버튼을 누르는 걸 잊어도 반영/가져오기가 일어난 시점마다 쌓인다. */
+function loadAssetChangelog() {
+  try { return JSON.parse(localStorage.getItem(MY_ASSETS_CHANGELOG_KEY) || "[]"); } catch (err) { return []; }
+}
+
+/* 현재 폼(#myAssetRows)의 계좌별 보유 수량 스냅샷 — Map(account -> Map(symbol -> qty)) */
+function snapshotHoldingsMap() {
+  const map = new Map();
+  document.querySelectorAll("#myAssetRows .portfolio-row").forEach((row) => {
+    const account = row.querySelector(".my-account").value || "계좌 미지정";
+    const symbol = row.querySelector(".my-symbol").value;
+    if (!symbol) return;
+    const qty = parseFloat(row.querySelector(".my-qty").value) || 0;
+    if (!map.has(account)) map.set(account, new Map());
+    const accMap = map.get(account);
+    accMap.set(symbol, (accMap.get(symbol) || 0) + qty);
+  });
+  return map;
+}
+
+/* 두 시점의 보유 스냅샷을 비교해 종목변동(추가/삭제/수량변경) 목록을 만든다 */
+function diffHoldingsSnapshots(beforeMap, afterMap) {
+  const changes = [];
+  const accounts = new Set([...beforeMap.keys(), ...afterMap.keys()]);
+  for (const account of accounts) {
+    const before = beforeMap.get(account) || new Map();
+    const after = afterMap.get(account) || new Map();
+    const symbols = new Set([...before.keys(), ...after.keys()]);
+    for (const symbol of symbols) {
+      const oldQty = before.get(symbol) || 0;
+      const newQty = after.get(symbol) || 0;
+      if (oldQty === newQty) continue;
+      const type = oldQty === 0 ? "added" : newQty === 0 ? "removed" : "qty-changed";
+      changes.push({ account, symbol, type, oldQty, newQty });
+    }
+  }
+  return changes;
+}
+
+/* renderMyAssets()가 채워둔 state.myAssetsCsvData.accountMap 기준 계좌별 평가액 스냅샷(자산변동·비중변동용) */
+function snapshotAccountValues() {
+  const csv = state.myAssetsCsvData;
+  if (!csv) return { totalValue: 0, byAccount: {} };
+  const byAccount = {};
+  for (const [acc, g] of csv.accountMap) byAccount[acc] = g.value;
+  return { totalValue: csv.totalValue, byAccount };
+}
+
+/* beforeHoldings/afterHoldings는 snapshotHoldingsMap(), beforeSnap/afterSnap은 snapshotAccountValues()
+   호출 결과를 그대로 넘긴다. 실제 종목변동이 없으면(예: 매수계획만 바뀐 경우) 기록하지 않는다. */
+function pushAssetChangelog(source, beforeHoldings, beforeSnap, afterHoldings, afterSnap) {
+  const changes = diffHoldingsSnapshots(beforeHoldings, afterHoldings);
+  if (!changes.length) return;
+  const log = loadAssetChangelog();
+  log.unshift({
+    ts: nowDateTimeStr(), source, changes,
+    beforeValue: beforeSnap.totalValue, afterValue: afterSnap.totalValue,
+    beforeByAccount: beforeSnap.byAccount, afterByAccount: afterSnap.byAccount,
+  });
+  localStorage.setItem(MY_ASSETS_CHANGELOG_KEY, JSON.stringify(log.slice(0, 300)));
+  // 이 시점에는 이미 renderMyAssets()가 끝나 "변동이력" 탭 DOM이 새로 그려진 뒤라(그때는 아직
+  // localStorage에 안 쓴 상태) 탭 내용만 다시 채워준다 — 안 보이는 탭이면 그냥 조용히 무시.
+  const body = document.getElementById("myChangelogBody");
+  const sel = document.getElementById("myChangelogGranularity");
+  if (body && sel) body.innerHTML = buildChangelogHTML(sel.value);
+}
 
 function updateIncludeStocksBtn() {
   const btn = document.getElementById("myIncludeStocksBtn");
@@ -615,6 +685,73 @@ function buildYearlyAssetHTML(monthlyHistory) {
     </div>`;
 }
 
+/* ---------- A3c: 🗂️ 변동이력 탭 — MY_ASSETS_CHANGELOG_KEY(자동 기록)를 일/주/월/연 단위로
+   묶어 자산변동·비중변동·종목변동을 한 번에 보여준다. 위 buildDailyAssetHTML류(수동 스냅샷)와
+   달리, 이건 "폼에 채우기"/"가져오기"가 실제로 일어난 이벤트만 모은다. */
+function changelogPeriodKey(ts, granularity) {
+  const date = ts.slice(0, 10); // "YYYY-MM-DD HH:MM" → "YYYY-MM-DD"
+  if (granularity === "daily") return date;
+  if (granularity === "monthly") return date.slice(0, 7);
+  if (granularity === "yearly") return date.slice(0, 4);
+  // weekly: ISO 주(월요일 시작) 키
+  const d = new Date(date + "T00:00:00Z");
+  const day = (d.getUTCDay() + 6) % 7;
+  d.setUTCDate(d.getUTCDate() - day + 3);
+  const firstThursday = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+  const week = 1 + Math.round(((d - firstThursday) / 86400000 - 3 + ((firstThursday.getUTCDay() + 6) % 7)) / 7);
+  return `${d.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
+}
+
+const CHANGE_TYPE_LABEL = { added: "🆕 신규", removed: "🗑️ 삭제", "qty-changed": "🔁 수량변경" };
+const CHANGE_SOURCE_LABEL = { "capture-account": "📸 계좌 캡처", "capture-buyplan": "📈 월매수 캡처", import: "📂 가져오기" };
+
+function buildChangelogHTML(granularity) {
+  const log = loadAssetChangelog();
+  if (!log.length) {
+    return `<p class="compare-empty">계좌 캡처 "폼에 채우기" 또는 "가져오기"를 실행하면 그 변경 내역이 여기 자동으로 쌓입니다(최대 300건 보관). 수동 스냅샷과 달리 버튼을 따로 누를 필요가 없습니다.</p>`;
+  }
+  const fmtW = (v) => fmtPrice(v, "KRW");
+  const byPeriod = new Map();
+  // log는 최신순(unshift) — 기간별로 묶을 때는 시간순 정렬이 필요하므로 뒤집어서 순회
+  for (const entry of log.slice().reverse()) {
+    const key = changelogPeriodKey(entry.ts, granularity);
+    if (!byPeriod.has(key)) byPeriod.set(key, []);
+    byPeriod.get(key).push(entry);
+  }
+  const periods = [...byPeriod.keys()].sort().reverse();
+  const rows = periods.map((period) => {
+    const entries = byPeriod.get(period); // 이 기간 내 시간순
+    const first = entries[0], last = entries[entries.length - 1];
+    const assetDiff = last.afterValue - first.beforeValue;
+    const assetPct = first.beforeValue > 0 ? (assetDiff / first.beforeValue) * 100 : null;
+
+    // 비중변동: 기간 시작 시점 vs 종료 시점의 계좌별 비중(%) 차이
+    const accounts = new Set([...Object.keys(first.beforeByAccount), ...Object.keys(last.afterByAccount)]);
+    const weightLines = [...accounts].map((acc) => {
+      const beforePct = first.beforeValue > 0 ? ((first.beforeByAccount[acc] || 0) / first.beforeValue) * 100 : 0;
+      const afterPct = last.afterValue > 0 ? ((last.afterByAccount[acc] || 0) / last.afterValue) * 100 : 0;
+      const d = afterPct - beforePct;
+      return Math.abs(d) >= 0.1 ? `${acc} ${beforePct.toFixed(1)}%→${afterPct.toFixed(1)}%(${d >= 0 ? "+" : ""}${d.toFixed(1)}%p)` : null;
+    }).filter(Boolean);
+
+    // 종목변동: 기간 내 모든 이벤트의 changes를 계좌+종목 기준으로 합쳐 마지막 상태만 표시
+    const changeMap = new Map();
+    for (const e of entries) {
+      for (const c of e.changes) changeMap.set(`${c.account}|${c.symbol}`, c);
+    }
+    const changeList = [...changeMap.values()];
+
+    return `<div class="card" style="margin-top:10px;">
+      <p class="chart-title" style="margin-top:0; font-size:13.5px;">${period} <span class="stat-sub" style="font-size:11.5px;">(이벤트 ${entries.length}건: ${[...new Set(entries.map((e) => CHANGE_SOURCE_LABEL[e.source] || e.source))].join(", ")})</span></p>
+      <p class="stat-sub" style="margin:4px 0;">📊 자산변동: ${fmtW(first.beforeValue)} → ${fmtW(last.afterValue)}
+        ${assetPct != null ? `<span style="color:${assetDiff >= 0 ? "var(--good)" : "var(--critical)"}">(${assetDiff >= 0 ? "+" : ""}${fmtW(assetDiff)}, ${assetPct.toFixed(1)}%)</span>` : ""}</p>
+      ${weightLines.length ? `<p class="stat-sub" style="margin:4px 0;">⚖️ 비중변동: ${weightLines.join(" · ")}</p>` : ""}
+      ${changeList.length ? `<p class="stat-sub" style="margin:4px 0;">📦 종목변동 ${changeList.length}건: ${changeList.map((c) => `${c.account} ${c.symbol} ${CHANGE_TYPE_LABEL[c.type]}(${c.oldQty}→${c.newQty})`).join(", ")}</p>` : ""}
+    </div>`;
+  }).join("");
+  return `${rows}<p class="stat-sub" style="margin-top:6px;">총 ${log.length}건의 변경 이벤트가 기록되어 있습니다(최대 300건, 이 브라우저에만 보관).</p>`;
+}
+
 /* 통합 탭 — 도넛(종목 비중) SVG (라이브러리 없이 stroke-dasharray로) */
 function buildDonutSVG(items, centerLabel) {
   const total = items.reduce((a, b) => a + b.value, 0);
@@ -1125,6 +1262,7 @@ async function renderMyAssets() {
       <button type="button" class="dash-tab-btn" data-tab="suff">⚖️ 자급률·월매수</button>
       <button type="button" class="dash-tab-btn" data-tab="divbasis">💹 배당기준·이력</button>
       <button type="button" class="dash-tab-btn" data-tab="trend">📈 추이</button>
+      <button type="button" class="dash-tab-btn" data-tab="changelog">🗂️ 변동이력</button>
       <button type="button" class="dash-tab-btn" data-tab="settings">⚙️ 설정</button>
     </div>
 
@@ -1235,6 +1373,21 @@ async function renderMyAssets() {
       <p class="stat-sub" style="margin-top:6px;">이 사이트는 정적 페이지(서버 없음)라 일별 캡처는 자동으로 쌓이지 않습니다 — 확인할 때마다 "오늘 자산 스냅샷"을 눌러야 이력이 쌓입니다. 주간은 일별 캡처가 서로 다른 주에 2건 이상 쌓여야 계산됩니다.</p>
     </div>
 
+    <div class="dash-panel" data-tab="changelog" hidden>
+      <p class="chart-title" style="margin-top:20px;">🗂️ 변동이력 — 캡처 반영·가져오기 자동 기록</p>
+      <p class="stat-sub">계좌 캡처 "폼에 채우기" 또는 "가져오기"를 실행할 때마다 자동으로 남는 이력입니다(수동 스냅샷과 별개). 단위를 골라 자산변동·비중변동·종목변동을 함께 확인하세요.</p>
+      <div class="controls" style="margin:10px 0;">
+        <select id="myChangelogGranularity" aria-label="변동이력 보기 단위">
+          <option value="daily">일별</option>
+          <option value="weekly">주간</option>
+          <option value="monthly">월별</option>
+          <option value="yearly">연간</option>
+        </select>
+        <button type="button" id="myChangelogClearBtn" class="btn-action">🗑️ 이력 지우기</button>
+      </div>
+      <div id="myChangelogBody"></div>
+    </div>
+
     <div class="dash-panel" data-tab="settings" hidden>
       <p class="chart-title" style="margin-top:20px;">📋 참조 노션 SOP (공통 SSOT 3종)</p>
       <p class="stat-sub"><a href="https://app.notion.com/p/3955efd0e46281dab7f3cbd905a15dfd" target="_blank" rel="noopener">📊 계좌 종목 현황 SOP — 계좌×종목×수량 단일 기록처</a></p>
@@ -1332,6 +1485,20 @@ async function renderMyAssets() {
   if (state.myAssetChangeGranularity) changeSel.value = state.myAssetChangeGranularity;
   changeSel.addEventListener("change", () => { state.myAssetChangeGranularity = changeSel.value; renderAssetChange(); });
   renderAssetChange();
+
+  const changelogSel = document.getElementById("myChangelogGranularity");
+  const renderChangelog = () => {
+    const body = document.getElementById("myChangelogBody");
+    if (!body) return;
+    body.innerHTML = buildChangelogHTML(changelogSel.value);
+  };
+  if (state.myChangelogGranularity) changelogSel.value = state.myChangelogGranularity;
+  changelogSel.addEventListener("change", () => { state.myChangelogGranularity = changelogSel.value; renderChangelog(); });
+  document.getElementById("myChangelogClearBtn").addEventListener("click", () => {
+    localStorage.removeItem(MY_ASSETS_CHANGELOG_KEY);
+    renderChangelog();
+  });
+  renderChangelog();
 }
 
 function buildMyAssetsText() {
