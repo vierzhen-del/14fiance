@@ -53,6 +53,9 @@ function fmtPrice(x, currency) {
   return "$" + x.toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
+// 목표 금액은 입력칸이 만원 단위(myGoalAmount)라 표시도 맞춰서 만원 단위로 보여준다
+function fmtManwon(x) { return Math.round(x / 10000).toLocaleString() + "만원"; }
+
 function fmtDate(d) { return d; }
 
 function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }

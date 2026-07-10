@@ -1074,7 +1074,7 @@ async function renderMyAssets() {
         <p class="stat-sub">${selfSuffRate != null ? `배당 자급률 ${(selfSuffRate * 100).toFixed(1)}% ${selfSuffRate >= 1 ? "✅ 배당으로 충당" : "⚠️ 부족 " + fmtW(totalMonthlyBuy - totalMonthlyDiv)}` : "월매수 수량 입력 시 자급률 표시"}</p>
       </div>
       ${goal ? `<div class="stat">
-        <p class="stat-label">🎯 목표 ${fmtW(goalAmount)} 도달</p>
+        <p class="stat-label">🎯 목표 ${fmtManwon(goalAmount)} 도달</p>
         <p class="stat-value">${goalLabel}</p>
         <p class="stat-sub">연 ${(goalRate * 100).toFixed(1)}% 가정${
           cfg.returnMode !== "manual" ? ` (종목별 최근 ${cfg.returnMode}개월 실적 가중평균${weightedTrailReturn == null ? ", 가격데이터 부족 시 0% 처리" : ""} + 배당수익률)`
