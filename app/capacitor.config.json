@@ -1,0 +1,11 @@
+{
+  "appId": "io.github.vierzhen.myassets",
+  "appName": "내자산관리",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}

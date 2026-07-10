@@ -1,0 +1,18 @@
+{
+  "name": "myassets-app",
+  "version": "0.1.0",
+  "private": true,
+  "description": "내자산관리 로컬 앱 — capture 웹앱(Capacitor WebView) APK 패키징",
+  "scripts": {
+    "build:www": "node build-www.mjs",
+    "sync": "npm run build:www && npx cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/core": "^6.2.0",
+    "@capacitor/filesystem": "^6.0.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.2.0"
+  }
+}
