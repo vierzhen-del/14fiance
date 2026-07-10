@@ -23,8 +23,13 @@ function updateIncludeStocksBtn() {
 function updateLiveQuotesBtn() {
   const btn = document.getElementById("myLiveQuotesBtn");
   if (!btn) return;
-  btn.textContent = liveQuotesEnabled() ? "🔄 최신시세: 켬" : "🔄 최신시세: 끔";
+  const on = liveQuotesEnabled();
+  btn.textContent = on ? "🔄 최신시세: 켬" : "🔄 최신시세: 끔";
   btn.title = "켜면 국내 종목 현재가를 장중 30분 주기 수집분(있을 때)으로 바꿔 계산합니다. GitHub 실행 지연으로 30~45분 늦을 수 있고, 실패 시 주간 수집 종가로 자동 폴백합니다.";
+  const nowBtn = document.getElementById("myLiveQuotesNowBtn");
+  if (nowBtn) nowBtn.style.display = on ? "" : "none";
+  const statusEl = document.getElementById("myLiveQuotesTimeStatus");
+  if (statusEl && !on) statusEl.textContent = "";
 }
 
 
@@ -1224,6 +1229,18 @@ async function renderMyAssets() {
 
     <p class="stat-sub" style="margin-top:10px;">현재가는 주간 수집 데이터의 마지막 종가 기준입니다. 월배당은 종목별 "확정 DPS(원/주)"를 입력하면 DPS×수량으로 계산해 우선 적용하고, 비워두면 최근 1년 배당(TTM)÷12 추정치를 사용합니다. 신규 상장·특별배당 종목은 TTM 추정이 실제보다 크게 낮을 수 있으니 시트/노션 배당기준의 확정 DPS 입력을 권장합니다.</p>
   `;
+
+  // 🔄 최신시세 반영 시각 + 다음 30분 주기 수집까지 잔여시간 — 액션바에 상시 표시(탭과 무관)
+  const liveTimeEl = document.getElementById("myLiveQuotesTimeStatus");
+  if (liveTimeEl) {
+    if (!liveQuotesEnabled()) {
+      liveTimeEl.textContent = "";
+    } else if (liveKr) {
+      liveTimeEl.textContent = `${liveKr.updated} 기준 국내 ${liveApplied}종목 반영 · ${nextIntradayCollectionText()}`;
+    } else {
+      liveTimeEl.textContent = state.liveKrError ? "최신시세 불러오기 실패 — 주간 종가로 표시 중" : "최신시세 확인 중…";
+    }
+  }
 
   document.querySelectorAll("#myDashTabs .dash-tab-btn").forEach((btn) =>
     btn.addEventListener("click", () => showMyDashTab(btn.dataset.tab)));

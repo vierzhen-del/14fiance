@@ -160,14 +160,9 @@
   .page-section.collapsed .section-body { display: none; }
   .page-section.collapsed .section-toggle { transform: rotate(-90deg); }
 
-  /* ---- 내 자산 종목 목록 접기(너무 길어질 때) ---- */
+  /* ---- 내 자산 종목 목록 접기(너무 길어질 때) — 기본은 완전히 숨기고 버튼으로만 펼침 ---- */
   .myrows-wrap { position: relative; overflow: hidden; }
-  .myrows-wrap.collapsed { max-height: 258px; }
-  .myrows-wrap.collapsed::after {
-    content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 48px;
-    background: linear-gradient(to bottom, transparent, var(--surface-1));
-    pointer-events: none;
-  }
+  .myrows-wrap.collapsed { max-height: 0; }
 
   .checklist { display: flex; flex-direction: column; gap: 14px; margin-bottom: 6px; }
   .checklist-group-label { font-size: 11.5px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; margin: 0 0 8px; }

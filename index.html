@@ -171,14 +171,9 @@
   .page-section.collapsed .section-body { display: none; }
   .page-section.collapsed .section-toggle { transform: rotate(-90deg); }
 
-  /* ---- 내 자산 종목 목록 접기(너무 길어질 때) ---- */
+  /* ---- 내 자산 종목 목록 접기(너무 길어질 때) — 기본은 완전히 숨기고 버튼으로만 펼침 ---- */
   .myrows-wrap { position: relative; overflow: hidden; }
-  .myrows-wrap.collapsed { max-height: 258px; }
-  .myrows-wrap.collapsed::after {
-    content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 48px;
-    background: linear-gradient(to bottom, transparent, var(--surface-1));
-    pointer-events: none;
-  }
+  .myrows-wrap.collapsed { max-height: 0; }
 
   .checklist { display: flex; flex-direction: column; gap: 14px; margin-bottom: 6px; }
   .checklist-group-label { font-size: 11.5px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; margin: 0 0 8px; }
@@ -414,6 +409,8 @@
           <a href="https://app.notion.com/p/3865efd0e46281c49a72c9bbc70dcea0" target="_blank" rel="noopener" class="btn-action" style="text-decoration:none;">📋 배당 기준 SOP 확인</a>
           <button type="button" id="myIncludeStocksBtn" class="btn-action"></button>
           <button type="button" id="myLiveQuotesBtn" class="btn-action"></button>
+          <button type="button" id="myLiveQuotesNowBtn" class="btn-action" style="display:none;">⏱️ 지금 확인</button>
+          <span id="myLiveQuotesTimeStatus" class="action-status"></span>
           <span id="myAssetStatus" class="action-status"></span>
           <input type="file" id="myImportFile" accept="application/json" style="display:none;">
         </div>
@@ -1549,8 +1546,13 @@ function liveQuotesEnabled() { return localStorage.getItem(MY_LIVE_QUOTES_KEY) =
 function updateLiveQuotesBtn() {
   const btn = document.getElementById("myLiveQuotesBtn");
   if (!btn) return;
-  btn.textContent = liveQuotesEnabled() ? "🔄 최신시세: 켬" : "🔄 최신시세: 끔";
+  const on = liveQuotesEnabled();
+  btn.textContent = on ? "🔄 최신시세: 켬" : "🔄 최신시세: 끔";
   btn.title = "켜면 국내 종목 현재가를 장중 30분 주기 수집분(있을 때)으로 바꿔 계산합니다. GitHub 실행 지연으로 30~45분 늦을 수 있고, 실패 시 주간 수집 종가로 자동 폴백합니다.";
+  const nowBtn = document.getElementById("myLiveQuotesNowBtn");
+  if (nowBtn) nowBtn.style.display = on ? "" : "none";
+  const statusEl = document.getElementById("myLiveQuotesTimeStatus");
+  if (statusEl && !on) statusEl.textContent = "";
 }
 
 async function loadLiveKrQuotes() {
@@ -1558,7 +1560,7 @@ async function loadLiveKrQuotes() {
   const now = Date.now();
   if (state.liveKr && now - state.liveKr.fetchedAt < 3 * 60 * 1000) return state.liveKr.data;
   try {
-    const resp = await fetch(LIVE_KR_URL, { cache: "no-store" });
+    const resp = await fetch(LIVE_KR_URL, { cache: "no-store", signal: AbortSignal.timeout(10000) });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
     if (!data || typeof data.prices !== "object") throw new Error("형식 오류");
@@ -1582,6 +1584,29 @@ function accountColor(account) {
   const s = account || "";
   for (let i = 0; i < s.length; i++) hash = (hash * 31 + s.charCodeAt(i)) >>> 0;
   return MY_ASSETS_PALETTE[(ACCOUNT_TYPES.length + hash) % MY_ASSETS_PALETTE.length];
+}
+
+/* scripts/fetch_intraday_kr.py가 평일 KST 09:00~15:30 30분마다(정시·30분) 실행되는 것과
+   동일한 규칙으로 "다음 수집까지 남은 시간"을 계산한다 — 방문자의 로컬 시간대와 무관하게
+   Asia/Seoul 기준으로 판단해야 하므로 Intl로 KST 구성요소를 뽑아 쓴다. */
+function nextIntradayCollectionText() {
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Seoul", hour12: false, hour: "2-digit", minute: "2-digit", weekday: "short",
+  });
+  const parts = Object.fromEntries(fmt.formatToParts(new Date()).map((p) => [p.type, p.value]));
+  const hour = Number(parts.hour) % 24;
+  const minute = Number(parts.minute);
+  const isWeekday = ["Mon", "Tue", "Wed", "Thu", "Fri"].includes(parts.weekday);
+  const minutesOfDay = hour * 60 + minute;
+  const OPEN = 9 * 60, CLOSE = 15 * 60 + 30;
+  if (isWeekday && minutesOfDay >= OPEN && minutesOfDay < CLOSE) {
+    const nextMark = minute < 30 ? hour * 60 + 30 : (hour + 1) * 60;
+    const remain = nextMark - minutesOfDay;
+    const hh = String(Math.floor(nextMark / 60)).padStart(2, "0");
+    const mm = String(nextMark % 60).padStart(2, "0");
+    return `다음 수집까지 약 ${remain}분(${hh}:${mm} 예정)`;
+  }
+  return "휴장 중(평일 09:00~15:30 외) — 다음 수집은 개장 후 30분 주기로 갱신";
 }
 
 function addMyAssetRow(a = {}) {
@@ -2780,6 +2805,18 @@ async function renderMyAssets() {
 
     <p class="stat-sub" style="margin-top:10px;">현재가는 주간 수집 데이터의 마지막 종가 기준입니다. 월배당은 종목별 "확정 DPS(원/주)"를 입력하면 DPS×수량으로 계산해 우선 적용하고, 비워두면 최근 1년 배당(TTM)÷12 추정치를 사용합니다. 신규 상장·특별배당 종목은 TTM 추정이 실제보다 크게 낮을 수 있으니 시트/노션 배당기준의 확정 DPS 입력을 권장합니다.</p>
   `;
+
+  // 🔄 최신시세 반영 시각 + 다음 30분 주기 수집까지 잔여시간 — 액션바에 상시 표시(탭과 무관)
+  const liveTimeEl = document.getElementById("myLiveQuotesTimeStatus");
+  if (liveTimeEl) {
+    if (!liveQuotesEnabled()) {
+      liveTimeEl.textContent = "";
+    } else if (liveKr) {
+      liveTimeEl.textContent = `${liveKr.updated} 기준 국내 ${liveApplied}종목 반영 · ${nextIntradayCollectionText()}`;
+    } else {
+      liveTimeEl.textContent = state.liveKrError ? "최신시세 불러오기 실패 — 주간 종가로 표시 중" : "최신시세 확인 중…";
+    }
+  }
 
   document.querySelectorAll("#myDashTabs .dash-tab-btn").forEach((btn) =>
     btn.addEventListener("click", () => showMyDashTab(btn.dataset.tab)));
@@ -4287,6 +4324,15 @@ async function init() {
     localStorage.setItem(MY_LIVE_QUOTES_KEY, liveQuotesEnabled() ? "0" : "1");
     state.liveKr = null; // 토글 시 캐시 비우고 새로 가져옴
     renderMyAssets();
+  });
+  document.getElementById("myLiveQuotesNowBtn").addEventListener("click", async () => {
+    if (!liveQuotesEnabled()) return;
+    const nowBtn = document.getElementById("myLiveQuotesNowBtn");
+    const statusEl = document.getElementById("myLiveQuotesTimeStatus");
+    nowBtn.disabled = true;
+    if (statusEl) statusEl.textContent = "확인 중…";
+    state.liveKr = null; // 3분 캐시 무시하고 강제 재조회
+    try { await renderMyAssets(); } finally { nowBtn.disabled = false; }
   });
 
   // 시뮬레이터: 공유 링크가 있으면 그 설정으로, 없으면 기본값(SPY 100%, 간단 모드)으로 시작

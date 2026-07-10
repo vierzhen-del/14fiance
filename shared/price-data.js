@@ -31,7 +31,7 @@ async function loadLiveKrQuotes() {
   const now = Date.now();
   if (state.liveKr && now - state.liveKr.fetchedAt < 3 * 60 * 1000) return state.liveKr.data;
   try {
-    const resp = await fetch(LIVE_KR_URL, { cache: "no-store" });
+    const resp = await fetch(LIVE_KR_URL, { cache: "no-store", signal: AbortSignal.timeout(10000) });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
     if (!data || typeof data.prices !== "object") throw new Error("형식 오류");
