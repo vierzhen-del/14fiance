@@ -4382,10 +4382,10 @@ async function init() {
   document.getElementById("simExpectedReturn").addEventListener("input", renderSimulator);
   document.getElementById("simInflationOn").addEventListener("change", renderSimulator);
   document.getElementById("simInflationRate").addEventListener("input", renderSimulator);
-  const todayStr = new Date().toISOString().slice(0, 10);
-  document.getElementById("simStartDate").max = todayStr;
-  document.getElementById("simEndDate").max = todayStr;
-  document.getElementById("simGoalDate").min = todayStr;
+  const simMaxDateStr = new Date().toISOString().slice(0, 10);
+  document.getElementById("simStartDate").max = simMaxDateStr;
+  document.getElementById("simEndDate").max = simMaxDateStr;
+  document.getElementById("simGoalDate").min = simMaxDateStr;
   document.getElementById("simStartDate").addEventListener("change", renderSimulator);
   document.getElementById("simEndDate").addEventListener("change", renderSimulator);
   document.getElementById("simDateClear").addEventListener("click", () => {
