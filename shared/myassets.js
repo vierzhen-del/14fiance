@@ -99,6 +99,8 @@ function serializeMyAssets() {
     expectedReturn: document.getElementById("myExpectedReturn").value,
     returnMode: document.getElementById("myReturnMode").value,
     livingExpense: parseFloat(document.getElementById("myLivingExpense").value) || 0,
+    inflationOn: document.getElementById("myInflationOn") ? document.getElementById("myInflationOn").checked : false,
+    inflationRate: document.getElementById("myInflationRate") ? document.getElementById("myInflationRate").value : "",
     contributions: serializeMyContributions(),
     dataAsOf: state.myAssetsDataAsOf || "",
     importedAt: state.myAssetsImportedAt || "",
@@ -119,6 +121,14 @@ function updateReturnModeUI() {
   const manual = modeEl.value === "manual";
   wrapEl.style.display = manual ? "" : "none";
   hintEl.style.display = manual ? "none" : "";
+}
+
+/* 물가상승률 반영 체크박스 on/off에 따라 %입력칸 표시만 토글 */
+function updateInflationUI() {
+  const onEl = document.getElementById("myInflationOn");
+  const wrapEl = document.getElementById("myInflationRateWrap");
+  if (!onEl || !wrapEl) return;
+  wrapEl.style.display = onEl.checked ? "" : "none";
 }
 
 /* 내 자산 종목 목록이 길어지면(6행 초과) 기본 접어서 스크롤을 줄인다 — 입력값은 그대로 유지, 시각적으로만 숨김 */
@@ -169,6 +179,9 @@ function applyMyAssets(data) {
   document.getElementById("myExpectedReturn").value = data.expectedReturn || "";
   document.getElementById("myReturnMode").value = data.returnMode || "manual";
   document.getElementById("myLivingExpense").value = data.livingExpense || "";
+  if (document.getElementById("myInflationOn")) document.getElementById("myInflationOn").checked = !!data.inflationOn;
+  if (document.getElementById("myInflationRate") && data.inflationRate) document.getElementById("myInflationRate").value = data.inflationRate;
+  updateInflationUI();
   updateReturnModeUI();
   syncMyContribRows();
   return true;
@@ -887,6 +900,18 @@ async function renderMyAssets() {
       : goal.months === 0 ? "이미 달성"
       : `${Math.floor(goal.months / 12) > 0 ? `${Math.floor(goal.months / 12)}년 ` : ""}${goal.months % 12 > 0 ? `${goal.months % 12}개월` : ""}`.trim()
     : null;
+  // 물가상승률 반영(선택): 목표금액을 "오늘 구매력" 기준으로 유지하려면 실질수익률(명목-물가)로
+  // 계산해야 하므로, 시뮬레이터의 실질가치 로직과 동일하게 goalRate에서 물가상승률만큼 차감해 재계산
+  const inflationOn = !!cfg.inflationOn;
+  const inflationRate = inflationOn ? (Number(cfg.inflationRate) || 0) / 100 : null;
+  const realGoal = inflationOn && goalAmount > 0
+    ? monthsToGoal(goalAmount, totalValue, totalMonthlyInvest, goalRate - inflationRate)
+    : null;
+  const realGoalLabel = realGoal
+    ? realGoal.months == null ? "50년 초과"
+      : realGoal.months === 0 ? "이미 달성"
+      : `${Math.floor(realGoal.months / 12) > 0 ? `${Math.floor(realGoal.months / 12)}년 ` : ""}${realGoal.months % 12 > 0 ? `${realGoal.months % 12}개월` : ""}`.trim()
+    : null;
 
   const rowsHTML = perRow.map((p) => {
     const ttm = p.meta && p.meta.ttmDividend ? p.meta.ttmDividend : 0;
@@ -1081,6 +1106,7 @@ async function renderMyAssets() {
           : expReturn == null ? " (기대수익률 미입력 — 배당만 반영)" : ""
         }</p>
         <p class="stat-sub">월 재투자액 ${fmtW(totalMonthlyInvest)}${totalContributions > 0 ? ` (월매수 ${fmtW(totalMonthlyBuy)} + 월적립 ${fmtW(totalContributions)})` : ""} 반영${livingExpenseUsed > 0 ? ` · 배당은 재투자분(${fmtW(reinvestedDiv)}/월)만 복리 반영, 생활비 사용분 제외` : ""}</p>
+        ${realGoalLabel ? `<p class="stat-sub" style="color:var(--text-muted);">물가상승률 ${(inflationRate * 100).toFixed(1)}%/년 반영(오늘 구매력 기준): <b>${realGoalLabel}</b></p>` : ""}
       </div>` : ""}
     </div>
     <p class="stat-sub">최신 수집: ${state.manifest.updated} 기준(주간 자동 수집 — 실시간 시세 아님)${

@@ -168,13 +168,25 @@ function validateBuyPlanCapture(parsed) {
 }
 
 /* ---------- 노션 SOP 갱신용 요약 텍스트 (앱은 이 텍스트만 만들고, 실제 노션 반영은
-   계속 클로드 코드 세션이 담당 — CLAUDE.md/계획서의 역할분리 원칙) ---------- */
-function buildAccountCaptureSummaryText(validated) {
+   계속 사람이 붙여넣는 AI 세션이 담당 — CLAUDE.md/계획서의 역할분리 원칙).
+   대상 AI(클로드/제미나이/ChatGPT)는 설정탭에서 고른 값을 localStorage에서 읽어
+   문구만 그에 맞게 바꾼다 — 앱이 그 AI를 직접 호출하는 게 아니라 사람이 복사해서
+   해당 AI 세션에 붙여넣는 방식은 동일하다. */
+const CAPTURE_SOP_TARGET_KEY = "capture_sop_ai_target"; // "claude" | "gemini" | "chatgpt"
+function sopTargetLabel() {
+  const t = (typeof localStorage !== "undefined" && localStorage.getItem(CAPTURE_SOP_TARGET_KEY)) || "claude";
+  return { claude: "클로드 코드 세션", gemini: "제미나이", chatgpt: "ChatGPT" }[t] || "클로드 코드 세션";
+}
+
+function buildAccountCaptureSummaryText(validated, divStatus) {
   const lines = [];
   lines.push(`📸 계좌 캡처 파싱 결과${validated.accountLabel ? ` — ${validated.accountLabel}` : ""} (${todayStr()})`);
   if (validated.totalCheck) {
     const t = validated.totalCheck;
     lines.push(`합계 대조: Σ평가액 ${Math.round(t.sumEval).toLocaleString()}원 vs 화면합계 ${Math.round(t.reported).toLocaleString()}원 (오차 ${(t.diffPct * 100).toFixed(2)}%, ${t.ok ? "정상" : "누락 종목 가능성 있음"})`);
+  }
+  if (divStatus) {
+    lines.push(`배당 정보 기준: ${divStatus === "confirmed" ? "확정(공시된 DPS)" : "예정(주가×배당률 추정)"} — 배당기준 마스터 갱신 시 이 기준으로 처리해줘.`);
   }
   for (const h of validated.holdings) {
     const label = h.matchedName || h.name;
@@ -183,7 +195,7 @@ function buildAccountCaptureSummaryText(validated) {
     lines.push(`- ${label}${symbolPart}: ${h.qty ?? "?"}주, 평가액 ${h.evalAmount != null ? Math.round(h.evalAmount).toLocaleString() : "?"}원${issuePart}`);
   }
   lines.push("");
-  lines.push('이 결과를 노션 "계좌 종목 현황 SOP"에 반영해줘.');
+  lines.push(`이 결과를 ${sopTargetLabel()}에 붙여넣어 노션 "계좌 종목 현황 SOP"에 반영해줘.`);
   return lines.join("\n");
 }
 
@@ -200,6 +212,6 @@ function buildBuyPlanCaptureSummaryText(validated) {
     lines.push(`- ${label}${symbolPart}: 1회 ${h.buyQtyPerTime ?? "?"}주 × ${h.buyFreq || "?"}${h.buyDay ? ` (${h.buyDay})` : ""}${issuePart}`);
   }
   lines.push("");
-  lines.push('이 결과를 노션 "월자동매수 현황"에 반영해줘.');
+  lines.push(`이 결과를 ${sopTargetLabel()}에 붙여넣어 노션 "월자동매수 현황"에 반영해줘.`);
   return lines.join("\n");
 }

@@ -70,6 +70,13 @@
             <input type="number" id="myLivingExpense" class="portfolio-weight" style="width:140px" min="0" step="10000" placeholder="월 생활비 사용액(선택, 원)" aria-label="월배당 중 생활비로 쓰는 금액">
             <span style="font-size:12.5px; color:var(--text-muted);">₩/월</span>
           </div>
+          <label style="font-size:12.5px; color:var(--text-muted); display:inline-flex; align-items:center; gap:4px;">
+            <input type="checkbox" id="myInflationOn"> 물가상승률 반영
+          </label>
+          <div class="portfolio-weight-wrap" id="myInflationRateWrap" style="display:none;">
+            <input type="number" id="myInflationRate" class="portfolio-weight" style="width:80px" step="0.1" value="2" aria-label="연간 물가상승률">
+            <span style="font-size:12.5px; color:var(--text-muted);">%/년</span>
+          </div>
         </div>
         <p class="stat-sub" id="myReturnModeHint" style="display:none; margin:-4px 0 10px;">종목별 실적 반영을 고르면 위 기대수익률 입력 대신, 보유 종목 각각의 최근 실제 가격 등락률(연환산)을 평가금액 비중으로 가중평균해 목표 도달 계산에 씁니다.</p>
         <p class="stat-sub" id="myContribLabel" style="display:none; margin:6px 0 4px;">계좌별 월 납입금(선택, 연금저축 등 배당 외 현금 납입이 있는 계좌)</p>
@@ -129,6 +136,15 @@
         <button type="button" id="captureClearKeysBtn" class="btn-action">🗑️ 키 삭제</button>
         <span id="captureKeysStatus" class="action-status"></span>
       </div>
+
+      <p class="section-lede" style="margin-top:16px;">"노션 SOP 요약 복사" 버튼으로 만든 요약을 어느 AI 세션에 붙여넣을 계획인지 선택하세요 — 앱이 그 AI를 대신 호출하지는 않고, 문구만 맞춰줍니다(예: "클로드 코드 세션에 붙여넣어…").</p>
+      <div class="controls">
+        <select id="sopAiTarget" aria-label="노션 SOP 요약 대상 AI">
+          <option value="claude">클로드 코드 세션</option>
+          <option value="gemini">제미나이</option>
+          <option value="chatgpt">ChatGPT</option>
+        </select>
+      </div>
     </div>
   </section>
 
@@ -152,6 +168,13 @@
         <textarea id="captureAccountPaste" rows="4" style="width:100%; font:inherit; font-size:12.5px; padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--surface-1); color:var(--text-primary);" placeholder="AI가 응답한 JSON을 여기 붙여넣고 아래 버튼을 누르세요"></textarea>
         <div class="action-row" style="margin-top:8px;">
           <button type="button" id="captureAccountParsePasteBtn" class="btn-action">📋 붙여넣은 JSON 파싱</button>
+        </div>
+        <div class="controls" style="margin-top:8px;">
+          <label style="font-size:12.5px; color:var(--text-muted);">배당 정보 기준(SOP 요약에 표기)</label>
+          <select id="captureDivStatus" aria-label="배당 정보 확정/예정 구분">
+            <option value="estimated" selected>예정(주가×배당률 추정)</option>
+            <option value="confirmed">확정(공시된 DPS)</option>
+          </select>
         </div>
         <div id="captureAccountResult"></div>
       </div>
@@ -250,6 +273,11 @@ async function init() {
   document.getElementById("myReturnMode").addEventListener("change", () => {
     updateReturnModeUI(); saveMyAssets(); renderMyAssets();
   });
+  updateInflationUI();
+  document.getElementById("myInflationOn").addEventListener("change", () => {
+    updateInflationUI(); saveMyAssets(); renderMyAssets();
+  });
+  document.getElementById("myInflationRate").addEventListener("input", () => { saveMyAssets(); renderMyAssets(); });
   document.getElementById("myExportBtn").addEventListener("click", () => {
     const blob = new Blob([JSON.stringify(serializeMyAssets(), null, 2)], { type: "application/json" });
     const a = document.createElement("a");
@@ -337,6 +365,12 @@ function initCapture() {
   document.getElementById("captureAiProvider").value = localStorage.getItem(CAPTURE_AI_PROVIDER_KEY) || "claude";
   document.getElementById("captureClaudeKey").value = localStorage.getItem(CAPTURE_CLAUDE_KEY) || "";
   document.getElementById("captureGeminiKey").value = localStorage.getItem(CAPTURE_GEMINI_KEY) || "";
+
+  const sopAiTargetSel = document.getElementById("sopAiTarget");
+  sopAiTargetSel.value = localStorage.getItem(CAPTURE_SOP_TARGET_KEY) || "claude";
+  sopAiTargetSel.addEventListener("change", () => {
+    localStorage.setItem(CAPTURE_SOP_TARGET_KEY, sopAiTargetSel.value);
+  });
 
   document.getElementById("captureSaveKeysBtn").addEventListener("click", () => {
     localStorage.setItem(CAPTURE_AI_PROVIDER_KEY, document.getElementById("captureAiProvider").value);
@@ -678,8 +712,10 @@ function renderCaptureAccountResult(validated) {
       flashStatus("captureAccountStatus", "채울 항목을 선택하세요(매칭된 종목만 가능)");
     }
   });
-  document.getElementById("captureAccountSummaryBtn").addEventListener("click", () =>
-    copyToClipboard(buildAccountCaptureSummaryText(validated), "captureAccountStatus", "요약 복사됨 — 클로드 세션에 붙여넣어 노션 SOP 갱신을 요청하세요"));
+  document.getElementById("captureAccountSummaryBtn").addEventListener("click", () => {
+    const divStatus = document.getElementById("captureDivStatus").value;
+    copyToClipboard(buildAccountCaptureSummaryText(validated, divStatus), "captureAccountStatus", `요약 복사됨 — ${sopTargetLabel()}에 붙여넣어 노션 SOP 갱신을 요청하세요`);
+  });
 }
 
 function renderCaptureBuyPlanResult(validated) {
@@ -734,7 +770,7 @@ function renderCaptureBuyPlanResult(validated) {
     }
   });
   document.getElementById("captureBuyPlanSummaryBtn").addEventListener("click", () =>
-    copyToClipboard(buildBuyPlanCaptureSummaryText(validated), "captureBuyPlanStatus", "요약 복사됨 — 클로드 세션에 붙여넣어 노션 SOP 갱신을 요청하세요"));
+    copyToClipboard(buildBuyPlanCaptureSummaryText(validated), "captureBuyPlanStatus", `요약 복사됨 — ${sopTargetLabel()}에 붙여넣어 노션 SOP 갱신을 요청하세요`));
 }
 
 // capture/ 전용 서비스워커 — 루트 sw.js와 별개 scope("/capture/")로 등록
