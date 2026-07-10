@@ -16,7 +16,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Node.js 24.x LTS (22.x는 Maintenance — 신규 작업에 사용 금지)
 - n8n 1.70.0 (self-hosted; 웹 커넥터 불가 → Claude Code CLI + n8n-MCP 조합)
 - PostgreSQL 17
-- 실행 환경: Tab S9 proot · Galaxy Book · Colab — 작업 전 실행 대상 선확인
+- 실행 환경: Tab S9 proot · Galaxy Book · Colab · **S26(모바일, Galaxy S26)** — 작업 전 실행 대상 선확인
+- S26(모바일)에서는 개발 빌드/네이티브 설치 불가 — 커넥터 설치, 앱 설정, 웹 UI 확인, 크레덴셜 발급 등 브라우저·앱 기반 작업만 가능. Node/n8n-MCP 설치 등은 Tab S9 proot·Galaxy Book에서 진행
 - proot 환경: 절대경로 + nohup + 로그 필수
 - 외부 노출: cloudflared 기준. localhost 하드코딩 금지
 
