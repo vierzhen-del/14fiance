@@ -4,6 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>📸 계좌·월매수 캡처 앱</title>
+<script>
+  // 저장된 라이트/다크 선택을 스타일시트 파싱 전에 적용해 첫 페인트 깜빡임을 막는다.
+  (function () {
+    try {
+      var t = localStorage.getItem("capture_theme_v1");
+      if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+    } catch (e) {}
+  })();
+</script>
 <link rel="stylesheet" href="../shared/myassets.css">
 <link rel="manifest" href="manifest.json">
 <style>
@@ -13,10 +22,85 @@
 </head>
 <body>
 <div class="wrap">
-  <h1 id="pageTitle">📸 계좌·월매수 캡처 앱</h1>
-  <p class="lede" id="pageUpdated">데이터 업데이트 확인 중…</p>
-  <p class="stat-sub" style="margin:-16px 0 20px;">
-    스크린샷을 업로드하면 AI가 종목·수량·평가금액을 읽어 아래 "내 자산" 폼에 채워줍니다.
+  <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px;">
+    <div>
+      <h1 id="pageTitle">📸 계좌·월매수 캡처 앱</h1>
+      <p class="lede" id="pageUpdated">데이터 업데이트 확인 중…</p>
+    </div>
+    <select id="themeMode" aria-label="화면 밝기 모드" style="min-width:110px;">
+      <option value="system">🌓 시스템</option>
+      <option value="light">☀️ 라이트</option>
+      <option value="dark">🌙 다크</option>
+    </select>
+  </div>
+
+  <section class="page-section" id="sec-myassets">
+    <div class="section-header">
+      <p class="section-title">💼 내 자산</p>
+      <button type="button" class="section-toggle" aria-label="섹션 접기/펴기">▾</button>
+    </div>
+    <div class="section-body">
+      <p class="section-lede">계좌별 보유 종목·수량을 입력하면 평가액·수익률·예상 월배당을 자동 계산합니다. <b>입력한 보유 정보는 이 기기(브라우저)에만 저장되며 서버로 전송되지 않습니다.</b></p>
+      <p class="section-lede">월배당은 기본적으로 최근 1년 배당(TTM)÷12로 추정합니다. 시트/노션 배당기준에 기록된 <b>주당 확정 DPS(원)</b>를 알고 있으면 종목별 "확정 DPS(원/주,선택)" 칸에 그대로 입력하세요 — 월배당이 DPS×수량으로 계산되어 추정치보다 우선 적용되고, 수량을 바꿔도 자동으로 따라갑니다.</p>
+      <p class="stat-sub" id="myAssetVersionBadge" style="display:none; margin:0 0 10px;"></p>
+
+      <div class="card">
+        <div id="myAssetRowsWrap" class="myrows-wrap">
+          <div id="myAssetRows" class="portfolio-rows"></div>
+        </div>
+        <button type="button" id="myRowsToggleBtn" class="btn-action" style="display:none; margin-bottom:10px;"></button>
+        <button type="button" id="addMyAssetRow" class="btn-add">+ 종목 추가</button>
+        <div class="controls" style="margin-top:10px; margin-bottom:6px;">
+          <div class="portfolio-weight-wrap">
+            <input type="number" id="myGoalAmount" class="portfolio-weight" style="width:140px" min="0" step="1" placeholder="목표 금액(만원 단위, 예: 20000=2억원)" aria-label="자산 목표 금액(만원 단위)">
+            <span style="font-size:12.5px; color:var(--text-muted);">₩ 목표</span>
+          </div>
+          <select id="myReturnMode" aria-label="목표 계산 수익률 방식" style="min-width:170px;">
+            <option value="manual" selected>통합 목표수익률(직접입력)</option>
+            <option value="1">종목별 최근 1개월 실적 반영</option>
+            <option value="3">종목별 최근 3개월 실적 반영</option>
+            <option value="6">종목별 최근 6개월 실적 반영</option>
+            <option value="12">종목별 최근 12개월 실적 반영</option>
+          </select>
+          <div class="portfolio-weight-wrap" id="myExpectedReturnWrap">
+            <input type="number" id="myExpectedReturn" class="portfolio-weight" style="width:110px" step="1" placeholder="기대수익률(선택)" aria-label="기대 연 수익률">
+            <span style="font-size:12.5px; color:var(--text-muted);">%/년</span>
+          </div>
+          <div class="portfolio-weight-wrap">
+            <input type="number" id="myLivingExpense" class="portfolio-weight" style="width:140px" min="0" step="10000" placeholder="월 생활비 사용액(선택, 원)" aria-label="월배당 중 생활비로 쓰는 금액">
+            <span style="font-size:12.5px; color:var(--text-muted);">₩/월</span>
+          </div>
+        </div>
+        <p class="stat-sub" id="myReturnModeHint" style="display:none; margin:-4px 0 10px;">종목별 실적 반영을 고르면 위 기대수익률 입력 대신, 보유 종목 각각의 최근 실제 가격 등락률(연환산)을 평가금액 비중으로 가중평균해 목표 도달 계산에 씁니다.</p>
+        <p class="stat-sub" id="myContribLabel" style="display:none; margin:6px 0 4px;">계좌별 월 납입금(선택, 연금저축 등 배당 외 현금 납입이 있는 계좌)</p>
+        <div class="controls" id="myContribRows" style="margin-bottom:6px;"></div>
+        <div class="action-row" id="myAssetActionRow">
+          <button type="button" id="myExportBtn" class="btn-action">📤 내보내기</button>
+          <button type="button" id="myImportBtn" class="btn-action">📂 가져오기</button>
+          <button type="button" id="myClaudeBtn" class="btn-action">🤖 클로드에 복사</button>
+          <select id="myCsvSheet" aria-label="저장할 시트 선택" style="min-width:130px;">
+            <option value="__all__">전체(통합 1개 파일)</option>
+            <option value="종목현황">종목현황만</option>
+            <option value="계좌별 합계">계좌별 합계만</option>
+            <option value="지급시기별">지급시기별만</option>
+            <option value="총계">총계만</option>
+          </select>
+          <button type="button" id="myCsvBtn" class="btn-action">📄 시트 저장</button>
+          <a href="https://app.notion.com/p/3865efd0e46281c49a72c9bbc70dcea0" target="_blank" rel="noopener" class="btn-action" style="text-decoration:none;">📋 배당 기준 SOP 확인</a>
+          <button type="button" id="myIncludeStocksBtn" class="btn-action"></button>
+          <button type="button" id="myLiveQuotesBtn" class="btn-action"></button>
+          <button type="button" id="myLiveQuotesNowBtn" class="btn-action" style="display:none;">⏱️ 지금 확인</button>
+          <span id="myLiveQuotesTimeStatus" class="action-status"></span>
+          <span id="myAssetStatus" class="action-status"></span>
+          <input type="file" id="myImportFile" accept="application/json" style="display:none;">
+        </div>
+        <div id="myAssetResult"></div>
+      </div>
+    </div>
+  </section>
+
+  <p class="stat-sub" style="margin:20px 0;">
+    스크린샷을 업로드하면 AI가 종목·수량·평가금액을 읽어 위 "내 자산" 폼에 채워줍니다.
     자동 파싱이 막히면(API 키 미설정·CORS 등) 붙여넣기 모드로도 동일하게 쓸 수 있습니다.
     (대시보드 계산·렌더 로직은 <code>../shared/myassets*.js</code>를 <a href="../index.html">../index.html</a>과 공유합니다.)
   </p>
@@ -98,71 +182,6 @@
       </div>
     </div>
   </section>
-
-  <section class="page-section" id="sec-myassets">
-    <div class="section-header">
-      <p class="section-title">💼 내 자산</p>
-      <button type="button" class="section-toggle" aria-label="섹션 접기/펴기">▾</button>
-    </div>
-    <div class="section-body">
-      <p class="section-lede">계좌별 보유 종목·수량을 입력하면 평가액·수익률·예상 월배당을 자동 계산합니다. <b>입력한 보유 정보는 이 기기(브라우저)에만 저장되며 서버로 전송되지 않습니다.</b></p>
-      <p class="section-lede">월배당은 기본적으로 최근 1년 배당(TTM)÷12로 추정합니다. 시트/노션 배당기준에 기록된 <b>주당 확정 DPS(원)</b>를 알고 있으면 종목별 "확정 DPS(원/주,선택)" 칸에 그대로 입력하세요 — 월배당이 DPS×수량으로 계산되어 추정치보다 우선 적용되고, 수량을 바꿔도 자동으로 따라갑니다.</p>
-      <p class="stat-sub" id="myAssetVersionBadge" style="display:none; margin:0 0 10px;"></p>
-
-      <div class="card">
-        <div id="myAssetRowsWrap" class="myrows-wrap">
-          <div id="myAssetRows" class="portfolio-rows"></div>
-        </div>
-        <button type="button" id="myRowsToggleBtn" class="btn-action" style="display:none; margin-bottom:10px;"></button>
-        <button type="button" id="addMyAssetRow" class="btn-add">+ 종목 추가</button>
-        <div class="controls" style="margin-top:10px; margin-bottom:6px;">
-          <div class="portfolio-weight-wrap">
-            <input type="number" id="myGoalAmount" class="portfolio-weight" style="width:140px" min="0" step="1" placeholder="목표 금액(만원 단위, 예: 20000=2억원)" aria-label="자산 목표 금액(만원 단위)">
-            <span style="font-size:12.5px; color:var(--text-muted);">₩ 목표</span>
-          </div>
-          <select id="myReturnMode" aria-label="목표 계산 수익률 방식" style="min-width:170px;">
-            <option value="manual" selected>통합 목표수익률(직접입력)</option>
-            <option value="1">종목별 최근 1개월 실적 반영</option>
-            <option value="3">종목별 최근 3개월 실적 반영</option>
-            <option value="6">종목별 최근 6개월 실적 반영</option>
-            <option value="12">종목별 최근 12개월 실적 반영</option>
-          </select>
-          <div class="portfolio-weight-wrap" id="myExpectedReturnWrap">
-            <input type="number" id="myExpectedReturn" class="portfolio-weight" style="width:110px" step="1" placeholder="기대수익률(선택)" aria-label="기대 연 수익률">
-            <span style="font-size:12.5px; color:var(--text-muted);">%/년</span>
-          </div>
-          <div class="portfolio-weight-wrap">
-            <input type="number" id="myLivingExpense" class="portfolio-weight" style="width:140px" min="0" step="10000" placeholder="월 생활비 사용액(선택, 원)" aria-label="월배당 중 생활비로 쓰는 금액">
-            <span style="font-size:12.5px; color:var(--text-muted);">₩/월</span>
-          </div>
-        </div>
-        <p class="stat-sub" id="myReturnModeHint" style="display:none; margin:-4px 0 10px;">종목별 실적 반영을 고르면 위 기대수익률 입력 대신, 보유 종목 각각의 최근 실제 가격 등락률(연환산)을 평가금액 비중으로 가중평균해 목표 도달 계산에 씁니다.</p>
-        <p class="stat-sub" id="myContribLabel" style="display:none; margin:6px 0 4px;">계좌별 월 납입금(선택, 연금저축 등 배당 외 현금 납입이 있는 계좌)</p>
-        <div class="controls" id="myContribRows" style="margin-bottom:6px;"></div>
-        <div class="action-row" id="myAssetActionRow">
-          <button type="button" id="myExportBtn" class="btn-action">📤 내보내기</button>
-          <button type="button" id="myImportBtn" class="btn-action">📂 가져오기</button>
-          <button type="button" id="myClaudeBtn" class="btn-action">🤖 클로드에 복사</button>
-          <select id="myCsvSheet" aria-label="저장할 시트 선택" style="min-width:130px;">
-            <option value="__all__">전체(통합 1개 파일)</option>
-            <option value="종목현황">종목현황만</option>
-            <option value="계좌별 합계">계좌별 합계만</option>
-            <option value="지급시기별">지급시기별만</option>
-            <option value="총계">총계만</option>
-          </select>
-          <button type="button" id="myCsvBtn" class="btn-action">📄 시트 저장</button>
-          <a href="https://app.notion.com/p/3865efd0e46281c49a72c9bbc70dcea0" target="_blank" rel="noopener" class="btn-action" style="text-decoration:none;">📋 배당 기준 SOP 확인</a>
-          <button type="button" id="myIncludeStocksBtn" class="btn-action"></button>
-          <button type="button" id="myLiveQuotesBtn" class="btn-action"></button>
-          <button type="button" id="myLiveQuotesNowBtn" class="btn-action" style="display:none;">⏱️ 지금 확인</button>
-          <span id="myLiveQuotesTimeStatus" class="action-status"></span>
-          <span id="myAssetStatus" class="action-status"></span>
-          <input type="file" id="myImportFile" accept="application/json" style="display:none;">
-        </div>
-        <div id="myAssetResult"></div>
-      </div>
-    </div>
-  </section>
 </div>
 
 <script src="../shared/myassets-utils.js"></script>
@@ -173,6 +192,25 @@
 // capture/index.html 전용 초기화 — index.html의 init() 중 "내 자산" 관련 부분만 재현
 const DATA_DIR = "../data";
 const state = { manifest: null, cache: new Map() };
+
+/* 수동 라이트/다크 선택 — <head> 인라인 스크립트가 첫 페인트 전에 이미 data-theme을
+   적용해두므로(깜빡임 방지), 여기서는 <select> 초기값 동기화와 변경 이벤트만 담당 */
+const THEME_KEY = "capture_theme_v1";
+function initTheme() {
+  const sel = document.getElementById("themeMode");
+  if (!sel) return;
+  sel.value = localStorage.getItem(THEME_KEY) || "system";
+  sel.addEventListener("change", () => {
+    if (sel.value === "system") {
+      document.documentElement.removeAttribute("data-theme");
+      localStorage.removeItem(THEME_KEY);
+    } else {
+      document.documentElement.setAttribute("data-theme", sel.value);
+      localStorage.setItem(THEME_KEY, sel.value);
+    }
+  });
+}
+initTheme();
 
 async function init() {
   try {
