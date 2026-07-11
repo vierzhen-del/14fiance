@@ -143,7 +143,9 @@ async function callVisionAPI(images, promptText) {
 
 /* ---------- 프롬프트·스키마 (이번 세션 수동 전사 패턴을 그대로 명문화) ---------- */
 const ACCOUNT_CAPTURE_PROMPT = `역할: 한국 증권사 앱의 "계좌 잔고" 화면 스크린샷 여러 장을 순서대로 받는다.
+스크린샷은 한 계좌만 있을 수도 있고, 여러 계좌(예: 서로 다른 증권사 탭이나 계좌 전환 화면)가 섞여 있을 수도 있다.
 각 장에서 보이는 모든 보유 종목 행에 대해 다음을 추출:
+- 계좌명(그 장 화면에 보이는 계좌명·탭명 그대로. 여러 계좌가 섞여 있으면 각 홀딩이 어느 계좌 소속인지 반드시 이 필드로 구분할 것. 전체가 한 계좌뿐이면 모든 홀딩에 같은 값을 넣거나 null로 둬도 됨)
 - 종목명(화면 표시 그대로, 축약 없이)
 - 종목코드(화면에 보이면, 없으면 null)
 - 보유수량(정수)
@@ -154,13 +156,13 @@ const ACCOUNT_CAPTURE_PROMPT = `역할: 한국 증권사 앱의 "계좌 잔고" 
 스크린샷에 없는 값은 절대 추정하지 말고 null로 둘 것.
 같은 종목이 여러 장에 걸쳐 반복 표시되면(스크롤 캡처) 중복 제거하지 말고 각 장에서 본 그대로 보고할 것.
 출력은 아래 JSON만, 설명·마크다운 코드블록 없이 그대로:
-{"account_label":"화면에 보이는 계좌명(없으면 null)","page_count":이미지수,"holdings":[{"page":1,"name":"...","symbol":"...","qty":0,"avgPrice":null,"currentPrice":null,"evalAmount":0}],"reported_total":숫자 또는 null}`;
+{"account_label":"화면에 보이는 대표 계좌명(없으면 null, 여러 계좌가 섞여 있으면 첫 계좌명)","page_count":이미지수,"holdings":[{"page":1,"account":"이 홀딩의 계좌명(섞여 있을 때만 채우고, 한 계좌뿐이면 null 가능)","name":"...","symbol":"...","qty":0,"avgPrice":null,"currentPrice":null,"evalAmount":0}],"reported_total":숫자 또는 null}`;
 
-const BUY_PLAN_CAPTURE_PROMPT = `역할: 한국 ETF모으기(월자동매수) 현황 화면 스크린샷을 받는다.
-각 행에서 종목명, 종목코드(있으면), 1회 매수수량, 매수주기(매월/매주/매일 중 화면 표기 그대로), 매수일(있으면), 다음 매수 예정일(있으면)을 추출.
+const BUY_PLAN_CAPTURE_PROMPT = `역할: 한국 ETF모으기(월자동매수) 현황 화면 스크린샷을 받는다. 여러 계좌의 화면이 섞여 있을 수 있다.
+각 행에서 계좌명(그 장 화면에 보이는 계좌명·탭명 그대로, 여러 계좌가 섞여 있으면 반드시 구분할 것), 종목명, 종목코드(있으면), 1회 매수수량, 매수주기(매월/매주/매일 중 화면 표기 그대로), 매수일(있으면), 다음 매수 예정일(있으면)을 추출.
 화면에 월 총 매수금액이 보이면 별도 필드로 추출. 없는 값은 null.
 출력은 아래 JSON만, 설명·마크다운 코드블록 없이 그대로:
-{"holdings":[{"name":"...","symbol":"...","buyQtyPerTime":0,"buyFreq":"매월","buyDay":null,"nextBuyDate":null}],"reported_total_monthly_amount":숫자 또는 null}`;
+{"holdings":[{"account":"이 행의 계좌명(섞여 있을 때만 채우고, 한 계좌뿐이면 null 가능)","name":"...","symbol":"...","buyQtyPerTime":0,"buyFreq":"매월","buyDay":null,"nextBuyDate":null}],"reported_total_monthly_amount":숫자 또는 null}`;
 
 /* AI 응답에서 ```json 코드펜스가 섞여 와도 안전하게 JSON만 추출 */
 function parseAIJsonResponse(text) {
@@ -188,6 +190,24 @@ function matchSymbolByName(name, symbolHint) {
   return null;
 }
 
+/* ---------- A3f: 계좌명(원문 텍스트) → 앱 정식 계좌 목록(ACCOUNT_TYPES) 매칭 ----------
+   폴더 하나에 여러 계좌 스크린샷이 섞여 있을 때, AI가 읽은 계좌명 문자열을 정식 계좌명과
+   자동으로 이어붙여 각 행의 계좌 선택을 미리 채워준다(수동 재선택 부담을 줄임). 매칭 안
+   되면 null을 반환해 폼에서는 그냥 "계좌 미지정"으로 남고 사용자가 직접 고르면 된다 —
+   틀린 계좌를 추측해서 채우지 않는다(더미데이터 오염 방지 원칙). */
+function matchAccountByLabel(label) {
+  if (!label) return null;
+  // "KB증권 ISA" 같은 화면 원문과 "KB_ISA" 같은 정식 계좌명을 비교하려면 "증권"·공백·밑줄을
+  // 전부 지우고 비교해야 한다(그대로 두면 항상 매칭 실패) — matchSymbolByName의 종목명 정규화와
+  // 같은 목적, 계좌명 특성에 맞게 지우는 문자만 다름.
+  const norm = (s) => (s || "").replace(/증권|\s|_/g, "").toLowerCase();
+  const target = norm(label);
+  const exact = ACCOUNT_TYPES.find((a) => norm(a) === target);
+  if (exact) return exact;
+  const loose = ACCOUNT_TYPES.find((a) => norm(a).includes(target) || target.includes(norm(a)));
+  return loose || null;
+}
+
 /* ---------- 교차검증 엔진 (이번 세션에서 실제로 오류를 잡아낸 패턴 재구현) ----------
    1) 행 단위: qty×currentPrice ≈ evalAmount (오차 1% 초과 시 경고)
    2) 합계 대조: ΣevalAmount vs reported_total (오차 0.5% 초과 시 "누락 종목 가능성" 경고)
@@ -202,7 +222,10 @@ function validateAccountCapture(parsed) {
     }
     const match = matchSymbolByName(h.name, h.symbol);
     if (!match) issues.push("수집 목록에 없는 종목 — 코드 세션에 추가 요청 필요");
-    return { ...h, issues, matchedSymbol: match ? match.symbol : null, matchedName: match ? match.name : null };
+    // A3f: 폴더에 여러 계좌가 섞여 있으면 행별 account, 아니면 최상위 account_label을 계좌 원문으로 사용
+    const rawAccountLabel = h.account || parsed.account_label || null;
+    const matchedAccount = matchAccountByLabel(rawAccountLabel);
+    return { ...h, issues, matchedSymbol: match ? match.symbol : null, matchedName: match ? match.name : null, rawAccountLabel, matchedAccount };
   });
   const sumEval = holdings.reduce((a, h) => a + (h.evalAmount || 0), 0);
   let totalCheck = null;
@@ -219,7 +242,9 @@ function validateBuyPlanCapture(parsed) {
     const issues = [];
     const match = matchSymbolByName(h.name, h.symbol);
     if (!match) issues.push("수집 목록에 없는 종목 — 코드 세션에 추가 요청 필요");
-    return { ...h, issues, matchedSymbol: match ? match.symbol : null, matchedName: match ? match.name : null };
+    const rawAccountLabel = h.account || null;
+    const matchedAccount = matchAccountByLabel(rawAccountLabel);
+    return { ...h, issues, matchedSymbol: match ? match.symbol : null, matchedName: match ? match.name : null, rawAccountLabel, matchedAccount };
   });
   return { holdings, reportedTotal: parsed.reported_total_monthly_amount ?? null };
 }
