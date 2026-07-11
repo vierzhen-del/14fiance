@@ -16,7 +16,23 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // 개인 사이드로드 앱 — CI가 매번 새 러너에서 빌드하므로, 서명키를 레포에 고정 커밋해두지
+    // 않으면(Gradle 기본 동작: ~/.android/debug.keystore가 없으면 매번 새로 무작위 생성) 빌드마다
+    // 서명이 달라져 안드로이드가 "기존 앱과 충돌"로 설치를 거부한다 — 결국 매번 기존 앱을
+    // 삭제(=localStorage에 저장된 API 키 등 데이터 초기화)해야만 새 APK를 설치할 수 있었다.
+    // 이 debug.keystore를 고정해 앞으로는 새 빌드를 기존 앱 "업데이트"로 설치할 수 있게 한다.
+    signingConfigs {
+        debug {
+            storeFile file('debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+    }
     buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
