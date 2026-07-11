@@ -90,7 +90,12 @@ async function pingClaudeAPI(apiKey) {
     },
     body: JSON.stringify({ model: CAPTURE_CLAUDE_MODEL_DEFAULT, max_tokens: 1, messages: [{ role: "user", content: "ping" }] }),
   });
-  if (!resp.ok) { const err = new Error(`HTTP ${resp.status}`); err.status = resp.status; throw err; }
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => "");
+    const err = new Error(errText.slice(0, 200));
+    err.status = resp.status;
+    throw err;
+  }
   return true;
 }
 
@@ -101,18 +106,27 @@ async function pingGeminiAPI(apiKey) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ contents: [{ parts: [{ text: "ping" }] }] }),
   });
-  if (!resp.ok) { const err = new Error(`HTTP ${resp.status}`); err.status = resp.status; throw err; }
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => "");
+    const err = new Error(errText.slice(0, 200));
+    err.status = resp.status;
+    throw err;
+  }
   return true;
 }
 
+/* 상태코드로 대략적인 원인을 짐작만 하지 않고, API가 돌려준 실제 오류 본문(errText)을 함께
+   보여준다 — 특히 400은 "모델명 오류"일 수도, 완전히 다른 요청 형식 문제일 수도 있어
+   짐작만으로는 정확한 진단이 안 된다(실제로 이 문구 때문에 원인 파악이 늦어진 사례). */
 function friendlyPingErrorText(providerLabel, err) {
   const status = err && err.status;
   const reason = status === 401 || status === 403 ? "키가 잘못됐거나 권한이 없습니다"
     : status === 429 ? "요청이 너무 많습니다(잠시 후 재시도)"
-    : status === 400 ? "요청 형식 오류(모델명 확인 필요)"
+    : status === 400 ? "요청 형식 오류"
     : status ? `오류(HTTP ${status})`
     : "네트워크 오류(연결 확인 필요)";
-  return `❌ ${providerLabel} ${reason}`;
+  const detail = err && err.message ? ` — ${err.message}` : "";
+  return `❌ ${providerLabel} ${reason}${detail}`;
 }
 
 /* 설정탭에서 선택한 provider(기본)로 파싱하되, 반대쪽 provider 키도 저장돼 있으면
