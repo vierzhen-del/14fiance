@@ -703,7 +703,7 @@ function changelogPeriodKey(ts, granularity) {
 }
 
 const CHANGE_TYPE_LABEL = { added: "🆕 신규", removed: "🗑️ 삭제", "qty-changed": "🔁 수량변경" };
-const CHANGE_SOURCE_LABEL = { "capture-account": "📸 계좌 캡처", "capture-buyplan": "📈 월매수 캡처", import: "📂 가져오기" };
+const CHANGE_SOURCE_LABEL = { "capture-account": "📸 계좌 캡처", "capture-buyplan": "📈 월매수 캡처", "capture-account-reset": "🆕 완전 신규 업데이트", import: "📂 가져오기" };
 
 function buildChangelogHTML(granularity) {
   const log = loadAssetChangelog();
