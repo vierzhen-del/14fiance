@@ -84,7 +84,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - n8n-MCP 서버 연결 (`npx n8n-mcp` + n8n API Key, cloudflared URL 헬스체크 선행)
 - karpathy-skills 설치: `curl -o ~/.claude/CLAUDE.md https://raw.githubusercontent.com/forrestchang/andrej-karpathy-skills/main/CLAUDE.md` (Harness 4원칙 전역 적용)
 
+## 명령어
+
+- SENTINEL 정적 검사 (배포 전 필수): `node scripts/sentinel/check.mjs n8n/workflows/*.json` — 위반 시 exit 1
+- 테스트: `node --test scripts/sentinel/check.test.mjs`
+
 ## 예정 작업 — 기타
 
-- Notion DB → n8n → Obsidian vault 동기화 워크플로우 설계 (Fable 5 담당)
+- Notion→Obsidian 동기화: 설계+선구현 완료 (2026-07-10, `n8n/` 참조) — Tab S9에서 placeholder 치환 후 임포트, 절차는 `n8n/README.md`
+- SENTINEL 검증 자동화: 정적 검사 선구현 완료 (`scripts/sentinel/`) — 동적 검사(Playwright MCP)는 Tab S9 설치 후 연결
 - 한국 페르소나(Nemotron-Personas-Korea)는 CLAUDE.md 불통합 확정 — PERSONA: 커맨드/n8n system prompt 주입으로만 활용 (설계: 노션 v5.8 하단)
