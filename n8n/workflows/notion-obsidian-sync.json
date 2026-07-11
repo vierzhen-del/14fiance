@@ -1,0 +1,164 @@
+{
+  "name": "Notion → Obsidian Sync (Phase 1)",
+  "nodes": [
+    {
+      "id": "schedule-trigger",
+      "name": "Every Hour",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "notion-get-pages",
+      "name": "Get Notion Pages",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [220, 0],
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "REPLACE_ME_NOTION_DATABASE_ID"
+        },
+        "returnAll": true,
+        "options": {}
+      },
+      "credentials": {
+        "notionApi": {
+          "name": "Notion API (REPLACE_ME)"
+        }
+      }
+    },
+    {
+      "id": "build-markdown",
+      "name": "Build Markdown",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 0],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Phase 1: properties-only markdown. Phase 2 (block content) is added after live verification on Tab S9.\nconst crypto = require('crypto');\n\nfunction slugify(t) {\n  const s = String(t || 'untitled')\n    .normalize('NFKC')\n    .replace(/[\\\\/:*?\"<>|#^\\[\\]{}.]/g, ' ')\n    .trim()\n    .replace(/\\s+/g, '-')\n    .slice(0, 80)\n    .replace(/^-+|-+$/g, '');\n  return s || 'untitled';\n}\n\nconst out = [];\nfor (const item of items) {\n  const j = item.json;\n  const title = j.name || j.title || j.id;\n  const slug = slugify(title);\n  const props = j.properties || {};\n  const tags = [];\n  for (const v of Object.values(props)) {\n    if (v && v.type === 'multi_select' && Array.isArray(v.multi_select)) {\n      for (const t of v.multi_select) tags.push(t.name);\n    }\n  }\n  const updated = j.last_edited_time || '';\n  const lines = [\n    '---',\n    `title: \"${String(title).replace(/\"/g, \"'\")}\"`,\n    `notion_id: ${j.id}`,\n    `url: ${j.url || ''}`,\n    `tags: [${tags.map((t) => `\"${t}\"`).join(', ')}]`,\n    `updated: ${updated}`,\n    '---',\n    '',\n    `# ${title}`,\n    '',\n    `> Notion 원본: ${j.url || j.id}`,\n    ''\n  ];\n  const content = lines.join('\\n');\n  const hash = crypto.createHash('sha256').update(content).digest('hex');\n  out.push({ json: { page_id: j.id, slug, content, hash, last_edited: updated } });\n}\nreturn out;"
+      }
+    },
+    {
+      "id": "pg-upsert-diff",
+      "name": "Upsert & Diff (PG)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [660, 0],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO sync_state (page_id, last_edited, content_hash, synced_at)\nVALUES ($1, NULLIF($2, '')::timestamptz, $3, now())\nON CONFLICT (page_id) DO UPDATE\nSET last_edited = EXCLUDED.last_edited,\n    content_hash = EXCLUDED.content_hash,\n    synced_at = now()\nWHERE sync_state.content_hash IS DISTINCT FROM EXCLUDED.content_hash\nRETURNING page_id, $4::text AS slug, $5::text AS content",
+        "options": {
+          "queryReplacement": "={{ [$json.page_id, $json.last_edited, $json.hash, $json.slug, $json.content] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "name": "Postgres 17 (REPLACE_ME)"
+        }
+      }
+    },
+    {
+      "id": "convert-to-file",
+      "name": "Markdown → File",
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [880, 0],
+      "parameters": {
+        "operation": "toText",
+        "sourceProperty": "content",
+        "options": {
+          "fileName": "={{ $json.slug }}.md",
+          "encoding": "utf8"
+        }
+      }
+    },
+    {
+      "id": "write-vault-file",
+      "name": "Write to Vault",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [1100, 0],
+      "parameters": {
+        "operation": "write",
+        "fileName": "=REPLACE_ME_VAULT_PATH/notion-sync/{{ $('Upsert & Diff (PG)').item.json.slug }}.md",
+        "dataPropertyName": "data",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Every Hour": {
+      "main": [
+        [
+          {
+            "node": "Get Notion Pages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Notion Pages": {
+      "main": [
+        [
+          {
+            "node": "Build Markdown",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Markdown": {
+      "main": [
+        [
+          {
+            "node": "Upsert & Diff (PG)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert & Diff (PG)": {
+      "main": [
+        [
+          {
+            "node": "Markdown → File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Markdown → File": {
+      "main": [
+        [
+          {
+            "node": "Write to Vault",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}

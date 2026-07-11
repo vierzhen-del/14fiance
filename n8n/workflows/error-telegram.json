@@ -1,0 +1,47 @@
+{
+  "name": "Error → Telegram Alert",
+  "nodes": [
+    {
+      "id": "error-trigger",
+      "name": "On Workflow Error",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "parameters": {}
+    },
+    {
+      "id": "telegram-alert",
+      "name": "Telegram Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [220, 0],
+      "parameters": {
+        "chatId": "REPLACE_ME_TELEGRAM_CHAT_ID",
+        "text": "=🚨 n8n 워크플로우 실패\n워크플로우: {{ $json.workflow.name }}\n노드: {{ $json.execution.lastNodeExecuted }}\n에러: {{ $json.execution.error.message }}\n다음 행동: n8n UI 실행 로그 확인 후 재실행",
+        "additionalFields": {}
+      },
+      "credentials": {
+        "telegramApi": {
+          "name": "Telegram Bot (REPLACE_ME)"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "On Workflow Error": {
+      "main": [
+        [
+          {
+            "node": "Telegram Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
