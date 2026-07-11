@@ -68,7 +68,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 관련 저장소
 
-- [vierzhen-del/githubinstall](https://github.com/vierzhen-del/githubinstall) — 설치 참조 repo (현재 placeholder 상태, 설치 명령어·GitHub 링크 모음 예정)
+- [vierzhen-del/githubinstall](https://github.com/vierzhen-del/githubinstall) — 설치 관리 repo (public, `claude/install-docs` 브랜치): 설치완료/향후설치/보류 대시보드 + 환경별 설치 명령어. 설치 작업 전 여기부터 확인
 
 ## MCP 커넥터 현황 (2026-07-10 확인)
 
@@ -83,6 +83,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Playwright MCP 설치 (agent-browser 대체, self-hosted)
 - n8n-MCP 서버 연결 (`npx n8n-mcp` + n8n API Key, cloudflared URL 헬스체크 선행)
 - karpathy-skills 설치: `curl -o ~/.claude/CLAUDE.md https://raw.githubusercontent.com/forrestchang/andrej-karpathy-skills/main/CLAUDE.md` (Harness 4원칙 전역 적용)
+- 전체 설치 우선순위·명령어는 githubinstall README 참조 (nonstop-agent·claude-token-lens 등 신규 계획 포함)
 
 ## 명령어
 
