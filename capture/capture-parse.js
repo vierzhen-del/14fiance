@@ -77,11 +77,68 @@ async function callGeminiVision(images, promptText, apiKey, model) {
   return ((data.candidates || [])[0]?.content?.parts || []).map((p) => p.text || "").join("");
 }
 
+/* 이미지 없이 텍스트 1건만 보내는 최소비용 호출 — "연결 테스트" 버튼 전용(A3d).
+   실제 파싱 비용(이미지 인코딩·토큰)을 쓰지 않고 키·엔드포인트·모델명이 유효한지만 확인한다. */
+async function pingClaudeAPI(apiKey) {
+  const resp = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true",
+    },
+    body: JSON.stringify({ model: CAPTURE_CLAUDE_MODEL_DEFAULT, max_tokens: 1, messages: [{ role: "user", content: "ping" }] }),
+  });
+  if (!resp.ok) { const err = new Error(`HTTP ${resp.status}`); err.status = resp.status; throw err; }
+  return true;
+}
+
+async function pingGeminiAPI(apiKey) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${CAPTURE_GEMINI_MODEL_DEFAULT}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ contents: [{ parts: [{ text: "ping" }] }] }),
+  });
+  if (!resp.ok) { const err = new Error(`HTTP ${resp.status}`); err.status = resp.status; throw err; }
+  return true;
+}
+
+function friendlyPingErrorText(providerLabel, err) {
+  const status = err && err.status;
+  const reason = status === 401 || status === 403 ? "키가 잘못됐거나 권한이 없습니다"
+    : status === 429 ? "요청이 너무 많습니다(잠시 후 재시도)"
+    : status === 400 ? "요청 형식 오류(모델명 확인 필요)"
+    : status ? `오류(HTTP ${status})`
+    : "네트워크 오류(연결 확인 필요)";
+  return `❌ ${providerLabel} ${reason}`;
+}
+
+/* 설정탭에서 선택한 provider(기본)로 파싱하되, 반대쪽 provider 키도 저장돼 있으면
+   같은 이미지를 동시에 보내 결과를 대조한다(A3d 듀얼 비전 교차검증) — 키가 하나뿐이면
+   기존과 동일하게 단일 호출(회귀 없음). 비용: 양쪽 키가 있을 때만 API 호출이 2배가 됨. */
 async function callVisionAPI(images, promptText) {
   const provider = localStorage.getItem(CAPTURE_AI_PROVIDER_KEY) || "claude";
-  const key = localStorage.getItem(provider === "gemini" ? CAPTURE_GEMINI_KEY : CAPTURE_CLAUDE_KEY);
-  if (!key) throw new Error(`${provider === "gemini" ? "Gemini" : "Claude"} API 키가 설정탭에 입력되어 있지 않습니다.`);
-  return provider === "gemini" ? callGeminiVision(images, promptText, key) : callClaudeVision(images, promptText, key);
+  const claudeKey = localStorage.getItem(CAPTURE_CLAUDE_KEY);
+  const geminiKey = localStorage.getItem(CAPTURE_GEMINI_KEY);
+  const primaryKey = provider === "gemini" ? geminiKey : claudeKey;
+  if (!primaryKey) throw new Error(`${provider === "gemini" ? "Gemini" : "Claude"} API 키가 설정탭에 입력되어 있지 않습니다.`);
+
+  const callPrimary = () => (provider === "gemini" ? callGeminiVision(images, promptText, primaryKey) : callClaudeVision(images, promptText, primaryKey));
+  const otherKey = provider === "gemini" ? claudeKey : geminiKey;
+  if (!otherKey) return { primaryText: await callPrimary(), crossText: null, crossProvider: null, crossError: null };
+
+  const crossProvider = provider === "gemini" ? "claude" : "gemini";
+  const callOther = () => (crossProvider === "gemini" ? callGeminiVision(images, promptText, otherKey) : callClaudeVision(images, promptText, otherKey));
+  const [primaryResult, otherResult] = await Promise.allSettled([callPrimary(), callOther()]);
+  if (primaryResult.status === "rejected") throw primaryResult.reason;
+  return {
+    primaryText: primaryResult.value,
+    crossText: otherResult.status === "fulfilled" ? otherResult.value : null,
+    crossProvider,
+    crossError: otherResult.status === "rejected" ? otherResult.reason.message : null,
+  };
 }
 
 /* ---------- 프롬프트·스키마 (이번 세션 수동 전사 패턴을 그대로 명문화) ---------- */
@@ -165,6 +222,34 @@ function validateBuyPlanCapture(parsed) {
     return { ...h, issues, matchedSymbol: match ? match.symbol : null, matchedName: match ? match.name : null };
   });
   return { holdings, reportedTotal: parsed.reported_total_monthly_amount ?? null };
+}
+
+/* ---------- A3d: 듀얼 AI 교차검증 결과를 primary 파싱 결과에 덧붙인다 ----------
+   qtyField는 계좌캡처="qty", 월매수캡처="buyQtyPerTime". 상대 provider가 같은
+   종목을 다른 수량으로 읽었으면 "mismatch", 아예 못 찾았으면 "missing" — 두 경우
+   모두 h.crossCheck에 기록해 화면에서 채우기 체크박스를 기본 해제하는 근거로 쓴다. */
+function applyCrossCheck(validated, crossValidated, crossProvider, qtyField) {
+  const crossBySymbol = new Map();
+  for (const h of crossValidated.holdings) {
+    if (h.matchedSymbol) crossBySymbol.set(h.matchedSymbol, h);
+  }
+  for (const h of validated.holdings) {
+    if (!h.matchedSymbol) continue;
+    const other = crossBySymbol.get(h.matchedSymbol);
+    if (!other) { h.crossCheck = { status: "missing", crossProvider }; continue; }
+    const qtyMatch = h[qtyField] === other[qtyField];
+    h.crossCheck = { status: qtyMatch ? "match" : "mismatch", crossProvider, otherQty: other[qtyField] };
+  }
+}
+
+const CROSS_CHECK_PROVIDER_LABEL = { claude: "Claude", gemini: "Gemini" };
+
+function crossCheckBadgeHTML(crossCheck) {
+  if (!crossCheck) return "";
+  const label = CROSS_CHECK_PROVIDER_LABEL[crossCheck.crossProvider] || crossCheck.crossProvider;
+  if (crossCheck.status === "match") return `<span style="color:var(--good); font-size:11px;">✅ ${label} 일치</span>`;
+  if (crossCheck.status === "missing") return `<span style="color:var(--critical); font-size:11px;">⚠️ ${label}엔 없음</span>`;
+  return `<span style="color:var(--critical); font-size:11px;">⚠️ ${label} 불일치(${crossCheck.otherQty})</span>`;
 }
 
 /* ---------- 노션 SOP 갱신용 요약 텍스트 (앱은 이 텍스트만 만들고, 실제 노션 반영은
