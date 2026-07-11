@@ -39,4 +39,4 @@
 매시간 → Notion DB 전체 페이지 조회 → Markdown(YAML front matter) 생성 + sha256 → PG `sync_state`에 조건부 upsert(해시가 다를 때만 row 반환) → **변경된 페이지만** `vault/notion-sync/<slug>.md`로 기록. 삭제는 하지 않는다(파괴적 작업 금지 — Notion에서 삭제된 페이지의 파일 정리는 수동 또는 v2의 `_trash/` 이동으로).
 
 - Phase 1(현재): properties만 → front matter + 원본 링크
-- Phase 2(Tab S9 검증 후): 블록 본문 → Markdown 변환 추가 (`Build Markdown` 노드 확장)
+- Phase 2: **설계 확정** (2026-07-10, 노션 v5.8 하단 "🧠 Phase 2 설계 확정" 참조) — 블록 본문→Markdown(HTTP+notionApi, depth 1) + OKF 폴더 구조(카테고리 폴더 + index.md 자동 생성, sync_state v2). Phase 1이 Tab S9 수동 검증을 통과한 뒤 구현 착수
