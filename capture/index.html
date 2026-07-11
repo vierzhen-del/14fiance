@@ -135,9 +135,12 @@
         <button type="button" id="captureSaveKeysBtn" class="btn-action">💾 키 저장</button>
         <button type="button" id="captureClearKeysBtn" class="btn-action">🗑️ 키 삭제</button>
         <button type="button" id="captureTestConnectionBtn" class="btn-action">🔌 연결 테스트</button>
+        <button type="button" id="captureSettingsImportBtn" class="btn-action">📂 설정 불러오기</button>
+        <input type="file" id="captureSettingsImportFile" accept="application/json" style="display:none;">
         <span id="captureKeysStatus" class="action-status"></span>
       </div>
       <p class="stat-sub">연결 테스트는 이미지 없이 최소 호출 1건으로 키·모델이 유효한지만 확인합니다(파싱 비용과 무관). Claude·Gemini 키를 둘 다 입력해두면, 실제 계좌·월매수 캡처 시 두 AI가 같은 스크린샷을 각각 읽어 결과를 자동으로 대조합니다(교차검증) — 종목별 수량이 서로 다르게 나오면 "채우기" 체크가 기본 해제되어 직접 확인 후에만 반영됩니다.</p>
+      <p class="stat-sub">"💾 키 저장"을 누르면 이 기기 저장(localStorage)과 별개로 설정 파일(<code>myassets-settings.json</code>)도 자동으로 다운로드됩니다 — 앱을 완전히 삭제 후 재설치하면 기기 저장 내용도 함께 지워지므로, 재설치 후엔 이 파일을 "📂 설정 불러오기"로 다시 불러와야 합니다. <b>이 파일에는 API 키 원문이 그대로 들어있으니 다른 사람과 공유하지 마세요.</b></p>
 
       <p class="section-lede" style="margin-top:16px;">"노션 SOP 요약 복사" 버튼으로 만든 요약을 어느 AI 세션에 붙여넣을 계획인지 선택하세요 — 앱이 그 AI를 대신 호출하지는 않고, 문구만 맞춰줍니다(예: "클로드 코드 세션에 붙여넣어…").</p>
       <div class="controls">
@@ -386,7 +389,36 @@ function initCapture() {
     localStorage.setItem(CAPTURE_AI_PROVIDER_KEY, document.getElementById("captureAiProvider").value);
     localStorage.setItem(CAPTURE_CLAUDE_KEY, document.getElementById("captureClaudeKey").value.trim());
     localStorage.setItem(CAPTURE_GEMINI_KEY, document.getElementById("captureGeminiKey").value.trim());
-    flashStatus("captureKeysStatus", "저장됨 — 이 기기에만 보관됩니다");
+    // 기기 저장(localStorage)은 앱을 완전 삭제하면 함께 사라진다 — 재설치 후에도 복원할 수 있도록
+    // 같은 시점에 설정 파일도 내려받는다("📂 설정 불러오기"로 되돌릴 수 있음).
+    const settings = {
+      captureAiProvider: document.getElementById("captureAiProvider").value,
+      captureClaudeKey: document.getElementById("captureClaudeKey").value.trim(),
+      captureGeminiKey: document.getElementById("captureGeminiKey").value.trim(),
+      sopAiTarget: document.getElementById("sopAiTarget").value,
+    };
+    downloadBlob(new Blob([JSON.stringify(settings, null, 2)], { type: "application/json" }), "myassets-settings.json");
+    flashStatus("captureKeysStatus", "저장됨(이 기기) + 설정 파일 다운로드됨 — 재설치 후 이 파일로 복원하세요");
+  });
+  document.getElementById("captureSettingsImportBtn").addEventListener("click", () => document.getElementById("captureSettingsImportFile").click());
+  document.getElementById("captureSettingsImportFile").addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const settings = JSON.parse(reader.result);
+        if (settings.captureAiProvider) { localStorage.setItem(CAPTURE_AI_PROVIDER_KEY, settings.captureAiProvider); document.getElementById("captureAiProvider").value = settings.captureAiProvider; }
+        if (settings.captureClaudeKey) { localStorage.setItem(CAPTURE_CLAUDE_KEY, settings.captureClaudeKey); document.getElementById("captureClaudeKey").value = settings.captureClaudeKey; }
+        if (settings.captureGeminiKey) { localStorage.setItem(CAPTURE_GEMINI_KEY, settings.captureGeminiKey); document.getElementById("captureGeminiKey").value = settings.captureGeminiKey; }
+        if (settings.sopAiTarget) { localStorage.setItem(CAPTURE_SOP_TARGET_KEY, settings.sopAiTarget); document.getElementById("sopAiTarget").value = settings.sopAiTarget; }
+        flashStatus("captureKeysStatus", "설정 불러오기 완료 ✓");
+      } catch (err) {
+        flashStatus("captureKeysStatus", "설정 파일을 읽지 못했습니다: " + err.message);
+      }
+      e.target.value = "";
+    };
+    reader.readAsText(file);
   });
   document.getElementById("captureClearKeysBtn").addEventListener("click", () => {
     localStorage.removeItem(CAPTURE_CLAUDE_KEY);
