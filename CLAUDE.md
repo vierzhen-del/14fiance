@@ -87,4 +87,4 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## 예정 작업 — 기타
 
 - Notion DB → n8n → Obsidian vault 동기화 워크플로우 설계 (Fable 5 담당)
-- 노션 "MCP 설치 현황" 표의 agent-browser 항목 정정 필요 (실재하지 않는 커넥터명)
+- 한국 페르소나(Nemotron-Personas-Korea)는 CLAUDE.md 불통합 확정 — PERSONA: 커맨드/n8n system prompt 주입으로만 활용 (설계: 노션 v5.8 하단)
