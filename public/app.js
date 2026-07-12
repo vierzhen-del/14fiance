@@ -22,6 +22,7 @@ function createTile(sym) {
     </div>
     <div class="price waiting">시세 대기 중…</div>
     <div class="delta flat"></div>
+    <div class="position"></div>
     <canvas height="44"></canvas>`;
   grid.appendChild(el);
   const tile = {
@@ -29,6 +30,7 @@ function createTile(sym) {
     priceEl: el.querySelector(".price"),
     deltaEl: el.querySelector(".delta"),
     sourceEl: el.querySelector(".source"),
+    positionEl: el.querySelector(".position"),
     canvas: el.querySelector("canvas"),
     currency: sym.currency,
     isIndex: Boolean(sym.isIndex),
@@ -121,6 +123,56 @@ function attachSparklineHover(tile) {
   });
 }
 
+// ---- 포트폴리오 요약 바 + 타일 손익 ----
+const pfEl = document.getElementById("portfolio");
+
+function applyPortfolio(summary) {
+  if (!summary) return;
+
+  const sign = (v) => (v >= 0 ? "+" : "−");
+  const cls = (v) => (v > 0 ? "up" : v < 0 ? "down" : "flat");
+  // 통화별 자릿수: KRW 정수, USD 소수 2자리
+  const nfCur = (cur) =>
+    new Intl.NumberFormat("ko-KR", { maximumFractionDigits: cur === "KRW" ? 0 : 2 });
+
+  pfEl.hidden = false;
+  pfEl.innerHTML = Object.entries(summary.totals)
+    .map(([cur, t]) => {
+      const nf = nfCur(cur);
+      const pnlTxt =
+        t.pnl == null
+          ? ""
+          : `<span class="delta ${cls(t.pnl)}">${sign(t.pnl)}${nf.format(Math.abs(t.pnl))} (${sign(t.pnl)}${Math.abs(t.pnlPct ?? 0).toFixed(2)}%)</span>`;
+      return `<span class="pf-chunk"><span class="pf-label">${cur} 평가</span> <strong>${nf.format(t.value)}</strong> ${pnlTxt}</span>`;
+    })
+    .join("");
+
+  for (const p of summary.positions) {
+    const tile = tiles.get(p.id);
+    if (!tile) continue;
+    if (p.pnl == null) {
+      tile.positionEl.textContent = `보유 ${p.quantity} · 시세 대기`;
+      continue;
+    }
+    const nf = nfCur(p.currency);
+    tile.positionEl.innerHTML = `보유 ${p.quantity} · 손익 <span class="delta ${cls(p.pnl)}">${sign(p.pnl)}${nf.format(Math.abs(p.pnl))} (${sign(p.pnl)}${Math.abs(p.pnlPct).toFixed(2)}%)</span>`;
+  }
+}
+
+// ---- 얼럿 패널 ----
+const alertsEl = document.getElementById("alerts");
+const alertListEl = document.getElementById("alert-list");
+const ALERTS_MAX = 20;
+
+function applyAlert(alert, append = false) {
+  alertsEl.hidden = false;
+  const li = document.createElement("li");
+  const time = new Date(alert.ts).toLocaleTimeString("ko-KR");
+  li.innerHTML = `<span class="alert-time">${time}</span> <strong>${alert.name}</strong> ${alert.message}${alert.note ? ` <span class="alert-note">· ${alert.note}</span>` : ""}`;
+  append ? alertListEl.appendChild(li) : alertListEl.prepend(li);
+  while (alertListEl.children.length > ALERTS_MAX) alertListEl.lastChild.remove();
+}
+
 function connect() {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   const ws = new WebSocket(`${proto}://${location.host}/ws`);
@@ -130,8 +182,13 @@ function connect() {
   };
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
-    if (msg.type === "snapshot") msg.quotes.forEach(applyQuote);
-    else if (msg.type === "quote") applyQuote(msg.quote);
+    if (msg.type === "snapshot") {
+      msg.quotes.forEach(applyQuote);
+      (msg.alerts ?? []).forEach((a) => applyAlert(a, true)); // 최신순 배열 → 순서 유지
+      applyPortfolio(msg.portfolio);
+    } else if (msg.type === "quote") applyQuote(msg.quote);
+    else if (msg.type === "alert") applyAlert(msg.alert);
+    else if (msg.type === "portfolio") applyPortfolio(msg.summary);
   };
   ws.onclose = () => {
     connEl.dataset.state = "closed";

@@ -5,6 +5,8 @@ export class Broadcaster {
   constructor() {
     this.latest = new Map(); // id -> quote
     this.wss = null;
+    // index.js에서 주입 — 신규 접속자 스냅샷에 얼럿/포트폴리오 상태를 포함시키기 위함
+    this.snapshotExtras = () => ({});
   }
 
   attach(httpServer) {
@@ -12,18 +14,27 @@ export class Broadcaster {
     this.wss.on("connection", (ws) => {
       // 신규 접속자에게 현재 스냅샷 전송
       ws.send(
-        JSON.stringify({ type: "snapshot", quotes: [...this.latest.values()] })
+        JSON.stringify({
+          type: "snapshot",
+          quotes: [...this.latest.values()],
+          ...this.snapshotExtras(),
+        })
       );
     });
+  }
+
+  // 임의 메시지를 접속 클라이언트 전체에 전송
+  broadcast(obj) {
+    if (!this.wss) return;
+    const msg = JSON.stringify(obj);
+    for (const client of this.wss.clients) {
+      if (client.readyState === 1) client.send(msg);
+    }
   }
 
   // quote: { id, name, price, change, changePct, currency, source, ts }
   publish(quote) {
     this.latest.set(quote.id, quote);
-    if (!this.wss) return;
-    const msg = JSON.stringify({ type: "quote", quote });
-    for (const client of this.wss.clients) {
-      if (client.readyState === 1) client.send(msg);
-    }
+    this.broadcast({ type: "quote", quote });
   }
 }

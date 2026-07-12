@@ -1,3 +1,8 @@
 node_modules/
 .env
 npm-debug.log*
+
+# 개인 설정 (예제 파일만 커밋)
+alerts.config.json
+portfolio.json
+reports/

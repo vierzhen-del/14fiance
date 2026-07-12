@@ -11,7 +11,12 @@
     <h1>실시간 트레이딩 대시보드</h1>
     <span id="conn" class="conn" data-state="connecting">연결 중…</span>
   </header>
+  <section id="portfolio" class="pf" hidden></section>
   <main id="grid" class="grid"></main>
+  <section id="alerts" class="alerts" hidden>
+    <h2>🔔 얼럿</h2>
+    <ul id="alert-list"></ul>
+  </section>
   <footer>
     상승 <span class="chip up">▲ 빨강</span> · 하락 <span class="chip down">▼ 파랑</span> ·
     시세 출처는 각 타일에 표시 (지연 시세 포함) · 투자 판단의 근거가 아닌 참고용

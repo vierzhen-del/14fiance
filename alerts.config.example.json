@@ -1,0 +1,8 @@
+[
+  { "symbolId": "btc", "type": "price_below", "value": 150000000, "note": "비트코인 주요 지지선" },
+  { "symbolId": "btc", "type": "price_above", "value": 180000000, "note": "비트코인 전고점 돌파" },
+  { "symbolId": "samsung", "type": "price_above", "value": 120000, "note": "삼성전자 목표가 도달" },
+  { "symbolId": "hynix", "type": "price_below", "value": 260000, "note": "SK하이닉스 손절 라인" },
+  { "symbolId": "kospi", "type": "pct_move", "value": 2, "note": "코스피 급등락 감지" },
+  { "symbolId": "sox", "type": "pct_move", "value": 3, "note": "미 반도체 급등락 감지" }
+]
