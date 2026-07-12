@@ -37,6 +37,8 @@ MOCK=1 npm start
 | 비트코인 (KRW-BTC) | Upbit WebSocket | 실시간, 키 불필요 |
 | 삼성전자 · SK하이닉스 | 한국투자증권 OpenAPI 웹소켓 | 실시간, `.env`에 앱키 필요 — 미설정 시 Yahoo 지연 시세 폴백 |
 | 코스피 · SOX · SOXX | Yahoo Finance 차트 API 폴링 | 지연 시세, 키 불필요 (`YAHOO_POLL_MS`로 주기 조절) |
+| 나스닥100 선물 (NQ=F) | Yahoo Finance 차트 API 폴링 | CME E-mini, 거의 24시간 거래로 한국 야간 커버, 키 불필요 |
+| 코스피200 선물 (야간) | 한국투자증권 선물옵션 시세 폴링 | KRX 야간파생시장(2025.6~) 종목 — 앱키 + `KIS_FUT_CODE`(최근월물 코드) 필요, 미설정 시 시세 대기 표시 |
 
 ### 구조
 
@@ -48,7 +50,8 @@ server/
   feeds/
     upbit.js      # Upbit 실시간 ticker
     kis.js        # 한국투자증권 실시간 체결가 (H0STCNT0)
-    yahoo.js      # Yahoo Finance 폴링 (미국 반도체·지수·폴백)
+    kisFutures.js # 한국투자증권 선물옵션 시세 폴링 (코스피200 야간선물)
+    yahoo.js      # Yahoo Finance 폴링 (미국 반도체·지수·선물·폴백)
 public/           # 대시보드 UI (종목 타일 + 스파크라인, 다크모드 지원)
 ```
 

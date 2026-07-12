@@ -2,6 +2,8 @@
 const BASE_PRICES = {
   btc: 163000000,
   kospi: 3420,
+  kospi200_fut: 470.5,
+  nasdaq_fut: 23500,
   samsung: 112000,
   hynix: 289000,
   sox: 6890,

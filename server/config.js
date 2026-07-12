@@ -14,9 +14,10 @@ export const KIS_ENABLED = Boolean(KIS.appKey && KIS.appSecret);
 
 // 대시보드에 표시할 종목 정의.
 // feed: 어떤 피드 모듈이 이 종목을 담당하는지
-//  - upbit : Upbit WebSocket 실시간 (무료, 키 불필요)
-//  - kis   : 한국투자증권 실시간 웹소켓 (무료, 앱키 필요) — 미설정 시 yahoo로 폴백
-//  - yahoo : Yahoo Finance 차트 API 폴링 (무료, 지연 시세)
+//  - upbit  : Upbit WebSocket 실시간 (무료, 키 불필요)
+//  - kis    : 한국투자증권 실시간 웹소켓 (무료, 앱키 필요) — 미설정 시 yahoo로 폴백
+//  - kisfut : 한국투자증권 국내선물 REST 폴링 (앱키 필요) — KRX 야간시장 포함
+//  - yahoo  : Yahoo Finance 차트 API 폴링 (무료, 지연 시세)
 export const SYMBOLS = [
   {
     id: "btc",
@@ -48,6 +49,25 @@ export const SYMBOLS = [
     kisCode: "000660",
     yahooSymbol: "000660.KS",
     currency: "KRW",
+  },
+  {
+    id: "kospi200_fut",
+    name: "코스피200 선물 (야간)",
+    feed: "kisfut",
+    // KRX 야간파생시장(2025.6 개장) 시세 — KIS 선물옵션 시세 API 폴링.
+    // 최근월물 종목코드는 만기마다 바뀌므로 .env의 KIS_FUT_CODE로 지정한다.
+    kisFutCode: process.env.KIS_FUT_CODE ?? "",
+    currency: "KRW",
+    isIndex: true, // 지수 포인트 표시
+  },
+  {
+    id: "nasdaq_fut",
+    name: "나스닥100 선물",
+    feed: "yahoo",
+    // CME E-mini 나스닥100 선물 — 거의 24시간 거래라 한국 야간 시간대를 커버
+    yahooSymbol: "NQ=F",
+    currency: "USD",
+    isIndex: true,
   },
   {
     id: "sox",

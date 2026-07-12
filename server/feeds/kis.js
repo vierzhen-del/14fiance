@@ -3,7 +3,7 @@ import WebSocket from "ws";
 // 한국투자증권 OpenAPI 실시간 체결가(H0STCNT0) 웹소켓
 // https://apiportal.koreainvestment.com — 계좌 개설 후 앱키/시크릿 무료 발급
 // KIS_APP_KEY / KIS_APP_SECRET 미설정 시 이 피드는 사용되지 않고 Yahoo 폴백이 담당한다.
-const HOSTS = {
+export const HOSTS = {
   prod: {
     rest: "https://openapi.koreainvestment.com:9443",
     ws: "ws://ops.koreainvestment.com:21000",

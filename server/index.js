@@ -10,6 +10,7 @@ import { createReporter } from "./report.js";
 import { startUpbitFeed } from "./feeds/upbit.js";
 import { startYahooFeed } from "./feeds/yahoo.js";
 import { startKisFeed } from "./feeds/kis.js";
+import { startKisFuturesFeed } from "./feeds/kisFutures.js";
 import { startMockFeed } from "./feeds/mock.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -72,8 +73,15 @@ if (process.env.MOCK === "1") {
   startYahooFeed(symbols, publish, YAHOO_POLL_MS);
   if (KIS_ENABLED) {
     startKisFeed(symbols, publish, KIS);
+    startKisFuturesFeed(symbols, publish, KIS, {
+      marketCode: process.env.KIS_FUT_MARKET_CODE ?? "F",
+      pollMs: Number(process.env.KIS_FUT_POLL_MS ?? 10000),
+    });
+    if (symbols.some((s) => s.feed === "kisfut" && !s.kisFutCode)) {
+      console.log("[kisfut] KIS_FUT_CODE 미설정 — 코스피200 선물 타일은 시세 대기 상태로 표시됩니다");
+    }
   } else {
-    console.log("[kis] KIS_APP_KEY 미설정 — 국내 주식은 Yahoo 지연 시세로 표시됩니다");
+    console.log("[kis] KIS_APP_KEY 미설정 — 국내 주식은 Yahoo 지연 시세로, 코스피200 선물은 시세 대기로 표시됩니다");
   }
 }
 reporter.startScheduler();
