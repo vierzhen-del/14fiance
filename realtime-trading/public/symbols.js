@@ -12,14 +12,6 @@
 //   kis(키 입력 시 국내주식 현재가 REST) / kisfut(키+선물코드 입력 시 선물 REST)
 const DASH_SYMBOLS = [
   {
-    id: "btc",
-    name: "비트코인",
-    currency: "KRW",
-    upbitCode: "KRW-BTC",
-    mobileFeed: "upbit",
-    nativeFeed: "upbit",
-  },
-  {
     id: "kospi",
     name: "코스피",
     currency: "KRW",
@@ -85,5 +77,13 @@ const DASH_SYMBOLS = [
     globalKey: "SOXX",
     mobileFeed: "global",
     nativeFeed: "yahoo",
+  },
+  {
+    id: "btc",
+    name: "비트코인",
+    currency: "KRW",
+    upbitCode: "KRW-BTC",
+    mobileFeed: "upbit",
+    nativeFeed: "upbit",
   },
 ];

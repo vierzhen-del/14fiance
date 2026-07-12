@@ -15,9 +15,14 @@ const unit = (tile) => (tile.isIndex ? "" : tile.currency === "KRW" ? " 원" : "
 function createTile(sym) {
   const el = document.createElement("section");
   el.className = "tile";
+  el.dataset.id = sym.id;
   el.innerHTML = `
     <div class="head">
       <span class="name">${sym.name}</span>
+      <span class="order-btns">
+        <button type="button" class="order-btn order-up" aria-label="위로">▲</button>
+        <button type="button" class="order-btn order-down" aria-label="아래로">▼</button>
+      </span>
       <span class="source"></span>
     </div>
     <div class="price waiting">시세 대기 중…</div>
@@ -25,6 +30,8 @@ function createTile(sym) {
     <div class="position"></div>
     <canvas height="44"></canvas>`;
   grid.appendChild(el);
+  el.querySelector(".order-up").addEventListener("click", () => moveTile(el, -1));
+  el.querySelector(".order-down").addEventListener("click", () => moveTile(el, 1));
   const tile = {
     el,
     priceEl: el.querySelector(".price"),
@@ -38,6 +45,33 @@ function createTile(sym) {
   };
   attachSparklineHover(tile);
   tiles.set(sym.id, tile);
+}
+
+// ---- 타일 순서 변경(↕️ 순서편집) — 모드 구분 없이 이 기기에 저장 ----
+const TILE_ORDER_KEY = "rt_tile_order_v1";
+
+function moveTile(el, dir) {
+  if (dir < 0 && el.previousElementSibling) grid.insertBefore(el, el.previousElementSibling);
+  else if (dir > 0 && el.nextElementSibling) grid.insertBefore(el.nextElementSibling, el);
+  else return;
+  localStorage.setItem(TILE_ORDER_KEY, JSON.stringify([...grid.children].map((c) => c.dataset.id)));
+}
+
+// 저장된 순서가 있으면 그 순서를 앞세우고(안정 정렬), 새로 추가된 종목은 뒤에 그대로 붙는다
+function applySavedOrder(symbols) {
+  let saved;
+  try { saved = JSON.parse(localStorage.getItem(TILE_ORDER_KEY) || "null"); } catch { saved = null; }
+  if (!Array.isArray(saved) || saved.length === 0) return symbols;
+  const rank = new Map(saved.map((id, i) => [id, i]));
+  return [...symbols].sort((a, b) => (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity));
+}
+
+function setupOrderUi() {
+  const btn = document.getElementById("order-toggle");
+  btn.addEventListener("click", () => {
+    const editing = grid.classList.toggle("editing-order");
+    btn.textContent = editing ? "✅ 순서편집 완료" : "↕️ 순서편집";
+  });
 }
 
 function applyQuote(q) {
@@ -271,9 +305,10 @@ async function init() {
   setupModeUi(mode);
   setupSettingsUi(mode);
   setupTabbar(mode);
+  setupOrderUi();
 
   if (mode === "server") {
-    const symbols = await fetch("/api/symbols").then((r) => r.json());
+    const symbols = applySavedOrder(await fetch("/api/symbols").then((r) => r.json()));
     symbols.forEach(createTile);
     connect();
     return;
@@ -282,11 +317,12 @@ async function init() {
   // 포트폴리오·얼럿은 서버 모드 전용 — .pf의 display:flex가 hidden 속성을 이기므로 명시적으로 끈다
   pfEl.style.display = "none";
   alertsEl.style.display = "none";
-  DASH_SYMBOLS.forEach(createTile);
-  markUnavailableTiles(DASH_SYMBOLS, mode);
+  const symbols = applySavedOrder(DASH_SYMBOLS);
+  symbols.forEach(createTile);
+  markUnavailableTiles(symbols, mode);
   setModeStatus(mode);
-  if (mode === "mobile") startMobileFeeds(DASH_SYMBOLS, applyQuote);
-  else startNativeFeeds(DASH_SYMBOLS, applyQuote);
+  if (mode === "mobile") startMobileFeeds(symbols, applyQuote);
+  else startNativeFeeds(symbols, applyQuote);
 }
 
 init();

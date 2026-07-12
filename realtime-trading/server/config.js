@@ -20,13 +20,6 @@ export const KIS_ENABLED = Boolean(KIS.appKey && KIS.appSecret);
 //  - yahoo  : Yahoo Finance 차트 API 폴링 (무료, 지연 시세)
 export const SYMBOLS = [
   {
-    id: "btc",
-    name: "비트코인",
-    feed: "upbit",
-    upbitCode: "KRW-BTC",
-    currency: "KRW",
-  },
-  {
     id: "kospi",
     name: "코스피",
     feed: "yahoo", // 지수는 KIS H0STCNT0(주식 체결) 대상이 아니므로 MVP에서는 Yahoo 사용
@@ -83,5 +76,12 @@ export const SYMBOLS = [
     feed: "yahoo",
     yahooSymbol: "SOXX",
     currency: "USD",
+  },
+  {
+    id: "btc",
+    name: "비트코인",
+    feed: "upbit",
+    upbitCode: "KRW-BTC",
+    currency: "KRW",
   },
 ];

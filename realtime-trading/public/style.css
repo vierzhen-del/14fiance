@@ -83,6 +83,19 @@ h1 { font-size: 18px; margin: 0; }
 }
 .tile .name { font-size: 13px; color: var(--ink-2); font-weight: 600; }
 .tile .source { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.tile .order-btns { display: none; gap: 2px; }
+.grid.editing-order .tile .order-btns { display: inline-flex; }
+.tile .order-btn {
+  font-size: 11px;
+  line-height: 1;
+  padding: 3px 6px;
+  color: var(--ink-2);
+  background: var(--page);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  cursor: pointer;
+}
+.tile .order-btn:hover { border-color: var(--muted); }
 .tile .price {
   font-size: 26px;
   font-weight: 700;
