@@ -2,6 +2,18 @@
 
 개인 투자 종목(비트코인 · 미국 반도체 지수 · 코스피/삼성전자/SK하이닉스) 실시간 트레이딩 대시보드 프로젝트.
 
+> **위치 안내**: 이 프로젝트는 [vierzhen-del/14fiance](https://github.com/vierzhen-del/14fiance) 모노레포의 `realtime-trading/` 서브디렉토리로 통합되었습니다(이력 보존 subtree 병합). 실행은 `cd realtime-trading && npm install && npm start`.
+
+## 동작 모드 3가지
+
+| 모드 | 실행 방법 | 데이터 |
+|---|---|---|
+| **서버 연동** | PC에서 `npm start` 후 `http://localhost:3000` | WebSocket 실시간(Upbit·KIS·Yahoo) + 포트폴리오 손익·얼럿 |
+| **모바일(서버 없음)** | GitHub Pages `https://vierzhen-del.github.io/14fiance/realtime-trading/public/` | BTC는 Upbit 실시간, 국내/글로벌은 GitHub Actions 30분 파이프라인(`live`·`live-trading` 브랜치) — 스케줄 지연 가능(한계 인정) |
+| **앱(APK) 대시보드 탭** | 14fiance 앱 하단 「📈 대시보드」 탭 | CapacitorHttp로 네이버·야후 직접 조회(실시간), ⚙️ 설정에 KIS 앱키·시크릿 입력 시 KIS 시세·코스피200 야간선물 |
+
+모드는 자동 감지되며(Node 서버=서버, github.io=모바일, 앱=native), 헤더의 전환 버튼이나 `?mode=server|mobile` 쿼리로 바꿀 수 있다.
+
 ## 문서
 
 - **[트레이딩 대시보드 활용 가능성 검토 및 최적 제안](docs/trading-dashboard-feasibility.md)** — Claude Code × TradingView Desktop MCP 브리지 기반 대시보드의 가능성·비용·리스크 검토 및 2계층 하이브리드 아키텍처 제안

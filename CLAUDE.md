@@ -1,5 +1,15 @@
 # 작업 방식 메모 (이 저장소 전용)
 
+## 주식 프로젝트 통합 — realtime-trading/ (2026-07-12)
+
+`realtime-trading/`은 원래 별도 레포(vierzhen-del/realtime-trading)였던 실시간 트레이딩 대시보드를 subtree 병합(이력 보존)으로 흡수한 서브디렉토리다. Node Express+WebSocket 서버 프로젝트로 **GitHub Pages 정적 사이트와 무관하게 로컬 PC에서 실행**하는 것이 기본이며(`cd realtime-trading && npm start`), 대시보드 클라이언트(`realtime-trading/public/`)는 3가지 모드를 자동 감지한다:
+
+- **server**: Node 서버가 서빙(기존 동작 — /api/symbols + WebSocket, 포트폴리오·얼럿 포함)
+- **mobile**: 서버 없이 정적 호스팅(Pages `…/14fiance/realtime-trading/public/`) — BTC는 Upbit WS 직접(실시간), 국내(삼성전자·하이닉스)는 기존 `live` 브랜치 latest_kr.json, 코스피지수·나스닥선물·SOX·SOXX는 **전용 `live-trading` 브랜치의 `latest_global.json`**(`.github/workflows/intraday-global.yml` + `scripts/fetch_intraday_global.py`, 7분·37분 offset 30분 주기 — live 브랜치와 같은 단일 커밋 force-push 구조이며 **live-trading 브랜치에도 다른 파일을 넣지 말 것**. 스케줄 지연 시 대응은 아래 국내시세 파이프라인 절과 동일: actions_list로 확인 후 run_workflow 수동 실행)
+- **native**: 14fiance 안드로이드 앱(APK)의 하단 「📈 대시보드」 탭 — `app/build-www.mjs`가 `realtime-trading/public/`을 `www/dashboard/`로 복사. CapacitorHttp 덕에 CORS 없이 네이버·야후 직접 조회(실시간)하고, ⚙️ 설정 패널에 KIS 앱키·시크릿(+선물 종목코드)을 입력하면 KIS 시세·코스피200 야간선물까지 조회한다(키는 localStorage — 저장소·서버에 절대 커밋/전송 금지).
+
+종목 목록을 바꿀 때는 `realtime-trading/server/config.js`(server 모드)와 `realtime-trading/public/symbols.js`(mobile/native 모드)를 함께 갱신해야 한다.
+
 ## 공통 SSOT — 노션 SOP 3종 (자산 데이터의 단일 기록처, 2026-07-06 제정)
 
 사이트 "내 자산" 데이터의 원본은 아래 노션 페이지 3개다. 금융지식 세션(계좌캡처 반영)·이 코드 세션·추후 제작할 앱이 **모두 이 3페이지를 공통으로 갱신·참조**한다:

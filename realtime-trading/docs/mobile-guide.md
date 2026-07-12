@@ -35,8 +35,8 @@
 2. Termux에서:
    ```bash
    pkg update && pkg install nodejs-lts git
-   git clone https://github.com/vierzhen-del/realtime-trading.git
-   cd realtime-trading
+   git clone https://github.com/vierzhen-del/14fiance.git
+   cd 14fiance/realtime-trading
    npm install
    cp .env.example .env   # 필요 시 키 입력 (nano .env)
    npm start
