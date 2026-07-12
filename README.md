@@ -6,6 +6,7 @@
 
 - **[트레이딩 대시보드 활용 가능성 검토 및 최적 제안](docs/trading-dashboard-feasibility.md)** — Claude Code × TradingView Desktop MCP 브리지 기반 대시보드의 가능성·비용·리스크 검토 및 2계층 하이브리드 아키텍처 제안
 - **[모바일 · 갤럭시 탭 S9 운용 가이드](docs/mobile-guide.md)** — 같은 Wi-Fi 접속, Tailscale 원격 접속, Termux(태블릿 단독 실행), 24시간 상시 서버 구성 4가지 방식
+- **[Phase 1 — TradingView MCP 브리지 설치 가이드](docs/phase1-bridge-guide.md)** — 브리지 설치, 디버그 포트 실행(OS별), Claude Code 등록, 워치리스트 구성과 활용 예시
 
 ## 제안 요약
 
@@ -16,7 +17,7 @@
 
 | 단계 | 내용 | 상태 |
 |---|---|---|
-| Phase 1 (1주) | 브리지 설치·검증, 워치리스트·얼럿 구성 | 대기 |
+| Phase 1 (1주) | 브리지 설치·검증, 워치리스트·얼럿 구성 | [설치 가이드](docs/phase1-bridge-guide.md) 제공 — 로컬 PC에서 진행 |
 | Phase 2 (2~4주) | 자체 대시보드 MVP — 6개 종목 실시간 시세 보드 | **완료** |
 | Phase 3 | 얼럿 통합, 노션 자동 데일리 리포트, 포트폴리오 손익 트래킹 | **완료** |
 
