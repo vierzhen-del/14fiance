@@ -18,6 +18,19 @@
 <style>
   /* capture 앱 전용 최소 보정 — 사이트 상단 고정 내비게이션(#pageNav)이 없으므로 */
   .wrap { max-width: 920px; margin: 0 auto; padding: 28px 20px 60px; }
+  /* 하단 탭바: 캡처·내자산 ↔ 트레이딩 대시보드(realtime-trading/) */
+  body { padding-bottom: 52px; }
+  .app-tabbar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+    display: flex;
+    background: var(--surface-1);
+    border-top: 1px solid var(--border);
+  }
+  .app-tabbar .tab {
+    flex: 1; text-align: center; padding: 14px 0;
+    font-size: 13px; color: var(--text-muted); text-decoration: none;
+  }
+  .app-tabbar .tab.active { color: var(--text-primary); font-weight: 600; }
 </style>
 </head>
 <body>
@@ -1044,5 +1057,10 @@ if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js", { scope: "./" }).catch(() => {});
 }
 </script>
+<!-- 하단 탭바 — APK 빌드 시 build-www.mjs가 대시보드 링크를 dashboard/index.html로 치환 -->
+<nav class="app-tabbar">
+  <a href="#" class="tab active" aria-current="page">📸 캡처·내자산</a>
+  <a href="../realtime-trading/public/index.html" class="tab">📈 대시보드</a>
+</nav>
 </body>
 </html>
