@@ -9,8 +9,31 @@
 <body>
   <header>
     <h1>실시간 트레이딩 대시보드</h1>
-    <span id="conn" class="conn" data-state="connecting">연결 중…</span>
+    <div class="hctrl">
+      <button id="mode-toggle" class="hbtn" type="button" hidden></button>
+      <button id="settings-toggle" class="hbtn" type="button">⚙️ 설정</button>
+      <span id="conn" class="conn" data-state="connecting">연결 중…</span>
+    </div>
   </header>
+  <section id="settings" class="settings" hidden>
+    <h2>⚙️ KIS(한국투자증권) OpenAPI 설정</h2>
+    <p class="settings-note">키는 이 기기(브라우저)에만 저장되며, 한국투자증권 API 외 다른 서버로 전송되지 않습니다. 타인과 공유하지 마세요.</p>
+    <p id="kis-cors-note" class="settings-note warn" hidden>웹 모바일 모드에서는 브라우저 CORS 제한으로 KIS 직접 조회가 동작하지 않습니다 — 여기 입력해 두면 14fiance 앱(APK)의 대시보드 탭에서 사용됩니다. 서버 모드는 기존처럼 .env로 설정합니다.</p>
+    <label class="settings-row">앱키
+      <input type="password" id="kisAppKey" autocomplete="off" placeholder="KIS 앱키">
+    </label>
+    <label class="settings-row">시크릿 키
+      <input type="password" id="kisAppSecret" autocomplete="off" placeholder="KIS 시크릿 키">
+    </label>
+    <label class="settings-row">선물 종목코드 (선택)
+      <input type="text" id="kisFutCode" autocomplete="off" placeholder="코스피200 최근월물 코드 — 만기마다 갱신">
+    </label>
+    <div class="settings-actions">
+      <button id="kisSaveBtn" class="hbtn" type="button">💾 저장</button>
+      <button id="kisClearBtn" class="hbtn" type="button">🗑 삭제</button>
+      <span id="kisStatus" class="settings-status"></span>
+    </div>
+  </section>
   <section id="portfolio" class="pf" hidden></section>
   <main id="grid" class="grid"></main>
   <section id="alerts" class="alerts" hidden>
@@ -21,6 +44,14 @@
     상승 <span class="chip up">▲ 빨강</span> · 하락 <span class="chip down">▼ 파랑</span> ·
     시세 출처는 각 타일에 표시 (지연 시세 포함) · 투자 판단의 근거가 아닌 참고용
   </footer>
+  <nav id="tabbar" class="tabbar" hidden>
+    <a href="../../capture/index.html" class="tab">📸 캡처·내자산</a>
+    <a href="#" class="tab active" aria-current="page">📈 대시보드</a>
+  </nav>
+  <script src="symbols.js"></script>
+  <script src="mode.js"></script>
+  <script src="mobile-feeds.js"></script>
+  <script src="native-feeds.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

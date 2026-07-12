@@ -197,10 +197,96 @@ function connect() {
   };
 }
 
+// ---- 모드별 부트스트랩 (모드 정의·결정은 mode.js) ----
+
+// 서버 없는 모드에서 데이터가 아직/원래 안 오는 타일에 이유를 표시
+function markUnavailableTiles(symbols, mode) {
+  for (const sym of symbols) {
+    const feed = mode === "mobile" ? sym.mobileFeed : sym.nativeFeed;
+    let note = null;
+    if (mode === "mobile" && !feed) note = sym.unavailableNote?.mobile ?? "서버 모드 전용";
+    else if (mode === "native" && feed === "kisfut") note = sym.unavailableNote?.native;
+    if (note) tiles.get(sym.id).priceEl.textContent = note;
+  }
+}
+
+function setModeStatus(mode) {
+  connEl.dataset.state = "open";
+  connEl.textContent =
+    mode === "mobile"
+      ? "모바일 모드 — BTC 실시간 · 국내/글로벌은 GitHub 30분 파이프라인(지연 가능)"
+      : "앱 모드 — 업비트·네이버 직접 조회";
+}
+
+// ---- ⚙️ KIS 키 설정 패널 (localStorage 키는 native-feeds.js 상단 정의) ----
+function setupSettingsUi(mode) {
+  const btn = document.getElementById("settings-toggle");
+  const panel = document.getElementById("settings");
+  if (mode === "server") {
+    // 서버 모드의 KIS 키는 서버 .env가 담당 — 브라우저 저장 UI는 혼동만 주므로 숨김
+    btn.hidden = true;
+    return;
+  }
+  if (mode === "mobile") document.getElementById("kis-cors-note").hidden = false;
+
+  const keyEl = document.getElementById("kisAppKey");
+  const secretEl = document.getElementById("kisAppSecret");
+  const futEl = document.getElementById("kisFutCode");
+  const statusEl = document.getElementById("kisStatus");
+  keyEl.value = localStorage.getItem(KIS_APP_KEY_KEY) || "";
+  secretEl.value = localStorage.getItem(KIS_APP_SECRET_KEY) || "";
+  futEl.value = localStorage.getItem(KIS_FUT_CODE_KEY) || "";
+
+  const flash = (msg) => {
+    statusEl.textContent = msg;
+    setTimeout(() => { statusEl.textContent = ""; }, 4000);
+  };
+
+  btn.addEventListener("click", () => { panel.hidden = !panel.hidden; });
+  document.getElementById("kisSaveBtn").addEventListener("click", () => {
+    localStorage.setItem(KIS_APP_KEY_KEY, keyEl.value.trim());
+    localStorage.setItem(KIS_APP_SECRET_KEY, secretEl.value.trim());
+    localStorage.setItem(KIS_FUT_CODE_KEY, futEl.value.trim());
+    localStorage.removeItem(KIS_TOKEN_CACHE_KEY); // 키가 바뀌면 기존 토큰은 무효
+    flash("저장됨(이 기기에만) ✓");
+  });
+  document.getElementById("kisClearBtn").addEventListener("click", () => {
+    for (const k of [KIS_APP_KEY_KEY, KIS_APP_SECRET_KEY, KIS_FUT_CODE_KEY, KIS_TOKEN_CACHE_KEY]) {
+      localStorage.removeItem(k);
+    }
+    keyEl.value = secretEl.value = futEl.value = "";
+    flash("삭제됨");
+  });
+}
+
+function setupTabbar(mode) {
+  // 캡처·내자산 앱과의 탭 이동은 정적 호스팅(웹 모바일)·APK에서만 의미가 있다
+  if (mode === "server") return;
+  document.getElementById("tabbar").hidden = false;
+  document.body.classList.add("has-tabbar");
+}
+
 async function init() {
-  const symbols = await fetch("/api/symbols").then((r) => r.json());
-  symbols.forEach(createTile);
-  connect();
+  const mode = resolveDashMode();
+  setupModeUi(mode);
+  setupSettingsUi(mode);
+  setupTabbar(mode);
+
+  if (mode === "server") {
+    const symbols = await fetch("/api/symbols").then((r) => r.json());
+    symbols.forEach(createTile);
+    connect();
+    return;
+  }
+
+  // 포트폴리오·얼럿은 서버 모드 전용 — .pf의 display:flex가 hidden 속성을 이기므로 명시적으로 끈다
+  pfEl.style.display = "none";
+  alertsEl.style.display = "none";
+  DASH_SYMBOLS.forEach(createTile);
+  markUnavailableTiles(DASH_SYMBOLS, mode);
+  setModeStatus(mode);
+  if (mode === "mobile") startMobileFeeds(DASH_SYMBOLS, applyQuote);
+  else startNativeFeeds(DASH_SYMBOLS, applyQuote);
 }
 
 init();
