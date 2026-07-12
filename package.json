@@ -1,0 +1,19 @@
+{
+  "name": "realtime-trading",
+  "version": "0.1.0",
+  "description": "개인 투자 종목 실시간 트레이딩 대시보드 (비트코인 · 미국 반도체 · 코스피/삼성전자/SK하이닉스)",
+  "type": "module",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "ws": "^8.18.0"
+  }
+}
