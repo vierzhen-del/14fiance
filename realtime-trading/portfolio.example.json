@@ -1,0 +1,6 @@
+[
+  { "symbolId": "btc", "quantity": 0.05, "avgPrice": 150000000 },
+  { "symbolId": "samsung", "quantity": 50, "avgPrice": 98000 },
+  { "symbolId": "hynix", "quantity": 10, "avgPrice": 250000 },
+  { "symbolId": "soxx", "quantity": 5, "avgPrice": 280 }
+]
