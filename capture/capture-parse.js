@@ -120,12 +120,16 @@ async function pingGeminiAPI(apiKey) {
    짐작만으로는 정확한 진단이 안 된다(실제로 이 문구 때문에 원인 파악이 늦어진 사례). */
 function friendlyPingErrorText(providerLabel, err) {
   const status = err && err.status;
+  const msg = (err && err.message) || "";
+  // Anthropic은 크레딧 부족도 HTTP 400 invalid_request_error로 응답한다 — 진짜 요청 형식
+  // 문제와 섞이면 원인 파악이 늦어지므로(과거 실제 발생 사례) 이 메시지만 따로 구분한다.
   const reason = status === 401 || status === 403 ? "키가 잘못됐거나 권한이 없습니다"
     : status === 429 ? "요청이 너무 많습니다(잠시 후 재시도)"
+    : status === 400 && /credit balance/i.test(msg) ? "크레딧 잔액 부족 — Anthropic Console(Plans & Billing)에서 충전 필요"
     : status === 400 ? "요청 형식 오류"
     : status ? `오류(HTTP ${status})`
     : "네트워크 오류(연결 확인 필요)";
-  const detail = err && err.message ? ` — ${err.message}` : "";
+  const detail = msg ? ` — ${msg}` : "";
   return `❌ ${providerLabel} ${reason}${detail}`;
 }
 
