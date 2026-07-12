@@ -5,6 +5,7 @@
 ## 문서
 
 - **[트레이딩 대시보드 활용 가능성 검토 및 최적 제안](docs/trading-dashboard-feasibility.md)** — Claude Code × TradingView Desktop MCP 브리지 기반 대시보드의 가능성·비용·리스크 검토 및 2계층 하이브리드 아키텍처 제안
+- **[모바일 · 갤럭시 탭 S9 운용 가이드](docs/mobile-guide.md)** — 같은 Wi-Fi 접속, Tailscale 원격 접속, Termux(태블릿 단독 실행), 24시간 상시 서버 구성 4가지 방식
 
 ## 제안 요약
 
