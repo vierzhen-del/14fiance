@@ -132,11 +132,18 @@
     </div>
     <div class="section-body">
       <p class="section-lede">계좌·월매수 스크린샷을 자동으로 읽어줄 AI를 선택하고 API 키를 입력하세요. <b>키는 이 기기(브라우저)에만 저장되며, 서버를 거치지 않고 선택한 AI사에 직접 전송됩니다.</b> 타인과 공유하지 마세요.</p>
+      <p class="stat-sub"><b>가장 비용이 안 드는 방법(방식1)</b>: 아래 "📋 프롬프트 복사"로 얻은 지침을 API 키 없이 외부 Claude 대화창(claude.ai 구독)에 스크린샷과 함께 붙여넣고, 응답 JSON을 붙여넣기 모드에 넣으세요 — API 크레딧을 전혀 쓰지 않습니다. 자동 파싱(아래)은 <b>방식2: Gemini API가 기본</b>이며, Claude API(방식3)는 크레딧이 소모되므로 명시적으로 선택하거나 교차검증 체크박스를 켰을 때만 호출됩니다.</p>
       <div class="controls" style="margin-bottom:8px;">
         <select id="captureAiProvider" aria-label="AI 제공자 선택">
-          <option value="claude">Claude API</option>
-          <option value="gemini">Gemini API</option>
+          <option value="gemini">Gemini API (방식2·기본 — 크레딧 소모 없음)</option>
+          <option value="claude">Claude API (방식3·마지막 수단 — 크레딧 소모)</option>
         </select>
+      </div>
+      <div class="controls" style="margin-bottom:8px;">
+        <label style="font-size:12.5px; color:var(--text-secondary); display:flex; align-items:center; gap:6px;">
+          <input type="checkbox" id="captureUseClaudeCrossCheck">
+          Claude API도 교차검증에 추가로 사용 (방식3 — 크레딧 소모, 기본 꺼짐)
+        </label>
       </div>
       <div class="controls" style="margin-bottom:8px;">
         <input type="password" id="captureClaudeKey" class="portfolio-weight" style="width:100%; max-width:420px; text-align:left;" placeholder="Claude API 키(sk-ant-...)" autocomplete="off">
@@ -152,8 +159,44 @@
         <input type="file" id="captureSettingsImportFile" accept="application/json" style="display:none;">
         <span id="captureKeysStatus" class="action-status"></span>
       </div>
-      <p class="stat-sub">연결 테스트는 이미지 없이 최소 호출 1건으로 키·모델이 유효한지만 확인합니다(파싱 비용과 무관). Claude·Gemini 키를 둘 다 입력해두면, 실제 계좌·월매수 캡처 시 두 AI가 같은 스크린샷을 각각 읽어 결과를 자동으로 대조합니다(교차검증) — 종목별 수량이 서로 다르게 나오면 "채우기" 체크가 기본 해제되어 직접 확인 후에만 반영됩니다.</p>
+      <p class="stat-sub">연결 테스트는 이미지 없이 최소 호출 1건으로 키·모델이 유효한지만 확인합니다(파싱 비용과 무관). 기본 자동 파싱(🤖 자동 파싱 시도)은 Gemini API만 호출합니다 — Claude API는 위에서 provider로 직접 선택했거나 교차검증 체크박스를 켠 경우에만 추가로 호출되어 크레딧이 소모됩니다. 어느 경로로 얻은 결과든(붙여넣기 모드·자동 파싱 모두), 같은 종류의 직전 파싱 결과와 자동으로 대조되어 종목별 수량이 다르면 "채우기" 체크가 기본 해제됩니다.</p>
       <p class="stat-sub">"💾 키 저장"을 누르면 이 기기 저장(localStorage)과 별개로 설정 파일(<code>myassets-settings.json</code>)도 자동으로 다운로드됩니다 — 앱을 완전히 삭제 후 재설치하면 기기 저장 내용도 함께 지워지므로, 재설치 후엔 이 파일을 "📂 설정 불러오기"로 다시 불러와야 합니다. <b>이 파일에는 API 키 원문이 그대로 들어있으니 다른 사람과 공유하지 마세요.</b></p>
+
+      <details style="margin-top:12px;">
+        <summary style="cursor:pointer; font-size:13px; color:var(--text-secondary);">📝 파싱 지침 편집(고급) — 방식1(대화창)·방식2(Gemini) 프롬프트</summary>
+        <div style="margin-top:10px;">
+          <p class="stat-sub">"Claude/대화창용" 지침은 <b>📋 프롬프트 복사</b>(방식1, API 무료) 버튼과 provider를 Claude API로 선택했을 때(방식3)에 공통으로 쓰입니다. "Gemini 전용" 지침은 자동 파싱(방식2)에만 쓰이며 Gemini 특성에 맞게 별도로 튜닝돼 있습니다. 각각 저장하면 이 기기에 계속 남고, 기본값 복원으로 되돌릴 수 있습니다.</p>
+
+          <label style="font-size:12.5px; color:var(--text-muted); display:block; margin-top:8px;">계좌 캡처 지침 (Claude/대화창용)</label>
+          <textarea id="capturePromptAccount" rows="6" style="width:100%; font:inherit; font-size:12px; padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--surface-1); color:var(--text-primary);"></textarea>
+          <div class="action-row" style="margin-top:4px;">
+            <button type="button" id="capturePromptAccountSaveBtn" class="btn-action">💾 저장</button>
+            <button type="button" id="capturePromptAccountResetBtn" class="btn-action">↩️ 기본값 복원</button>
+          </div>
+
+          <label style="font-size:12.5px; color:var(--text-muted); display:block; margin-top:12px;">월매수 캡처 지침 (Claude/대화창용)</label>
+          <textarea id="capturePromptBuyplan" rows="6" style="width:100%; font:inherit; font-size:12px; padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--surface-1); color:var(--text-primary);"></textarea>
+          <div class="action-row" style="margin-top:4px;">
+            <button type="button" id="capturePromptBuyplanSaveBtn" class="btn-action">💾 저장</button>
+            <button type="button" id="capturePromptBuyplanResetBtn" class="btn-action">↩️ 기본값 복원</button>
+          </div>
+
+          <label style="font-size:12.5px; color:var(--text-muted); display:block; margin-top:12px;">계좌 캡처 지침 (Gemini 전용)</label>
+          <textarea id="captureGeminiPromptAccount" rows="6" style="width:100%; font:inherit; font-size:12px; padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--surface-1); color:var(--text-primary);"></textarea>
+          <div class="action-row" style="margin-top:4px;">
+            <button type="button" id="captureGeminiPromptAccountSaveBtn" class="btn-action">💾 저장</button>
+            <button type="button" id="captureGeminiPromptAccountResetBtn" class="btn-action">↩️ 기본값 복원</button>
+          </div>
+
+          <label style="font-size:12.5px; color:var(--text-muted); display:block; margin-top:12px;">월매수 캡처 지침 (Gemini 전용)</label>
+          <textarea id="captureGeminiPromptBuyplan" rows="6" style="width:100%; font:inherit; font-size:12px; padding:8px; border-radius:8px; border:1px solid var(--border); background:var(--surface-1); color:var(--text-primary);"></textarea>
+          <div class="action-row" style="margin-top:4px;">
+            <button type="button" id="captureGeminiPromptBuyplanSaveBtn" class="btn-action">💾 저장</button>
+            <button type="button" id="captureGeminiPromptBuyplanResetBtn" class="btn-action">↩️ 기본값 복원</button>
+            <span id="capturePromptStatus" class="action-status"></span>
+          </div>
+        </div>
+      </details>
 
       <p class="section-lede" style="margin-top:16px;">"노션 SOP 요약 복사" 버튼으로 만든 요약을 어느 AI 세션에 붙여넣을 계획인지 선택하세요 — 앱이 그 AI를 대신 호출하지는 않고, 문구만 맞춰줍니다(예: "클로드 코드 세션에 붙여넣어…").</p>
       <div class="controls">
@@ -237,7 +280,7 @@
 <script>
 // capture/index.html 전용 초기화 — index.html의 init() 중 "내 자산" 관련 부분만 재현
 const DATA_DIR = "../data";
-const state = { manifest: null, cache: new Map() };
+const state = { manifest: null, cache: new Map(), lastParsed: { account: null, buyplan: null } };
 
 /* 수동 라이트/다크 선택 — <head> 인라인 스크립트가 첫 페인트 전에 이미 data-theme을
    적용해두므로(깜빡임 방지), 여기서는 <select> 초기값 동기화와 변경 이벤트만 담당 */
@@ -387,10 +430,35 @@ init();
 initCapture();
 
 /* ---------- capture: AI 설정 키 UI ---------- */
+function wirePromptEditor(textareaId, saveBtnId, resetBtnId, storageKey, defaultText) {
+  const ta = document.getElementById(textareaId);
+  ta.value = localStorage.getItem(storageKey) || defaultText;
+  document.getElementById(saveBtnId).addEventListener("click", () => {
+    localStorage.setItem(storageKey, ta.value);
+    flashStatus("capturePromptStatus", "저장됨(이 기기) ✓");
+  });
+  document.getElementById(resetBtnId).addEventListener("click", () => {
+    localStorage.removeItem(storageKey);
+    ta.value = defaultText;
+    flashStatus("capturePromptStatus", "기본값으로 복원됨");
+  });
+}
+
 function initCapture() {
-  document.getElementById("captureAiProvider").value = localStorage.getItem(CAPTURE_AI_PROVIDER_KEY) || "claude";
+  document.getElementById("captureAiProvider").value = localStorage.getItem(CAPTURE_AI_PROVIDER_KEY) || "gemini";
   document.getElementById("captureClaudeKey").value = localStorage.getItem(CAPTURE_CLAUDE_KEY) || "";
   document.getElementById("captureGeminiKey").value = localStorage.getItem(CAPTURE_GEMINI_KEY) || "";
+
+  const useClaudeCrossCheckEl = document.getElementById("captureUseClaudeCrossCheck");
+  useClaudeCrossCheckEl.checked = localStorage.getItem(CAPTURE_USE_CLAUDE_CROSSCHECK_KEY) === "1";
+  useClaudeCrossCheckEl.addEventListener("change", () => {
+    localStorage.setItem(CAPTURE_USE_CLAUDE_CROSSCHECK_KEY, useClaudeCrossCheckEl.checked ? "1" : "0");
+  });
+
+  wirePromptEditor("capturePromptAccount", "capturePromptAccountSaveBtn", "capturePromptAccountResetBtn", CAPTURE_PROMPT_STORAGE_KEYS.account, ACCOUNT_CAPTURE_PROMPT);
+  wirePromptEditor("capturePromptBuyplan", "capturePromptBuyplanSaveBtn", "capturePromptBuyplanResetBtn", CAPTURE_PROMPT_STORAGE_KEYS.buyplan, BUY_PLAN_CAPTURE_PROMPT);
+  wirePromptEditor("captureGeminiPromptAccount", "captureGeminiPromptAccountSaveBtn", "captureGeminiPromptAccountResetBtn", CAPTURE_GEMINI_PROMPT_STORAGE_KEYS.account, GEMINI_ACCOUNT_CAPTURE_PROMPT);
+  wirePromptEditor("captureGeminiPromptBuyplan", "captureGeminiPromptBuyplanSaveBtn", "captureGeminiPromptBuyplanResetBtn", CAPTURE_GEMINI_PROMPT_STORAGE_KEYS.buyplan, GEMINI_BUY_PLAN_CAPTURE_PROMPT);
 
   const sopAiTargetSel = document.getElementById("sopAiTarget");
   sopAiTargetSel.value = localStorage.getItem(CAPTURE_SOP_TARGET_KEY) || "claude";
@@ -408,6 +476,7 @@ function initCapture() {
       captureAiProvider: document.getElementById("captureAiProvider").value,
       captureClaudeKey: document.getElementById("captureClaudeKey").value.trim(),
       captureGeminiKey: document.getElementById("captureGeminiKey").value.trim(),
+      captureUseClaudeCrossCheck: document.getElementById("captureUseClaudeCrossCheck").checked,
       sopAiTarget: document.getElementById("sopAiTarget").value,
     };
     downloadBlob(new Blob([JSON.stringify(settings, null, 2)], { type: "application/json" }), "myassets-settings.json");
@@ -424,6 +493,10 @@ function initCapture() {
         if (settings.captureAiProvider) { localStorage.setItem(CAPTURE_AI_PROVIDER_KEY, settings.captureAiProvider); document.getElementById("captureAiProvider").value = settings.captureAiProvider; }
         if (settings.captureClaudeKey) { localStorage.setItem(CAPTURE_CLAUDE_KEY, settings.captureClaudeKey); document.getElementById("captureClaudeKey").value = settings.captureClaudeKey; }
         if (settings.captureGeminiKey) { localStorage.setItem(CAPTURE_GEMINI_KEY, settings.captureGeminiKey); document.getElementById("captureGeminiKey").value = settings.captureGeminiKey; }
+        if (typeof settings.captureUseClaudeCrossCheck === "boolean") {
+          localStorage.setItem(CAPTURE_USE_CLAUDE_CROSSCHECK_KEY, settings.captureUseClaudeCrossCheck ? "1" : "0");
+          document.getElementById("captureUseClaudeCrossCheck").checked = settings.captureUseClaudeCrossCheck;
+        }
         if (settings.sopAiTarget) { localStorage.setItem(CAPTURE_SOP_TARGET_KEY, settings.sopAiTarget); document.getElementById("sopAiTarget").value = settings.sopAiTarget; }
         flashStatus("captureKeysStatus", "설정 불러오기 완료 ✓");
       } catch (err) {
@@ -458,9 +531,9 @@ function initCapture() {
   });
 
   document.getElementById("captureAccountCopyPromptBtn").addEventListener("click", () =>
-    copyToClipboard(ACCOUNT_CAPTURE_PROMPT, "captureAccountStatus", "프롬프트 복사됨 — AI 채팅에 스크린샷과 함께 붙여넣으세요"));
+    copyToClipboard(getEffectivePrompt("account"), "captureAccountStatus", "프롬프트 복사됨 — AI 채팅에 스크린샷과 함께 붙여넣으세요"));
   document.getElementById("captureBuyPlanCopyPromptBtn").addEventListener("click", () =>
-    copyToClipboard(BUY_PLAN_CAPTURE_PROMPT, "captureBuyPlanStatus", "프롬프트 복사됨 — AI 채팅에 스크린샷과 함께 붙여넣으세요"));
+    copyToClipboard(getEffectivePrompt("buyplan"), "captureBuyPlanStatus", "프롬프트 복사됨 — AI 채팅에 스크린샷과 함께 붙여넣으세요"));
 
   document.getElementById("captureAccountParsePasteBtn").addEventListener("click", () => {
     const text = document.getElementById("captureAccountPaste").value.trim();
@@ -481,9 +554,9 @@ function initCapture() {
     flashStatus("captureAccountStatus", "AI 파싱 중…", 30000);
     try {
       const images = await resizeFilesToImages(files);
-      const apiResult = await callVisionAPI(images, ACCOUNT_CAPTURE_PROMPT);
+      const apiResult = await callVisionAPI(images, getEffectivePrompt("account"), getGeminiPrompt("account"));
       runAccountParse(apiResult.primaryText, apiResult);
-      flashStatus("captureAccountStatus", apiResult.crossText ? "AI 파싱 완료 ✓ (Claude+Gemini 교차검증 적용)" : "AI 파싱 완료 ✓");
+      flashStatus("captureAccountStatus", apiResult.crossText ? "AI 파싱 완료 ✓ (Claude API 교차검증 적용)" : "AI 파싱 완료 ✓");
     } catch (err) {
       flashStatus("captureAccountStatus", "자동 파싱 실패(" + err.message + ") — 아래 붙여넣기 모드를 이용하세요", 6000);
     }
@@ -494,9 +567,9 @@ function initCapture() {
     flashStatus("captureBuyPlanStatus", "AI 파싱 중…", 30000);
     try {
       const images = await resizeFilesToImages(files);
-      const apiResult = await callVisionAPI(images, BUY_PLAN_CAPTURE_PROMPT);
+      const apiResult = await callVisionAPI(images, getEffectivePrompt("buyplan"), getGeminiPrompt("buyplan"));
       runBuyPlanParse(apiResult.primaryText, apiResult);
-      flashStatus("captureBuyPlanStatus", apiResult.crossText ? "AI 파싱 완료 ✓ (Claude+Gemini 교차검증 적용)" : "AI 파싱 완료 ✓");
+      flashStatus("captureBuyPlanStatus", apiResult.crossText ? "AI 파싱 완료 ✓ (Claude API 교차검증 적용)" : "AI 파싱 완료 ✓");
     } catch (err) {
       flashStatus("captureBuyPlanStatus", "자동 파싱 실패(" + err.message + ") — 아래 붙여넣기 모드를 이용하세요", 6000);
     }
@@ -725,12 +798,18 @@ function showSharedFilesPrompt(files) {
 function runAccountParse(text, apiResult) {
   const parsed = parseAIJsonResponse(text);
   const validated = validateAccountCapture(parsed);
+  const source = apiResult ? apiResult.source : "claude-chat"; // 붙여넣기 모드 = 항상 방식1(외부 Claude 대화창)
   if (apiResult && apiResult.crossText) {
+    // 방식3 옵트인으로 Gemini+Claude API를 동시 호출한 경우 — 즉시 대조
     try {
       const crossValidated = validateAccountCapture(parseAIJsonResponse(apiResult.crossText));
       applyCrossCheck(validated, crossValidated, apiResult.crossProvider, "qty");
     } catch (err) { /* 교차검증 응답 파싱 실패는 무시 — primary 결과는 그대로 사용 */ }
+  } else if (state.lastParsed.account) {
+    // 방식1↔방식2 순차 비교: 같은 종류의 마지막 저장 결과와 대조(3단계 우선순위 교차검증)
+    applyCrossCheck(validated, state.lastParsed.account.validated, state.lastParsed.account.source, "qty");
   }
+  state.lastParsed.account = { validated, source };
   renderCaptureAccountResult(validated);
   pushCaptureHistory({
     type: "account",
@@ -742,12 +821,16 @@ function runAccountParse(text, apiResult) {
 function runBuyPlanParse(text, apiResult) {
   const parsed = parseAIJsonResponse(text);
   const validated = validateBuyPlanCapture(parsed);
+  const source = apiResult ? apiResult.source : "claude-chat";
   if (apiResult && apiResult.crossText) {
     try {
       const crossValidated = validateBuyPlanCapture(parseAIJsonResponse(apiResult.crossText));
       applyCrossCheck(validated, crossValidated, apiResult.crossProvider, "buyQtyPerTime");
     } catch (err) { /* 교차검증 응답 파싱 실패는 무시 — primary 결과는 그대로 사용 */ }
+  } else if (state.lastParsed.buyplan) {
+    applyCrossCheck(validated, state.lastParsed.buyplan.validated, state.lastParsed.buyplan.source, "buyQtyPerTime");
   }
+  state.lastParsed.buyplan = { validated, source };
   renderCaptureBuyPlanResult(validated);
   pushCaptureHistory({
     type: "buyplan",
