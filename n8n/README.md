@@ -5,7 +5,7 @@
 
 ## 착수 전 확인 4건 (구현 시작 전에 결정)
 
-- [ ] 동기화 대상 Notion DB 선정 → `REPLACE_ME_NOTION_DATABASE_ID`
+- [x] 동기화 대상 Notion DB 선정 (2026-07-13) → `39c5efd0e4628056a91ed6c5f16d6e85` ("n8n" 페이지 하위 신규 Database). Integration "n8n"을 Connections에 명시적으로 연결해야 조회됨 — 이름 다른 Integration("14fiance-sync")에만 연결하면 404
 - [x] vault 위치 확정 (2026-07-13) → `/storage/emulated/0/Documents/vierzhen_home/MyVault` — 기존 PARA 구조(00_Inbox·10_Notes·20_Projects·30_Resources·40_Archive·_templates) vault, proot Ubuntu에서 접근 확인됨(exit code 0). S26에서 열람하려면 Syncthing 또는 Obsidian Sync 별도 구성 필요(미해결)
 - [x] 폴더 매핑 규칙 (2026-07-13) → `_notion-sync/` (언더스코어 접두사 = 이 vault의 기존 시스템/유틸리티 폴더 규칙, `_templates`와 동일 패턴). PARA 번호 폴더와 섞이지 않도록 격리
 - [x] 동기화 주기 → 기본안 1시간 유지 (변경 요청 없음)
@@ -38,7 +38,20 @@
 
 ## 동작 요약
 
-매시간 → Notion DB 전체 페이지 조회 → Markdown(YAML front matter) 생성 + sha256 → PG `sync_state`에 조건부 upsert(해시가 다를 때만 row 반환) → **변경된 페이지만** `vault/_notion-sync/<slug>.md`로 기록. 삭제는 하지 않는다(파괴적 작업 금지 — Notion에서 삭제된 페이지의 파일 정리는 수동 또는 v2의 `_trash/` 이동으로).
+매시간 → Notion DB 전체 페이지 조회 → Markdown(YAML front matter) 생성 + FNV-1a 해시 → PG `sync_state`에 조건부 upsert(해시가 다를 때만 row 반환) → **변경된 페이지만** `vault/_notion-sync/<slug>.md`로 기록(Execute Command + base64, 아래 디버깅 기록 참조). 삭제는 하지 않는다(파괴적 작업 금지 — Notion에서 삭제된 페이지의 파일 정리는 수동 또는 v2의 `_trash/` 이동으로).
 
-- Phase 1(현재): properties만 → front matter + 원본 링크
+- Phase 1: Tab S9 실기기 디버깅 진행 중 (2026-07-13) — 아래 "Tab S9 디버깅 기록" 참조. 파이프라인 통과 확인됐으나 **파일 내용이 실제 동기화 결과인지 최종 확인 중**(다음 세션에서 이어감)
 - Phase 2: **설계 확정** (2026-07-10, 노션 v5.8 하단 "🧠 Phase 2 설계 확정" 참조) — 블록 본문→Markdown(HTTP+notionApi, depth 1) + OKF 폴더 구조(카테고리 폴더 + index.md 자동 생성, sync_state v2). Phase 1이 Tab S9 수동 검증을 통과한 뒤 구현 착수
+
+## Tab S9 디버깅 기록 (2026-07-13)
+
+실기기에서 Phase 1을 실제로 돌리며 발견된 n8n 1.70.0 self-hosted + proot Ubuntu 환경 특유의 문제들. 전부 repo에 반영 완료.
+
+| # | 증상 | 원인 | 조치 |
+|---|---|---|---|
+| 1 | Build Markdown에서 아이템 0개로 소실 | Code 노드가 암묵적 `items` 전역변수에 의존 — 버전에 따라 비어있음 | `$input.all()`로 명시적 조회 |
+| 2 | `Cannot find module 'crypto'` | n8n Code 노드는 vm2 샌드박스에서 Node 내장 모듈 `require` 차단 | 순수 JS FNV-1a 해시로 교체 (암호학적 강도 불필요 — 변경감지용) |
+| 3 | `Write to Vault`(readWriteFile)에서 `ENOENT` | proot 안에서 안드로이드 공유 저장소(FUSE)에 Node.js `fs` write가 실패. 동일 경로에 셸 `echo >`는 성공 — proot+FUSE 조합 특유 이슈 | `readWriteFile` → **Execute Command** 노드로 교체, `echo '<base64>' \| base64 -d > path` 방식. base64 경유로 셸 인젝션·따옴표 문제 원천 차단 |
+| 4 | Encode Base64에서 `Buffer.from(undefined)` 에러 | Postgres `INSERT...ON CONFLICT...RETURNING`이 조건 불충족(내용 무변경)으로 0행 매칭돼도, n8n Postgres 노드가 빈 pass-through 아이템을 흘려보냄 | `if (!j.content) continue;` 가드 추가 — 무변경 아이템은 정상적으로 스킵 |
+
+**공통 교훈**: proot Ubuntu + Android 공유 저장소 조합에서는 Node.js 네이티브 파일 API보다 **셸 명령 경유가 더 안정적**. Phase 2(블록 본문 동기화) 구현 시에도 파일쓰기는 Execute Command 패턴 유지할 것.
