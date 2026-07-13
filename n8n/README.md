@@ -6,9 +6,9 @@
 ## 착수 전 확인 4건 (구현 시작 전에 결정)
 
 - [ ] 동기화 대상 Notion DB 선정 → `REPLACE_ME_NOTION_DATABASE_ID`
-- [ ] vault 위치 확정 (가정: Tab S9 로컬) → `REPLACE_ME_VAULT_PATH`. S26에서 열람하려면 Syncthing 또는 Obsidian Sync 별도 구성
-- [ ] 폴더 매핑 규칙 (현재: `vault/notion-sync/` 단일 폴더)
-- [ ] 동기화 주기 (기본안 1시간 — Schedule Trigger에서 변경)
+- [x] vault 위치 확정 (2026-07-13) → `/storage/emulated/0/Documents/vierzhen_home/MyVault` — 기존 PARA 구조(00_Inbox·10_Notes·20_Projects·30_Resources·40_Archive·_templates) vault, proot Ubuntu에서 접근 확인됨(exit code 0). S26에서 열람하려면 Syncthing 또는 Obsidian Sync 별도 구성 필요(미해결)
+- [x] 폴더 매핑 규칙 (2026-07-13) → `_notion-sync/` (언더스코어 접두사 = 이 vault의 기존 시스템/유틸리티 폴더 규칙, `_templates`와 동일 패턴). PARA 번호 폴더와 섞이지 않도록 격리
+- [x] 동기화 주기 → 기본안 1시간 유지 (변경 요청 없음)
 
 ## Placeholder 치환 목록
 
@@ -27,7 +27,7 @@
 3. 두 워크플로우의 크레덴셜 연결 + placeholder 치환 확인
 4. 메인 워크플로우 Settings → Error Workflow = "Error → Telegram Alert" 지정
 5. 수동 1회 실행(Execute Workflow) → 확인:
-   - `vault/notion-sync/`에 `.md` 파일 생성, front matter(title/notion_id/url/tags/updated) 정상
+   - `vault/_notion-sync/`에 `.md` 파일 생성, front matter(title/notion_id/url/tags/updated) 정상
    - `SELECT count(*) FROM sync_state;` = 페이지 수
    - **재실행 시 파일 재작성 없음** (hash 동일 → Upsert & Diff에서 0 rows 반환)
    - `Upsert & Diff (PG)` 노드의 Query Parameters가 배열 표현식으로 안 들어가면: `queryReplacement`를 개별 표현식 5개로 분리
@@ -36,7 +36,7 @@
 
 ## 동작 요약
 
-매시간 → Notion DB 전체 페이지 조회 → Markdown(YAML front matter) 생성 + sha256 → PG `sync_state`에 조건부 upsert(해시가 다를 때만 row 반환) → **변경된 페이지만** `vault/notion-sync/<slug>.md`로 기록. 삭제는 하지 않는다(파괴적 작업 금지 — Notion에서 삭제된 페이지의 파일 정리는 수동 또는 v2의 `_trash/` 이동으로).
+매시간 → Notion DB 전체 페이지 조회 → Markdown(YAML front matter) 생성 + sha256 → PG `sync_state`에 조건부 upsert(해시가 다를 때만 row 반환) → **변경된 페이지만** `vault/_notion-sync/<slug>.md`로 기록. 삭제는 하지 않는다(파괴적 작업 금지 — Notion에서 삭제된 페이지의 파일 정리는 수동 또는 v2의 `_trash/` 이동으로).
 
 - Phase 1(현재): properties만 → front matter + 원본 링크
 - Phase 2: **설계 확정** (2026-07-10, 노션 v5.8 하단 "🧠 Phase 2 설계 확정" 참조) — 블록 본문→Markdown(HTTP+notionApi, depth 1) + OKF 폴더 구조(카테고리 폴더 + index.md 자동 생성, sync_state v2). Phase 1이 Tab S9 수동 검증을 통과한 뒤 구현 착수

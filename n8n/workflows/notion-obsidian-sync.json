@@ -94,7 +94,7 @@
       "position": [1100, 0],
       "parameters": {
         "operation": "write",
-        "fileName": "=REPLACE_ME_VAULT_PATH/notion-sync/{{ $('Upsert & Diff (PG)').item.json.slug }}.md",
+        "fileName": "=REPLACE_ME_VAULT_PATH/_notion-sync/{{ $('Upsert & Diff (PG)').item.json.slug }}.md",
         "dataPropertyName": "data",
         "options": {}
       }
