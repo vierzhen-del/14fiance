@@ -72,31 +72,24 @@
       }
     },
     {
-      "id": "convert-to-file",
-      "name": "Markdown → File",
-      "type": "n8n-nodes-base.convertToFile",
-      "typeVersion": 1.1,
+      "id": "encode-base64",
+      "name": "Encode Base64",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [880, 0],
       "parameters": {
-        "operation": "toText",
-        "sourceProperty": "content",
-        "options": {
-          "fileName": "={{ $json.slug }}.md",
-          "encoding": "utf8"
-        }
+        "mode": "runOnceForAllItems",
+        "jsCode": "// proot + Android FUSE storage: n8n's readWriteFile node fails to create files there (ENOENT)\n// even though plain shell redirection works. Route the write through Execute Command instead,\n// passing content as base64 so slug/content can never break shell quoting.\nconst inputItems = $input.all();\nconst out = [];\nfor (const item of inputItems) {\n  const j = item.json;\n  const content_b64 = Buffer.from(j.content, 'utf8').toString('base64');\n  out.push({ json: { ...j, content_b64 } });\n}\nreturn out;"
       }
     },
     {
       "id": "write-vault-file",
       "name": "Write to Vault",
-      "type": "n8n-nodes-base.readWriteFile",
+      "type": "n8n-nodes-base.executeCommand",
       "typeVersion": 1,
       "position": [1100, 0],
       "parameters": {
-        "operation": "write",
-        "fileName": "=REPLACE_ME_VAULT_PATH/_notion-sync/{{ $('Upsert & Diff (PG)').item.json.slug }}.md",
-        "dataPropertyName": "data",
-        "options": {}
+        "command": "=mkdir -p \"REPLACE_ME_VAULT_PATH/_notion-sync\" && echo '{{ $json.content_b64 }}' | base64 -d > \"REPLACE_ME_VAULT_PATH/_notion-sync/{{ $json.slug }}.md\""
       }
     }
   ],
@@ -138,14 +131,14 @@
       "main": [
         [
           {
-            "node": "Markdown → File",
+            "node": "Encode Base64",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Markdown → File": {
+    "Encode Base64": {
       "main": [
         [
           {
