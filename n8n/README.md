@@ -20,6 +20,8 @@
 
 크레덴셜(Notion API·Postgres 17·Telegram Bot)은 n8n Credentials UI에서 생성 후 노드에 연결 — 토큰·키를 JSON/커밋/로그에 절대 기록하지 않는다.
 
+⚠️ **Postgres 크레덴셜 주의(2026-07-13 확인)**: n8n 자체가 실제로 접속하는 계정은 `postgres`(비밀번호 없음, `DB_POSTGRESDB_USER=postgres`)다. 이전에 문서화됐던 `n8n`/`n8n` 계정은 실제 운영 계정이 아니며 `public` 스키마에 CREATE 권한이 없어 permission denied가 난다 — n8n Credentials UI에서 Postgres 크레덴셜 생성 시 `postgres` 계정으로 설정할 것.
+
 ## Tab S9 수동 검증 절차 (테스트 대체)
 
 1. `psql -f n8n/sql/sync_state.sql` 실행 (스키마 생성)
