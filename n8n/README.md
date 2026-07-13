@@ -40,7 +40,7 @@
 
 매시간 → Notion DB 전체 페이지 조회 → Markdown(YAML front matter) 생성 + FNV-1a 해시 → PG `sync_state`에 조건부 upsert(해시가 다를 때만 row 반환) → **변경된 페이지만** `vault/_notion-sync/<slug>.md`로 기록(Execute Command + base64, 아래 디버깅 기록 참조). 삭제는 하지 않는다(파괴적 작업 금지 — Notion에서 삭제된 페이지의 파일 정리는 수동 또는 v2의 `_trash/` 이동으로).
 
-- Phase 1: Tab S9 실기기 디버깅 진행 중 (2026-07-13) — 아래 "Tab S9 디버깅 기록" 참조. 파이프라인 통과 확인됐으나 **파일 내용이 실제 동기화 결과인지 최종 확인 중**(다음 세션에서 이어감)
+- Phase 1: ✅ **동기화 성공 확인** (2026-07-13, n8n 워크플로우 ID `cDcy5JleTvpOofcP`, active) — Notion 3페이지 → sync_state 3행 → `_notion-sync/`에 .md 3개 실제 생성 (n8n 프로세스 자체 출력으로 검증). 남은 확인: Obsidian 앱에서 파일 표시 여부(마운트 뷰 확인)
 - Phase 2: **설계 확정** (2026-07-10, 노션 v5.8 하단 "🧠 Phase 2 설계 확정" 참조) — 블록 본문→Markdown(HTTP+notionApi, depth 1) + OKF 폴더 구조(카테고리 폴더 + index.md 자동 생성, sync_state v2). Phase 1이 Tab S9 수동 검증을 통과한 뒤 구현 착수
 
 ## Tab S9 디버깅 기록 (2026-07-13)
@@ -54,4 +54,9 @@
 | 3 | `Write to Vault`(readWriteFile)에서 `ENOENT` | proot 안에서 안드로이드 공유 저장소(FUSE)에 Node.js `fs` write가 실패. 동일 경로에 셸 `echo >`는 성공 — proot+FUSE 조합 특유 이슈 | `readWriteFile` → **Execute Command** 노드로 교체, `echo '<base64>' \| base64 -d > path` 방식. base64 경유로 셸 인젝션·따옴표 문제 원천 차단 |
 | 4 | Encode Base64에서 `Buffer.from(undefined)` 에러 | Postgres `INSERT...ON CONFLICT...RETURNING`이 조건 불충족(내용 무변경)으로 0행 매칭돼도, n8n Postgres 노드가 빈 pass-through 아이템을 흘려보냄 | `if (!j.content) continue;` 가드 추가 — 무변경 아이템은 정상적으로 스킵 |
 
+| 5 | 셸에서 `ls`하면 파일이 안 보이는데 n8n은 exitCode 0 | **Tab S9 다중 FUSE 마운트**: n8n 프로세스(uid=0, `/storage/self/primary`)와 검증 셸(uid=10251, `/storage/emulated/0`)이 같은 저장소를 서로 다른 마운트 인스턴스로 봄 — n8n은 처음부터 정상적으로 쓰고 있었음 | 파일 쓰기 검증은 **쓰는 프로세스와 같은 컨텍스트에서** (워크플로우에 `ls` Execute Command를 붙여 n8n 자신의 눈으로 확인). 별도 셸의 `ls` 결과로 "안 써짐"을 단정하지 말 것 |
+| 6 | 노드 이름 변경 후 파이프라인 단절 | `connections` 객체는 노드 **이름 문자열**로 참조 — `name` 필드만 바꾸면 연결이 조용히 끊김 | 이름 변경 시 JSON 전체에서 옛 이름을 grep해 일괄 치환. connection 참조 무결성 검증 스크립트로 확인 |
+
 **공통 교훈**: proot Ubuntu + Android 공유 저장소 조합에서는 Node.js 네이티브 파일 API보다 **셸 명령 경유가 더 안정적**. Phase 2(블록 본문 동기화) 구현 시에도 파일쓰기는 Execute Command 패턴 유지할 것.
+
+**n8n-mcp 운영 메모**: `n8n_list_workflows`는 n8n 1.70.0과 비호환(`excludePinnedData` 파라미터, VALIDATION_ERROR) — 워크플로우는 ID로 직접 조회(`n8n_get_workflow`). Schedule Trigger 워크플로우를 API로 실행하려면 임시 Webhook 노드를 붙였다 제거하는 패턴 사용.
