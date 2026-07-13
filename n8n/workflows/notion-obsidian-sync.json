@@ -73,13 +73,13 @@
     },
     {
       "id": "encode-base64",
-      "name": "Encode Base64",
+      "name": "Build Write Script",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [880, 0],
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// proot + Android FUSE storage: n8n's readWriteFile node fails to create files there (ENOENT)\n// even though plain shell redirection works. Route the write through Execute Command instead,\n// passing content as base64 so slug/content can never break shell quoting.\n// Postgres node emits a pass-through item even when RETURNING matched 0 rows (unchanged page) --\n// skip those instead of erroring, since \"nothing to write\" is the correct outcome for them.\nconst inputItems = $input.all();\nconst out = [];\nfor (const item of inputItems) {\n  const j = item.json;\n  if (!j.content) continue;\n  const content_b64 = Buffer.from(j.content, 'utf8').toString('base64');\n  out.push({ json: { ...j, content_b64 } });\n}\nreturn out;"
+        "jsCode": "// proot + Android FUSE storage: n8n's readWriteFile node fails to create files there (ENOENT)\n// even though plain shell redirection works. Also: this node's downstream Execute Command node's\n// per-item execution depends on an 'Execute Once' toggle that repeatedly reverted in the n8n UI on\n// Tab S9 -- so instead of one shell call per item, emit ONE combined script covering every item and\n// run it once. That makes the toggle's state irrelevant either way.\n// Postgres node emits a pass-through item even when RETURNING matched 0 rows (unchanged page) --\n// skip those instead of erroring, since \"nothing to write\" is the correct outcome for them.\nconst inputItems = $input.all();\nconst lines = [\n  'set -e',\n  'VAULT=\"REPLACE_ME_VAULT_PATH\"',\n  'mkdir -p \"$VAULT/_notion-sync\"'\n];\nlet count = 0;\nfor (const item of inputItems) {\n  const j = item.json;\n  if (!j.content) continue;\n  const b64 = Buffer.from(j.content, 'utf8').toString('base64');\n  lines.push(`echo '${b64}' | base64 -d > \"$VAULT/_notion-sync/${j.slug}.md\"`);\n  count++;\n}\nconst script = lines.join('\\n');\nreturn [{ json: { script, filesWritten: count } }];"
       }
     },
     {
@@ -88,9 +88,8 @@
       "type": "n8n-nodes-base.executeCommand",
       "typeVersion": 1,
       "position": [1100, 0],
-      "executeOnce": false,
       "parameters": {
-        "command": "=mkdir -p \"REPLACE_ME_VAULT_PATH/_notion-sync\" && echo '{{ $json.content_b64 }}' | base64 -d > \"REPLACE_ME_VAULT_PATH/_notion-sync/{{ $json.slug }}.md\""
+        "command": "={{ $json.script }}"
       }
     }
   ],
