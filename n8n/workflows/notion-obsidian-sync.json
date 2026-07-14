@@ -62,7 +62,8 @@
         "operation": "executeQuery",
         "query": "INSERT INTO sync_state (page_id, last_edited, content_hash, synced_at)\nVALUES ($1, NULLIF($2, '')::timestamptz, $3, now())\nON CONFLICT (page_id) DO UPDATE\nSET last_edited = EXCLUDED.last_edited,\n    content_hash = EXCLUDED.content_hash,\n    synced_at = now()\nWHERE sync_state.content_hash IS DISTINCT FROM EXCLUDED.content_hash\nRETURNING page_id, $4::text AS slug, $5::text AS content",
         "options": {
-          "queryReplacement": "={{ [$json.page_id, $json.last_edited, $json.hash, $json.slug, $json.content] }}"
+          "queryReplacement": "={{ [$json.page_id, $json.last_edited, $json.hash, $json.slug, $json.content] }}",
+          "queryBatching": "independently"
         }
       },
       "credentials": {
