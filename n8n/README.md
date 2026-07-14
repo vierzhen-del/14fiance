@@ -41,7 +41,34 @@
 매시간 → Notion DB 전체 페이지 조회 → Markdown(YAML front matter) 생성 + FNV-1a 해시 → PG `sync_state`에 조건부 upsert(해시가 다를 때만 row 반환) → **변경된 페이지만** `vault/_notion-sync/<slug>.md`로 기록(Execute Command + base64, 아래 디버깅 기록 참조). 삭제는 하지 않는다(파괴적 작업 금지 — Notion에서 삭제된 페이지의 파일 정리는 수동 또는 v2의 `_trash/` 이동으로).
 
 - Phase 1: ✅ **동기화 성공 확인 (2026-07-14 01:27 재검증)** — Notion 3페이지 → sync_state 3행 → `_notion-sync/`에 .md 3개 실제 생성, 내용 일치 확인. ⚠️ 2026-07-13에 기록됐던 "성공"은 **오탐**이었음(버그 #7 참조, 실제로는 파일 0개 생성) — 2026-07-14에 근본 원인 수정 후 재실행하여 최초로 진짜 검증됨. 워크플로우는 현재 **inactive**(안전 상태) — 이 상태 그대로 최종 승인 전까지 유지, 활성화(매시간 자동 실행) 여부는 사용자 승인 후 진행
-- Phase 2: **설계 확정** (2026-07-10, 노션 v5.8 하단 "🧠 Phase 2 설계 확정" 참조) — 블록 본문→Markdown(HTTP+notionApi, depth 1) + OKF 폴더 구조(카테고리 폴더 + index.md 자동 생성, sync_state v2). Phase 1이 Tab S9 수동 검증을 통과한 뒤 구현 착수
+- Phase 2: 🚧 **구현 완료, Tab S9 실기기 검증 대기** (2026-07-14) — 설계는 노션 v5.8 "🧠 Phase 2 설계 확정" 참조. 아래 "Phase 2 착수 전 결정 사항"·"Phase 2 수동 검증 절차" 참조
+
+## Phase 2 착수 전 결정 사항 (2026-07-14)
+
+- [x] **OKF 폴더 구조 적용 시점** → 우선 **flat 구조**로 구현. 실제 Notion DB(`39c5efd0e4628056a91ed6c5f16d6e85`)에 아직 카테고리 select 속성이 없어 설계상 기본값("미설정 시 flat 유지")과 일치. 카테고리 분류가 필요해지면 Notion DB에 select 속성 추가 → `Build Markdown`의 `folder` 필드만 그 값으로 채우면 나머지(Upsert & Diff PG, Build Write Script, Build Indexes)는 이미 folder 유무를 분기 처리하도록 구현되어 있어 추가 코드 변경 불필요
+- [x] **100블록 초과 페이지 처리** → 설계 원안(HTTP 노드 내장 pagination)을 **의도적으로 미구현**. 이 환경에서 n8n UI의 고급 옵션(Execute Once 토글 등)이 반복적으로 불안정했던 전례(디버깅 기록 #4, #8)에 비춰, `has_more` 플래그만 감지해 "100블록 초과 — Notion 원본 참조" 안내문으로 대체하는 단순한 방식을 택함. 개인 KB 페이지는 대부분 100블록 이하라 실사용 영향 적음 — 실제로 필요해지면 별도 이슈로 pagination 추가
+- [x] **하위 블록(toggle 내부 등) 처리** → 설계대로 depth 1만 변환, `has_children`인 블록은 본문 뒤에 Notion 원본 링크 placeholder 삽입
+
+## sync_state 스키마 v2 적용 (Tab S9, Phase 2 워크플로우 임포트 전 필수)
+
+1. **pg_dump 선행** (SENTINEL ⑤ — 스키마 변경 전 백업 필수): `pg_dump -h <host> -U <role> -d <db> -f backup_before_sync_state_v2_$(date +%Y%m%d).sql`
+2. `psql -f n8n/sql/sync_state_v2.sql` 실행 — `title`·`slug`·`folder`·`summary` 컬럼 추가 (`ADD COLUMN IF NOT EXISTS`라 안전하게 재실행 가능)
+3. `\d sync_state`로 4개 컬럼 추가 확인
+
+## Phase 2 수동 검증 절차 (테스트 대체)
+
+1. 위 sync_state v2 스키마 적용 완료 확인
+2. n8n UI에서 갱신된 `notion-obsidian-sync.json`을 다시 Import (기존 워크플로우 열어서 Import 또는 새 캔버스에 Import 후 크레덴셜 재연결)
+3. **신규 "Fetch Blocks" 노드**에 Notion API 크레덴셜 연결 확인 (Predefined Credential Type = Notion API) — `Get Notion Pages`와 같은 크레덴셜 사용
+4. **신규 "Index Query (PG)" 노드**에 Postgres 크레덴셜 연결 확인 (`Upsert & Diff (PG)`와 동일 크레덴셜)
+5. placeholder 재확인: `REPLACE_ME_VAULT_PATH`가 `Build Write Script`뿐 아니라 신규 `Build Indexes` 노드에도 들어있음 — 둘 다 동일 값으로 치환
+6. 수동 1회 실행(Test workflow) → 확인:
+   - `_notion-sync/<slug>.md` 파일에 본문(paragraph/heading/list 등)이 실제로 들어있는지, front matter에 `summary:` 채워졌는지
+   - `_notion-sync/index.md`가 새로 생성됐는지, 페이지 목록이 `- [[slug]] — summary` 형식으로 들어있는지
+   - `SELECT title, slug, folder, summary FROM sync_state;`로 신규 컬럼 값 채워졌는지 확인
+   - **재실행 시 파일 재작성 없음** 재검증(Phase 1과 동일 원칙 — 산출물을 직접 열어서 확인, 초록 체크만으로 판단 금지. 디버깅 기록 #9 참조)
+7. 배포 전 SENTINEL 정적 검사: `node scripts/sentinel/check.mjs n8n/workflows/*.json` 통과 확인 (이미 이 repo에서 통과 확인됨)
+8. 이상 없으면 Activate 여부 사용자 승인 후 진행
 
 ## Tab S9 디버깅 기록 (2026-07-13)
 
