@@ -34,15 +34,30 @@
     </select>
   </div>
 
-  <section class="page-section" id="sec-myassets">
+  <section class="page-section" id="sec-dashboard">
     <div class="section-header">
-      <p class="section-title">💼 내 자산</p>
+      <p class="section-title">💼 내 자산 대시보드</p>
+      <button type="button" class="section-toggle" aria-label="섹션 접기/펴기">▾</button>
+    </div>
+    <div class="section-body">
+      <p class="stat-sub" id="myAssetVersionBadge" style="display:none; margin:0 0 10px;"></p>
+      <div class="action-row" style="margin-bottom:8px;">
+        <button type="button" id="myLiveQuotesBtn" class="btn-action"></button>
+        <button type="button" id="myLiveQuotesNowBtn" class="btn-action" style="display:none;">⏱️ 지금 확인</button>
+        <span id="myLiveQuotesTimeStatus" class="action-status"></span>
+      </div>
+      <div id="myAssetResult"></div>
+    </div>
+  </section>
+
+  <section class="page-section collapsed" id="sec-myassets">
+    <div class="section-header">
+      <p class="section-title">⚙️ 내 자산 입력·불러오기</p>
       <button type="button" class="section-toggle" aria-label="섹션 접기/펴기">▾</button>
     </div>
     <div class="section-body">
       <p class="section-lede">계좌별 보유 종목·수량을 입력하면 평가액·수익률·예상 월배당을 자동 계산합니다. <b>입력한 보유 정보는 이 기기(브라우저)에만 저장되며 서버로 전송되지 않습니다.</b></p>
       <p class="section-lede">월배당은 기본적으로 최근 1년 배당(TTM)÷12로 추정합니다. 시트/노션 배당기준에 기록된 <b>주당 확정 DPS(원)</b>를 알고 있으면 종목별 "확정 DPS(원/주,선택)" 칸에 그대로 입력하세요 — 월배당이 DPS×수량으로 계산되어 추정치보다 우선 적용되고, 수량을 바꿔도 자동으로 따라갑니다.</p>
-      <p class="stat-sub" id="myAssetVersionBadge" style="display:none; margin:0 0 10px;"></p>
 
       <div class="card">
         <div id="myAssetRowsWrap" class="myrows-wrap">
@@ -95,13 +110,9 @@
           <button type="button" id="myCsvBtn" class="btn-action">📄 시트 저장</button>
           <a href="https://app.notion.com/p/3865efd0e46281c49a72c9bbc70dcea0" target="_blank" rel="noopener" class="btn-action" style="text-decoration:none;">📋 배당 기준 SOP 확인</a>
           <button type="button" id="myIncludeStocksBtn" class="btn-action"></button>
-          <button type="button" id="myLiveQuotesBtn" class="btn-action"></button>
-          <button type="button" id="myLiveQuotesNowBtn" class="btn-action" style="display:none;">⏱️ 지금 확인</button>
-          <span id="myLiveQuotesTimeStatus" class="action-status"></span>
           <span id="myAssetStatus" class="action-status"></span>
           <input type="file" id="myImportFile" accept="application/json" style="display:none;">
         </div>
-        <div id="myAssetResult"></div>
       </div>
     </div>
   </section>
@@ -112,7 +123,7 @@
     (대시보드 계산·렌더 로직은 <code>../shared/myassets*.js</code>를 <a href="../index.html">../index.html</a>과 공유합니다.)
   </p>
 
-  <section class="page-section" id="sec-ai-settings">
+  <section class="page-section collapsed" id="sec-ai-settings">
     <div class="section-header">
       <p class="section-title">🤖 AI 파싱 설정</p>
       <button type="button" class="section-toggle" aria-label="섹션 접기/펴기">▾</button>
@@ -153,7 +164,7 @@
     </div>
   </section>
 
-  <section class="page-section" id="sec-capture-upload">
+  <section class="page-section collapsed" id="sec-capture-upload">
     <div class="section-header">
       <p class="section-title">📸 캡처 업로드·파싱</p>
       <button type="button" class="section-toggle" aria-label="섹션 접기/펴기">▾</button>

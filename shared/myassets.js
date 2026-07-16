@@ -175,6 +175,10 @@ function serializeMyAssets() {
     dataAsOf: state.myAssetsDataAsOf || "",
     importedAt: state.myAssetsImportedAt || "",
     divHistory: state.myAssetsDivHistory || {},
+    // A8: 이력 3종을 내보내기에 포함 — 앱 삭제·재설치 후 "가져오기" 한 번으로 이력까지 복원
+    snapshotHistory: (() => { try { return JSON.parse(localStorage.getItem(MY_ASSETS_HISTORY_KEY) || "[]"); } catch (e) { return []; } })(),
+    dailyHistory: (() => { try { return JSON.parse(localStorage.getItem(MY_ASSETS_DAILY_HISTORY_KEY) || "[]"); } catch (e) { return []; } })(),
+    changelog: (() => { try { return JSON.parse(localStorage.getItem(MY_ASSETS_CHANGELOG_KEY) || "[]"); } catch (e) { return []; } })(),
   };
 }
 
@@ -236,6 +240,10 @@ function applyMyAssets(data) {
   state.myAssetsDataAsOf = data.dataAsOf || state.myAssetsDataAsOf || "";
   state.myAssetsImportedAt = data.importedAt || state.myAssetsImportedAt || "";
   state.myAssetsDivHistory = data.divHistory || state.myAssetsDivHistory || {};
+  // A8: 가져오기 파일에 이력이 있으면 localStorage에 복원(없으면 기존 이력 유지 — 하위호환)
+  if (Array.isArray(data.snapshotHistory) && data.snapshotHistory.length) localStorage.setItem(MY_ASSETS_HISTORY_KEY, JSON.stringify(data.snapshotHistory));
+  if (Array.isArray(data.dailyHistory) && data.dailyHistory.length) localStorage.setItem(MY_ASSETS_DAILY_HISTORY_KEY, JSON.stringify(data.dailyHistory));
+  if (Array.isArray(data.changelog) && data.changelog.length) localStorage.setItem(MY_ASSETS_CHANGELOG_KEY, JSON.stringify(data.changelog.slice(0, 300)));
   document.getElementById("myAssetRows").innerHTML = "";
   for (const r of data.rows) {
     // 구버전(확정 월배당 총액) 데이터는 주당 DPS로 1회 변환
@@ -1336,7 +1344,7 @@ async function renderMyAssets() {
 
   result.innerHTML = `
     <div class="stat-row" style="margin-top:14px;">
-      <div class="stat">
+      <div class="stat stat-hero-card">
         <p class="stat-label">총 평가액</p>
         <p class="stat-hero" style="font-size:28px;">${fmtW(totalValue)}</p>
         ${totalProfit != null ? `<p class="stat-sub" style="color:${totalProfit >= 0 ? "var(--good)" : "var(--critical)"}">손익 ${totalProfit >= 0 ? "+" : ""}${fmtW(totalProfit)} (${((costedValue / totalCost - 1) * 100).toFixed(2)}%)</p>` : `<p class="stat-sub">매입단가 입력 시 손익 표시</p>`}
@@ -1479,6 +1487,7 @@ async function renderMyAssets() {
       <p class="chart-title" style="margin-top:20px;">📈 평가액·월배당 추이 (월별 스냅샷)</p>
       <div class="action-row" style="margin-bottom:8px;">
         <button type="button" id="mySnapshotBtn" class="btn-action">📸 이번 달 스냅샷 저장</button>
+        <button type="button" id="myHistorySopBtn" class="btn-action">📋 이력 SOP 요약 복사</button>
         <span id="mySnapshotStatus" class="action-status"></span>
       </div>
       ${trendHTML}
@@ -1606,6 +1615,27 @@ async function renderMyAssets() {
     localStorage.setItem(MY_ASSETS_HISTORY_KEY, JSON.stringify(hist));
     flashStatus("mySnapshotStatus", `${month} 스냅샷 저장 ✓ (이 브라우저에만 보관)`);
     renderMyAssets();
+  });
+  // A8: 스냅샷·변동이력을 노션 "자산 스냅샷 이력" 페이지에 기록할 붙여넣기용 텍스트 —
+  // 앱이 노션 API를 직접 호출하지 않는 원칙 유지(AI 세션에 붙여넣어 처리). 재설치 후
+  // 가져오기 파일이 없어도 클로드 세션 "자산 업데이트"로 노션 이력에서 복원할 수 있게 한다.
+  document.getElementById("myHistorySopBtn").addEventListener("click", async () => {
+    const monthly = (() => { try { return JSON.parse(localStorage.getItem(MY_ASSETS_HISTORY_KEY) || "[]"); } catch (e) { return []; } })();
+    const daily = (() => { try { return JSON.parse(localStorage.getItem(MY_ASSETS_DAILY_HISTORY_KEY) || "[]"); } catch (e) { return []; } })();
+    const log = loadAssetChangelog();
+    const lines = [`📸 자산 스냅샷 이력 백업 (${nowDateTimeStr()})`];
+    lines.push(`월별 스냅샷 ${monthly.length}건 / 일별 스냅샷 ${daily.length}건 / 변동이력 ${log.length}건`);
+    for (const h of monthly) lines.push(`- [월별] ${h.month}: 평가액 ${Math.round(h.value).toLocaleString()}원, 월배당 ${Math.round(h.monthlyDiv || 0).toLocaleString()}원`);
+    for (const h of daily.slice(-30)) lines.push(`- [일별] ${h.date}: 평가액 ${Math.round(h.value).toLocaleString()}원`);
+    for (const e of log.slice(0, 20)) lines.push(`- [변동] ${e.ts} (${e.source}): ${Math.round(e.beforeValue).toLocaleString()}→${Math.round(e.afterValue).toLocaleString()}원, ${e.changes.length}건 변경`);
+    lines.push("");
+    lines.push(`이 내용을 노션 "자산 스냅샷 이력" 페이지에 기록해줘 — 기존 기록과 같은 월/일짜는 이 값으로 갱신하고, 앱 재설치 후 "자산 업데이트" 요청 시 이 이력을 import JSON의 snapshotHistory/dailyHistory 필드에 채워줘.`);
+    try {
+      await navigator.clipboard.writeText(lines.join("\n"));
+      flashStatus("mySnapshotStatus", "이력 요약 복사됨 — AI 세션에 붙여넣어 노션에 기록하세요");
+    } catch (err) {
+      window.prompt("아래 내용을 복사하세요:", lines.join("\n"));
+    }
   });
   document.getElementById("myDailySnapshotBtn").addEventListener("click", () => {
     const date = todayStr();
