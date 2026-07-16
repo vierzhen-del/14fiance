@@ -155,6 +155,21 @@
       "style": "안전"
     },
     {
+      "symbol": "IEF",
+      "name": "IEF (미국 중기국채 7-10년)",
+      "category": "자산배분",
+      "region": "미국",
+      "style": "안전"
+    },
+    {
+      "symbol": "NVDA",
+      "name": "NVDA (엔비디아)",
+      "category": "개별주(비ETF)",
+      "region": "미국",
+      "style": "개별주",
+      "assetType": "stock"
+    },
+    {
       "symbol": "DRAM",
       "name": "DRAM (메모리 배당)",
       "category": "메모리 배당",
