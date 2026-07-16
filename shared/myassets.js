@@ -752,6 +752,84 @@ function buildChangelogHTML(granularity) {
   return `${rows}<p class="stat-sub" style="margin-top:6px;">총 ${log.length}건의 변경 이벤트가 기록되어 있습니다(최대 300건, 이 브라우저에만 보관).</p>`;
 }
 
+/* ---------- A6: 📊 지수비교 탭 — 내 수익률 vs 벤치마크 ----------
+   "내 수익률"은 현재 보유 평가액 비중으로 각 종목 일별 종가 수익률을 가중평균해
+   합성한 근사치(일별 리밸런싱 가정, 기간 시작=0%) — 기간 중 매수·매도를 반영한
+   실계좌 누적수익률이 아니므로 화면에 그 한계를 명시한다. 수익률(%) 비교라
+   통화 환산은 불필요(각 시리즈를 자기 통화 종가 그대로 정규화). */
+const BENCH_US_SYMBOL = "SPY";      // 미국지수 프록시(S&P500)
+const BENCH_KR_SYMBOL = "069500.KS"; // 한국지수 프록시(KODEX 200 = 코스피200)
+
+function benchSinceDate(months) {
+  if (!months) return "0000-00-00"; // 전체 기간
+  const d = new Date();
+  d.setMonth(d.getMonth() - months);
+  return d.toISOString().slice(0, 10);
+}
+
+/* 단일 종목: sinceDate 이후 첫 종가 대비 %변화 시리즈 */
+function pctChangeSeriesSince(full, sinceDate) {
+  const dates = [], values = [];
+  let base = null;
+  for (let i = 0; i < full.dates.length; i++) {
+    if (full.dates[i] < sinceDate) continue;
+    if (base == null) base = full.closes[i];
+    dates.push(full.dates[i]);
+    values.push(full.closes[i] / base - 1);
+  }
+  return dates.length >= 2 ? { dates, values } : null;
+}
+
+/* 내 포트폴리오: 보유 종목들의 날짜 교집합 위에서 평가액 비중 가중 일별 수익률을
+   복리 누적(index.html computeBlend의 NAV 패턴을 %변화(0 시작)로 변형) */
+function buildMyBlendPctSeries(perRow, sinceDate) {
+  const rows = perRow.filter((p) => p.value > 0 && p.full && p.full.dates && p.full.dates.length >= 2);
+  if (!rows.length) return null;
+  const totalV = rows.reduce((a, p) => a + p.value, 0);
+  const weights = rows.map((p) => p.value / totalV);
+  const priceMaps = rows.map((p) => {
+    const m = new Map();
+    for (let i = 0; i < p.full.dates.length; i++) {
+      if (p.full.dates[i] >= sinceDate) m.set(p.full.dates[i], p.full.closes[i]);
+    }
+    return m;
+  });
+  let commonDates = [...priceMaps[0].keys()];
+  for (let i = 1; i < priceMaps.length; i++) commonDates = commonDates.filter((d) => priceMaps[i].has(d));
+  commonDates.sort();
+  if (commonDates.length < 2) return null;
+  let nav = 1, prev = null;
+  const dates = [], values = [];
+  for (const date of commonDates) {
+    const prices = priceMaps.map((m) => m.get(date));
+    if (prev) {
+      let r = 0;
+      for (let i = 0; i < weights.length; i++) r += weights[i] * (prices[i] / prev[i] - 1);
+      nav *= 1 + r;
+    }
+    dates.push(date);
+    values.push(nav - 1);
+    prev = prices;
+  }
+  return { dates, values };
+}
+
+/* 시리즈들의 시작일을 가장 늦은 공통 시작일로 맞춰 전부 그 날=0%가 되게 재정규화 —
+   상장일이 늦은 벤치마크가 섞여도 같은 출발선에서 비교되도록(공정 비교) */
+function alignSeriesStarts(seriesList) {
+  const commonStart = seriesList.reduce((a, s) => (s.dates[0] > a ? s.dates[0] : a), "");
+  return seriesList.map((s) => {
+    let idx0 = s.dates.findIndex((d) => d >= commonStart);
+    if (idx0 < 0) idx0 = 0;
+    const factor = 1 + s.values[idx0];
+    return {
+      ...s,
+      dates: s.dates.slice(idx0),
+      values: s.values.slice(idx0).map((v) => (1 + v) / factor - 1),
+    };
+  }).filter((s) => s.dates.length >= 2);
+}
+
 /* 통합 탭 — 도넛(종목 비중) SVG (라이브러리 없이 stroke-dasharray로) */
 function buildDonutSVG(items, centerLabel) {
   const total = items.reduce((a, b) => a + b.value, 0);
@@ -1262,6 +1340,7 @@ async function renderMyAssets() {
       <button type="button" class="dash-tab-btn" data-tab="suff">⚖️ 자급률·월매수</button>
       <button type="button" class="dash-tab-btn" data-tab="divbasis">💹 배당기준·이력</button>
       <button type="button" class="dash-tab-btn" data-tab="trend">📈 추이</button>
+      <button type="button" class="dash-tab-btn" data-tab="benchmark">📊 지수비교</button>
       <button type="button" class="dash-tab-btn" data-tab="changelog">🗂️ 변동이력</button>
       <button type="button" class="dash-tab-btn" data-tab="settings">⚙️ 설정</button>
     </div>
@@ -1371,6 +1450,25 @@ async function renderMyAssets() {
       </div>
       <div id="myAssetChangeBody"></div>
       <p class="stat-sub" style="margin-top:6px;">이 사이트는 정적 페이지(서버 없음)라 일별 캡처는 자동으로 쌓이지 않습니다 — 확인할 때마다 "오늘 자산 스냅샷"을 눌러야 이력이 쌓입니다. 주간은 일별 캡처가 서로 다른 주에 2건 이상 쌓여야 계산됩니다.</p>
+    </div>
+
+    <div class="dash-panel" data-tab="benchmark" hidden>
+      <p class="chart-title" style="margin-top:20px;">📊 주요 지수 대비 수익률</p>
+      <p class="stat-sub">내 수익률은 <b>현재 보유 비중 기준</b> 합성 수익률(기간 시작=0%, 일별 리밸런싱 가정)입니다 — 기간 중 매수·매도 이력을 반영한 실계좌 누적수익률과는 다를 수 있습니다. 지수는 배당 미포함 가격 기준(SPY·KODEX 200 종가)이며, 통화 환산 없이 각자 %변화로 비교합니다.</p>
+      <div class="controls" style="margin:10px 0;">
+        <select id="myBenchPeriod" aria-label="비교 기간">
+          <option value="3">최근 3개월</option>
+          <option value="6" selected>최근 6개월</option>
+          <option value="12">최근 1년</option>
+          <option value="0">전체</option>
+        </select>
+        <label style="font-size:12.5px; display:inline-flex; align-items:center; gap:4px;"><input type="checkbox" id="myBenchUS" checked> 미국 S&amp;P500</label>
+        <label style="font-size:12.5px; display:inline-flex; align-items:center; gap:4px;"><input type="checkbox" id="myBenchKR" checked> 한국 KOSPI200</label>
+        <label style="font-size:12.5px; display:inline-flex; align-items:center; gap:4px;"><input type="checkbox" id="myBenchEtfOn"> 선택 ETF</label>
+        <select id="myBenchEtf" aria-label="비교할 ETF 선택"></select>
+      </div>
+      <div id="myBenchBadges" class="action-row" style="margin:6px 0 10px;"></div>
+      <div id="myBenchChart"></div>
     </div>
 
     <div class="dash-panel" data-tab="changelog" hidden>
@@ -1499,6 +1597,74 @@ async function renderMyAssets() {
     renderChangelog();
   });
   renderChangelog();
+
+  // A6: 📊 지수비교 — 내 수익률(현재 보유 비중 기준) vs 벤치마크
+  const benchPeriodSel = document.getElementById("myBenchPeriod");
+  const benchUS = document.getElementById("myBenchUS");
+  const benchKR = document.getElementById("myBenchKR");
+  const benchEtfOn = document.getElementById("myBenchEtfOn");
+  const benchEtfSel = document.getElementById("myBenchEtf");
+  benchEtfSel.innerHTML = etfOptionsHTML(state.myBenchEtf || "QQQ");
+  if (state.myBenchPeriod) benchPeriodSel.value = state.myBenchPeriod;
+  if (state.myBenchUS != null) benchUS.checked = state.myBenchUS;
+  if (state.myBenchKR != null) benchKR.checked = state.myBenchKR;
+  if (state.myBenchEtfOn != null) benchEtfOn.checked = state.myBenchEtfOn;
+
+  const renderBenchmark = async () => {
+    const chartEl = document.getElementById("myBenchChart");
+    const badgesEl = document.getElementById("myBenchBadges");
+    if (!chartEl) return;
+    state.myBenchPeriod = benchPeriodSel.value;
+    state.myBenchUS = benchUS.checked;
+    state.myBenchKR = benchKR.checked;
+    state.myBenchEtfOn = benchEtfOn.checked;
+    state.myBenchEtf = benchEtfSel.value;
+    chartEl.innerHTML = `<p class="compare-empty">불러오는 중…</p>`;
+    badgesEl.innerHTML = "";
+    try {
+      const since = benchSinceDate(Number(benchPeriodSel.value));
+      const seriesList = [];
+      const mySeries = buildMyBlendPctSeries(perRow, since);
+      if (mySeries) seriesList.push({ label: "내 수익률(현재 비중 기준)", color: "#eda100", ...mySeries });
+      const benchDefs = [];
+      if (benchUS.checked) benchDefs.push({ symbol: BENCH_US_SYMBOL, label: "S&P500(SPY)", color: "#2a78d6" });
+      if (benchKR.checked) benchDefs.push({ symbol: BENCH_KR_SYMBOL, label: "KODEX 200", color: "#199e70" });
+      if (benchEtfOn.checked && benchEtfSel.value) {
+        const meta = state.metaBySymbol.get(benchEtfSel.value);
+        benchDefs.push({ symbol: benchEtfSel.value, label: meta ? meta.name : benchEtfSel.value, color: "#7b5ec9" });
+      }
+      for (const def of benchDefs) {
+        const full = await loadSymbol(def.symbol);
+        const s = pctChangeSeriesSince(full, since);
+        if (s) seriesList.push({ label: def.label, color: def.color, ...s });
+      }
+      if (!seriesList.length) {
+        chartEl.innerHTML = `<p class="compare-empty">표시할 시리즈가 없습니다 — 보유 종목을 입력하거나 벤치마크를 켜주세요.</p>`;
+        return;
+      }
+      const aligned = alignSeriesStarts(seriesList);
+      if (!aligned.length) {
+        chartEl.innerHTML = `<p class="compare-empty">선택한 기간에 겹치는 데이터가 부족합니다 — 기간을 늘려보세요.</p>`;
+        return;
+      }
+      badgesEl.innerHTML = aligned.map((s) => {
+        const last = s.values[s.values.length - 1];
+        return `<span style="display:inline-block; background:${s.color}; color:#fff; border-radius:8px; padding:3px 10px; font-size:12.5px; font-weight:600;">${s.label} ${last >= 0 ? "+" : ""}${(last * 100).toFixed(2)}%</span>`;
+      }).join(" ");
+      chartEl.innerHTML = "";
+      buildCompareChart(chartEl, aligned);
+      chartEl.insertAdjacentHTML("beforeend",
+        `<p class="stat-sub" style="margin-top:6px;">${aligned[0].dates[0]} ~ ${aligned[0].dates[aligned[0].dates.length - 1]} · 시작일 공통 정규화(모든 선이 같은 날 0%에서 출발)</p>`);
+    } catch (err) {
+      chartEl.innerHTML = `<p class="compare-empty" style="color:var(--critical)">지수 데이터를 불러오지 못했습니다: ${err.message}</p>`;
+    }
+  };
+  benchPeriodSel.addEventListener("change", renderBenchmark);
+  benchUS.addEventListener("change", renderBenchmark);
+  benchKR.addEventListener("change", renderBenchmark);
+  benchEtfOn.addEventListener("change", renderBenchmark);
+  benchEtfSel.addEventListener("change", renderBenchmark);
+  renderBenchmark();
 }
 
 function buildMyAssetsText() {
