@@ -225,6 +225,29 @@
   .chk-counter b { color: var(--text-primary); }
 
   .compare-empty { font-size: 13px; color: var(--text-muted); padding: 8px 2px; }
+  .empty-restore-card { border: 1px solid var(--border); border-radius: 12px; padding: 18px 16px; margin: 8px 0; background: var(--card-bg, rgba(127,127,127,.04)); text-align: center; }
+  .empty-restore-title { font-size: 15px; font-weight: 700; margin: 0 0 6px; }
+  .empty-restore-desc { font-size: 13px; color: var(--text-muted); margin: 0 0 12px; line-height: 1.6; }
+  .empty-restore-card .action-row { justify-content: center; }
+  /* A10 📡 시그널 탭 */
+  .sig-gauge { position: relative; height: 10px; border-radius: 5px; background: var(--border); min-width: 120px; margin: 4px 0; }
+  .sig-gauge::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 30%; background: #199e70; border-radius: 5px 0 0 5px; opacity: .5; }
+  .sig-gauge::after { content: ""; position: absolute; right: 0; top: 0; bottom: 0; width: 25%; background: #d64545; border-radius: 0 5px 5px 0; opacity: .5; }
+  .sig-gauge-dot { position: absolute; top: 50%; transform: translate(-50%, -50%); width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 2px solid #555; box-shadow: 0 1px 3px rgba(0,0,0,.4); z-index: 1; }
+  .sig-badge { display: inline-block; border-radius: 8px; padding: 2px 8px; font-size: 12px; font-weight: 600; }
+  .sig-watch { background: rgba(25,158,112,.15); color: #199e70; }
+  .sig-alert { background: rgba(214,69,69,.15); color: #d64545; }
+  .sig-neutral { background: rgba(127,127,127,.15); color: var(--text-muted); }
+  .sig-remove-btn { border: none; background: none; color: var(--text-muted); cursor: pointer; font-size: 13px; padding: 2px 6px; }
+  .sig-remove-btn:hover { color: var(--critical); }
+  .mdd-hist { display: flex; align-items: flex-end; gap: 3px; height: 140px; margin: 12px 0 4px; overflow-x: auto; padding-bottom: 2px; }
+  .mdd-hist-col { flex: 1; min-width: 26px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; }
+  .mdd-hist-count { font-size: 10.5px; color: var(--text-muted); }
+  .mdd-hist-bar { width: 100%; background: #2aa79a; border-radius: 3px 3px 0 0; min-height: 1px; }
+  .mdd-hist-warn { background: #e6a23c; }
+  .mdd-hist-danger { background: #d64545; }
+  .mdd-hist-label { font-size: 10px; color: var(--text-muted); margin-top: 3px; }
+  .mdd-hist-cur .mdd-hist-bar { outline: 2px solid #eda100; outline-offset: 1px; }
 
   .compare-table { width: 100%; min-width: 480px; border-collapse: collapse; font-size: 13px; margin-bottom: 4px; }
   .compare-table th { text-align: left; font-size: 11.5px; color: var(--text-muted); font-weight: 600; padding: 0 10px 8px; white-space: nowrap; }

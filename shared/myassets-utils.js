@@ -142,12 +142,17 @@ function squarify(items, x, y, w, h) {
 /* 여러 시리즈를 한 캔버스에 겹쳐 그리는 비교 차트 — index.html의 MDD Underwater 비교용을
    이식하되, 낙폭(≤0) 전용이던 y축을 양수 수익률도 그릴 수 있게 일반화(A6 지수비교 탭용).
    seriesList: [{ label, color, dates:[YYYY-MM-DD], values:[비율(0.05=+5%)] }] */
-function buildCompareChart(container, seriesList) {
+function buildCompareChart(container, seriesList, opts = {}) {
+  // opts.fmtAxis/fmtTip: 값 포맷터(기본 % — 기존 호출부 무변경). opts.anchorZero=false면
+  // y축을 0에 고정하지 않음(가격 도메인 다중선용, A10 시그널 탭).
+  const fmtAxis = opts.fmtAxis || ((v) => (v * 100).toFixed(0) + "%");
+  const fmtTip = opts.fmtTip || ((v) => (v * 100).toFixed(1) + "%");
+  const anchorZero = opts.anchorZero !== false;
   const domainMin = Math.min(...seriesList.map((s) => Date.parse(s.dates[0])));
   const domainMax = Math.max(...seriesList.map((s) => Date.parse(s.dates[s.dates.length - 1])));
   const xAt = (ts) => PAD_L + ((ts - domainMin) / (domainMax - domainMin)) * (CHART_W - PAD_L - PAD_R);
 
-  let vMin = 0, vMax = 0;
+  let vMin = anchorZero ? 0 : Infinity, vMax = anchorZero ? 0 : -Infinity;
   for (const s of seriesList) { vMin = Math.min(vMin, ...s.values); vMax = Math.max(vMax, ...s.values); }
   const ticks = niceTicks(vMin, vMax, 5);
   const tMin = ticks[0], tMax = ticks[ticks.length - 1];
@@ -159,7 +164,7 @@ function buildCompareChart(container, seriesList) {
     .map((t) => {
       const y = yAt(t).toFixed(2);
       return `<line class="gridline" x1="${PAD_L}" x2="${CHART_W - PAD_R}" y1="${y}" y2="${y}"/>` +
-             `<text class="axis-label" x="${PAD_L - 6}" y="${Number(y) + 3}" text-anchor="end">${(t * 100).toFixed(0)}%</text>`;
+             `<text class="axis-label" x="${PAD_L - 6}" y="${Number(y) + 3}" text-anchor="end">${fmtAxis(t)}</text>`;
     })
     .join("");
 
@@ -233,7 +238,7 @@ function buildCompareChart(container, seriesList) {
         const idx = nearestIndexByTime(tsLists[si], targetTs);
         if (!refDate || s.dates[idx] > refDate) refDate = s.dates[idx];
         return `<div class="t-row"><span class="t-key"><span class="t-swatch" style="background:${s.color}"></span>${s.label}</span>` +
-               `<strong>${(s.values[idx] * 100).toFixed(1)}%</strong></div>`;
+               `<strong>${fmtTip(s.values[idx])}</strong></div>`;
       })
       .join("");
     tooltip.innerHTML = `<div class="t-date">${refDate}</div>${rows}`;
@@ -456,4 +461,169 @@ function monthsToGoal(goal, lump, monthly, annualRate) {
     if (fv >= goal) return { months: m, contributed: lump + monthly * m };
   }
   return { months: null, contributed: null };
+}
+
+/* MDD 계산 — index.html 원본과 동일 사본(A10에서 shared로 이식, 연간 MDD 계산에 사용) */
+function calcMDD(dates, closes) {
+  let peakPrice = closes[0], peakIdx = 0;
+  let mdd = 0, mddPeakIdx = 0, mddTroughIdx = 0;
+  const ddSeries = new Array(closes.length);
+  for (let i = 0; i < closes.length; i++) {
+    if (closes[i] > peakPrice) { peakPrice = closes[i]; peakIdx = i; }
+    const dd = (closes[i] - peakPrice) / peakPrice;
+    ddSeries[i] = dd;
+    if (dd < mdd) { mdd = dd; mddPeakIdx = peakIdx; mddTroughIdx = i; }
+  }
+  let recoveryIdx = -1;
+  const peakVal = closes[mddPeakIdx];
+  for (let i = mddTroughIdx + 1; i < closes.length; i++) {
+    if (closes[i] >= peakVal) { recoveryIdx = i; break; }
+  }
+  return { mdd, peakIdx: mddPeakIdx, troughIdx: mddTroughIdx, recoveryIdx, ddSeries };
+}
+
+/* ===== A10 📡 시그널 탭: 기술적 지표 순수함수 (종가 배열 기반 — OHLC·거래량 없음) ===== */
+
+/* 단순이동평균 시리즈 — 앞쪽 n-1개는 null */
+function smaSeries(closes, n) {
+  const out = new Array(closes.length).fill(null);
+  let sum = 0;
+  for (let i = 0; i < closes.length; i++) {
+    sum += closes[i];
+    if (i >= n) sum -= closes[i - n];
+    if (i >= n - 1) out[i] = sum / n;
+  }
+  return out;
+}
+
+/* 마지막 시점의 MA n 값 (데이터 부족 시 null) */
+function smaAt(closes, n) {
+  if (closes.length < n) return null;
+  let sum = 0;
+  for (let i = closes.length - n; i < closes.length; i++) sum += closes[i];
+  return sum / n;
+}
+
+/* 지수이동평균 시리즈 (표준 2/(n+1) 계수, 첫 값은 SMA 시딩) */
+function emaSeries(closes, n) {
+  const out = new Array(closes.length).fill(null);
+  if (closes.length < n) return out;
+  let sum = 0;
+  for (let i = 0; i < n; i++) sum += closes[i];
+  let ema = sum / n;
+  out[n - 1] = ema;
+  const k = 2 / (n + 1);
+  for (let i = n; i < closes.length; i++) {
+    ema = closes[i] * k + ema * (1 - k);
+    out[i] = ema;
+  }
+  return out;
+}
+
+/* RSI(Wilder 평활) 시리즈 — 기본 14일, 계산 불가 구간은 null */
+function rsiSeries(closes, n = 14) {
+  const out = new Array(closes.length).fill(null);
+  if (closes.length <= n) return out;
+  let gain = 0, loss = 0;
+  for (let i = 1; i <= n; i++) {
+    const d = closes[i] - closes[i - 1];
+    if (d >= 0) gain += d; else loss -= d;
+  }
+  let avgGain = gain / n, avgLoss = loss / n;
+  out[n] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+  for (let i = n + 1; i < closes.length; i++) {
+    const d = closes[i] - closes[i - 1];
+    avgGain = (avgGain * (n - 1) + Math.max(d, 0)) / n;
+    avgLoss = (avgLoss * (n - 1) + Math.max(-d, 0)) / n;
+    out[i] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+  }
+  return out;
+}
+
+/* MACD(12·26·9) — {macd[], signal[], hist[]} (계산 불가 구간은 null) */
+function macdSeries(closes, fast = 12, slow = 26, sig = 9) {
+  const emaF = emaSeries(closes, fast), emaS = emaSeries(closes, slow);
+  const macd = closes.map((_, i) => (emaF[i] != null && emaS[i] != null ? emaF[i] - emaS[i] : null));
+  const start = macd.findIndex((v) => v != null);
+  const signal = new Array(closes.length).fill(null);
+  if (start >= 0 && closes.length - start >= sig) {
+    let sum = 0;
+    for (let i = start; i < start + sig; i++) sum += macd[i];
+    let ema = sum / sig;
+    signal[start + sig - 1] = ema;
+    const k = 2 / (sig + 1);
+    for (let i = start + sig; i < closes.length; i++) {
+      ema = macd[i] * k + ema * (1 - k);
+      signal[i] = ema;
+    }
+  }
+  const hist = macd.map((v, i) => (v != null && signal[i] != null ? v - signal[i] : null));
+  return { macd, signal, hist };
+}
+
+/* 볼린저 밴드(기본 20일·2σ) — 마지막 시점 {mid, upper, lower, pctB, bandwidth} */
+function bollingerLast(closes, n = 20, mult = 2) {
+  if (closes.length < n) return null;
+  const win = closes.slice(-n);
+  const mid = win.reduce((a, b) => a + b, 0) / n;
+  const sd = Math.sqrt(win.reduce((a, b) => a + (b - mid) * (b - mid), 0) / n);
+  const upper = mid + mult * sd, lower = mid - mult * sd;
+  const last = closes[closes.length - 1];
+  const pctB = upper === lower ? 0.5 : (last - lower) / (upper - lower);
+  return { mid, upper, lower, pctB, bandwidth: mid ? (upper - lower) / mid : 0 };
+}
+
+/* 볼린저 상·하단 시리즈(차트용) — {mid[], upper[], lower[]} */
+function bollingerSeries(closes, n = 20, mult = 2) {
+  const mid = smaSeries(closes, n);
+  const upper = new Array(closes.length).fill(null), lower = new Array(closes.length).fill(null);
+  for (let i = n - 1; i < closes.length; i++) {
+    let sq = 0;
+    for (let j = i - n + 1; j <= i; j++) sq += (closes[j] - mid[i]) * (closes[j] - mid[i]);
+    const sd = Math.sqrt(sq / n);
+    upper[i] = mid[i] + mult * sd;
+    lower[i] = mid[i] - mult * sd;
+  }
+  return { mid, upper, lower };
+}
+
+/* 일간수익률 표준편차(%) — 최근 window 거래일, 표본 표준편차(n-1). 데이터 부족 시 null */
+function dailyReturnSigma(closes, window) {
+  if (closes.length < window + 1) return null;
+  const rets = [];
+  for (let i = closes.length - window; i < closes.length; i++) rets.push((closes[i] / closes[i - 1] - 1) * 100);
+  const mean = rets.reduce((a, b) => a + b, 0) / rets.length;
+  return Math.sqrt(rets.reduce((a, b) => a + (b - mean) * (b - mean), 0) / (rets.length - 1));
+}
+
+/* 52주(252거래일) 최고 종가 */
+function high52(closes) {
+  return closes.length ? Math.max(...closes.slice(-252)) : null;
+}
+
+/* 20일 위치: (현재가-20일 최저)/(20일 최고-최저) → 0~1. curPrice에 라이브가 대입 가능 */
+function pos20d(closes, curPrice) {
+  if (closes.length < 2) return null;
+  const win = closes.slice(-20);
+  const lo = Math.min(...win), hi = Math.max(...win);
+  const last = curPrice != null ? curPrice : closes[closes.length - 1];
+  if (hi === lo) return 0.5;
+  return Math.min(1, Math.max(0, (last - lo) / (hi - lo)));
+}
+
+/* 연도별 MDD — [{year, mdd(음수 비율), days}] (연도 경계에서 낙폭 리셋 — 연간 MDD 분포용) */
+function annualMDDs(dates, closes) {
+  const out = [];
+  let y = null, start = 0;
+  for (let i = 0; i <= dates.length; i++) {
+    const yr = i < dates.length ? dates[i].slice(0, 4) : null;
+    if (yr !== y) {
+      if (y != null && i - start >= 2) {
+        const r = calcMDD(dates.slice(start, i), closes.slice(start, i));
+        out.push({ year: y, mdd: r.mdd, days: i - start });
+      }
+      y = yr; start = i;
+    }
+  }
+  return out;
 }

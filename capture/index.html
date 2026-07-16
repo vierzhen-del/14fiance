@@ -316,8 +316,18 @@ async function init() {
   try {
     state.manifest = await fetchJSON(`${DATA_DIR}/manifest.json`);
   } catch (err) {
-    document.getElementById("myAssetResult").innerHTML =
-      `<p style="color:var(--critical); font-size:13px;">데이터를 불러오지 못했습니다: ${err.message}</p>`;
+    // 오프라인·일시적 네트워크 오류로 시세 데이터를 못 읽으면 대시보드 전체가
+    // 사라진 것처럼 보이므로, 원인 안내 + 재시도 버튼을 제공한다
+    document.getElementById("myAssetResult").innerHTML = `
+      <div class="empty-restore-card">
+        <p class="empty-restore-title">⚠️ 시세 데이터를 불러오지 못했습니다</p>
+        <p class="empty-restore-desc">네트워크 연결을 확인해 주세요. (${err.message})<br>입력해 둔 보유 데이터는 기기에 그대로 저장되어 있으며, 연결이 복구되면 다시 표시됩니다.</p>
+        <div class="action-row"><button type="button" id="myInitRetryBtn">🔄 다시 시도</button></div>
+      </div>`;
+    document.getElementById("myInitRetryBtn").addEventListener("click", () => {
+      document.getElementById("myAssetResult").innerHTML = `<p class="compare-empty">다시 불러오는 중…</p>`;
+      init();
+    });
     return;
   }
   document.getElementById("pageUpdated").textContent = `데이터 업데이트: ${state.manifest.updated}`;
