@@ -41,6 +41,8 @@ for (const f of ["index.html", "style.css", "app.js", "symbols.js", "mode.js", "
 }
 // APK 전용 네이티브 실시간 시세(CapacitorHttp로 네이버 직접 호출) — 앱에서만 동작, 웹에선 무시됨
 cpSync(join(appDir, "src", "native-quotes.js"), join(www, "native-quotes.js"));
+// APK 전용 네이티브 파일 백업/복원(@capacitor/filesystem) — 앱에서만 동작, 웹에선 무시됨
+cpSync(join(appDir, "src", "native-files.js"), join(www, "native-files.js"));
 // 앱 아이콘(웹앱과 공용)
 for (const f of ["icon-192.png", "icon-512.png", "icon-maskable-512.png"]) {
   const src = join(repoRoot, "icons", f);
@@ -53,7 +55,7 @@ const replacements = [
   // 상대경로를 www 내부 구조에 맞게 평탄화
   ['href="../shared/myassets.css"', 'href="shared/myassets.css"'],
   ['src="../shared/myassets-utils.js"', 'src="shared/myassets-utils.js"'],
-  ['src="../shared/price-data.js"></script>', 'src="shared/price-data.js"></script>\n<script src="native-quotes.js"></script>'],
+  ['src="../shared/price-data.js"></script>', 'src="shared/price-data.js"></script>\n<script src="native-quotes.js"></script>\n<script src="native-files.js"></script>'],
   ['src="../shared/myassets.js"', 'src="shared/myassets.js"'],
   // 데이터는 원격 raw URL에서 조회
   ['const DATA_DIR = "../data";', `const DATA_DIR = "${REMOTE_DATA_DIR}";`],

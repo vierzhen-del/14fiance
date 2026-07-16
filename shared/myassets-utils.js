@@ -148,6 +148,7 @@ function buildCompareChart(container, seriesList, opts = {}) {
   const fmtAxis = opts.fmtAxis || ((v) => (v * 100).toFixed(0) + "%");
   const fmtTip = opts.fmtTip || ((v) => (v * 100).toFixed(1) + "%");
   const anchorZero = opts.anchorZero !== false;
+  const H = opts.height || CHART_H;
   const domainMin = Math.min(...seriesList.map((s) => Date.parse(s.dates[0])));
   const domainMax = Math.max(...seriesList.map((s) => Date.parse(s.dates[s.dates.length - 1])));
   const xAt = (ts) => PAD_L + ((ts - domainMin) / (domainMax - domainMin)) * (CHART_W - PAD_L - PAD_R);
@@ -156,7 +157,7 @@ function buildCompareChart(container, seriesList, opts = {}) {
   for (const s of seriesList) { vMin = Math.min(vMin, ...s.values); vMax = Math.max(vMax, ...s.values); }
   const ticks = niceTicks(vMin, vMax, 5);
   const tMin = ticks[0], tMax = ticks[ticks.length - 1];
-  const yAt = (v) => PAD_T + (1 - (v - tMin) / (tMax - tMin)) * (CHART_H - PAD_T - PAD_B);
+  const yAt = (v) => PAD_T + (1 - (v - tMin) / (tMax - tMin)) * (H - PAD_T - PAD_B);
 
   const tsLists = seriesList.map((s) => s.dates.map((d) => Date.parse(d)));
 
@@ -174,7 +175,7 @@ function buildCompareChart(container, seriesList, opts = {}) {
     const ts = domainMin + (k / xTickCount) * (domainMax - domainMin);
     const x = xAt(ts).toFixed(2);
     const label = new Date(ts).toISOString().slice(0, 7);
-    xLabelsSvg += `<text class="axis-label" x="${x}" y="${CHART_H - 4}" text-anchor="middle">${label}</text>`;
+    xLabelsSvg += `<text class="axis-label" x="${x}" y="${H - 4}" text-anchor="middle">${label}</text>`;
   }
 
   // 0% 기준선(수익/손실 경계) — 낙폭 전용이던 원본과 달리 0이 축 중간에 올 수 있어 명시적으로 그린다
@@ -197,13 +198,13 @@ function buildCompareChart(container, seriesList, opts = {}) {
   container.innerHTML = `
     <div class="legend-row">${legendSvg}</div>
     <div class="chart-box">
-      <svg class="chart" viewBox="0 0 ${CHART_W} ${CHART_H}" preserveAspectRatio="xMidYMid meet">
+      <svg class="chart" viewBox="0 0 ${CHART_W} ${H}" preserveAspectRatio="xMidYMid meet">
         ${gridSvg}
         ${xLabelsSvg}
         <line class="baseline" x1="${PAD_L}" x2="${CHART_W - PAD_R}" y1="${zeroY}" y2="${zeroY}"/>
         ${linesSvg}
         <g class="hover-layer" style="display:none">
-          <line class="crosshair-line" x1="0" x2="0" y1="${PAD_T}" y2="${CHART_H - PAD_B}"/>
+          <line class="crosshair-line" x1="0" x2="0" y1="${PAD_T}" y2="${H - PAD_B}"/>
         </g>
       </svg>
       <div class="tooltip"></div>
@@ -228,7 +229,7 @@ function buildCompareChart(container, seriesList, opts = {}) {
     const rect = svg.getBoundingClientRect();
     const px = rect.left + (x / CHART_W) * rect.width;
     tooltip.style.left = (px - rect.left) + "px";
-    tooltip.style.top = ((PAD_T + 4) / CHART_H) * 100 + "%";
+    tooltip.style.top = ((PAD_T + 4) / H) * 100 + "%";
     tooltip.style.transform = "translate(-50%, 0%)";
     tooltip.style.opacity = "1";
 

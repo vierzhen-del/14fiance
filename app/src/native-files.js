@@ -1,0 +1,96 @@
+// app/src/native-files.js — APK(Capacitor 네이티브) 전용 파일 백업/복원.
+// @capacitor/filesystem으로 안드로이드 공용 문서 폴더(Documents/14fiance/)에 내보내기·
+// 자동백업 파일을 저장하고 실제 경로를 표시한다. 재설치 후 "📂 백업 폴더에서 복원" 버튼
+// 한 번으로 파일 선택 없이 전 이력을 복원한다. 웹(비네이티브)에서는 아무 것도 하지 않고
+// capture/index.html의 기본 구현(브라우저 다운로드)을 그대로 쓴다.
+// build-www.mjs가 이 파일을 www에 복사하고 index.html에 <script>로 주입한다.
+(function () {
+  if (!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform())) return;
+  const Filesystem = window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem;
+  if (!Filesystem) return;
+
+  const DIR = "Documents"; // Capacitor Directory.Documents — 앱 삭제 후에도 대개 잔존
+  const FOLDER = "14fiance";
+  const BACKUP_NAME = "latest-backup.json";
+  const DISPLAY_PATH = "문서/14fiance"; // 사용자에게 보여줄 사람이 읽는 경로
+
+  async function writeJson(name, jsonStr) {
+    await Filesystem.writeFile({
+      path: `${FOLDER}/${name}`,
+      data: jsonStr,
+      directory: DIR,
+      encoding: "utf8",
+      recursive: true,
+    });
+    try {
+      const { uri } = await Filesystem.getUri({ path: `${FOLDER}/${name}`, directory: DIR });
+      return uri;
+    } catch (e) {
+      return `${DISPLAY_PATH}/${name}`;
+    }
+  }
+
+  function flash(statusElId, msg) {
+    if (typeof flashStatus === "function" && statusElId) flashStatus(statusElId, msg);
+  }
+
+  // 내보내기 저장 오버라이드 — 타임스탬프 파일 + 고정 백업 파일 둘 다 기록, 실제 경로 표시
+  window.saveMyAssetsExport = async function (jsonStr, filename, statusElId) {
+    try {
+      const uri = await writeJson(filename, jsonStr);
+      await writeJson(BACKUP_NAME, jsonStr); // 복원 버튼이 읽는 고정 파일도 최신화
+      flash(statusElId, `내보내기 완료 — ${DISPLAY_PATH}/${filename}`);
+      console.log("native export saved:", uri);
+    } catch (err) {
+      flash(statusElId, `내보내기 실패: ${err.message}`);
+    }
+  };
+
+  // 데이터 변경·스냅샷 시 백업 파일 자동 갱신(호출은 saveMyAssets/스냅샷 핸들러에서)
+  let backupTimer = null;
+  window.autoBackupMyAssets = function () {
+    // 짧은 시간 다중 호출을 합쳐서 한 번만 기록(디바운스)
+    if (backupTimer) clearTimeout(backupTimer);
+    backupTimer = setTimeout(async () => {
+      try {
+        if (typeof serializeMyAssets !== "function") return;
+        await writeJson(BACKUP_NAME, JSON.stringify(serializeMyAssets(), null, 2));
+      } catch (err) {
+        console.warn("autoBackup 실패:", err.message);
+      }
+    }, 800);
+  };
+
+  // "📂 백업 폴더에서 복원" 버튼 — 고정 백업 파일을 읽어 파일 선택 없이 복원
+  function wireRestoreButton() {
+    const btn = document.getElementById("myBackupRestoreBtn");
+    if (!btn) return;
+    btn.style.display = ""; // 네이티브에서만 노출
+    btn.addEventListener("click", async () => {
+      try {
+        const { data } = await Filesystem.readFile({
+          path: `${FOLDER}/${BACKUP_NAME}`,
+          directory: DIR,
+          encoding: "utf8",
+        });
+        const parsed = JSON.parse(data);
+        if (typeof applyMyAssets !== "function" || !applyMyAssets(parsed)) throw new Error("백업 형식이 맞지 않습니다");
+        if (typeof state === "object") state.myAssetsImportedAt = typeof nowDateTimeStr === "function" ? nowDateTimeStr() : "";
+        if (typeof saveMyAssets === "function") saveMyAssets();
+        if (typeof renderMyAssets === "function") await renderMyAssets();
+        flash("myAssetStatus", `복원 완료 ✓ — ${DISPLAY_PATH}/${BACKUP_NAME} (보유·이력 전체)`);
+      } catch (err) {
+        const notFound = /not exist|not found|ENOENT/i.test(err.message || "");
+        flash("myAssetStatus", notFound
+          ? `백업 파일이 없습니다 — 먼저 📤 내보내기를 한 번 하거나, 수동 내보내기 파일을 📂 가져오기 하세요`
+          : `복원 실패: ${err.message}`);
+      }
+    });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", wireRestoreButton);
+  } else {
+    wireRestoreButton();
+  }
+})();

@@ -248,6 +248,14 @@
   .mdd-hist-danger { background: #d64545; }
   .mdd-hist-label { font-size: 10px; color: var(--text-muted); margin-top: 3px; }
   .mdd-hist-cur .mdd-hist-bar { outline: 2px solid #eda100; outline-offset: 1px; }
+  /* A11 시그널 상세 요약 카드 */
+  .sig-summary { border-radius: 10px; padding: 12px 14px; margin: 10px 0; background: rgba(127,127,127,.06); border-left: 4px solid var(--text-muted); }
+  .sig-summary-buy { border-left-color: #199e70; background: rgba(25,158,112,.08); }
+  .sig-summary-sell { border-left-color: #d64545; background: rgba(214,69,69,.08); }
+  .sig-summary-hold { border-left-color: #999; }
+  .sig-summary-line { font-size: 13px; margin: 3px 0; color: var(--text-secondary); line-height: 1.5; }
+  .sig-summary-verdict { font-size: 13.5px; font-weight: 700; margin: 8px 0 0; padding-top: 8px; border-top: 1px dashed var(--border); }
+  .sig-summary-note { font-weight: 400; font-size: 11.5px; color: var(--text-muted); }
 
   .compare-table { width: 100%; min-width: 480px; border-collapse: collapse; font-size: 13px; margin-bottom: 4px; }
   .compare-table th { text-align: left; font-size: 11.5px; color: var(--text-muted); font-weight: 600; padding: 0 10px 8px; white-space: nowrap; }

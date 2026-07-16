@@ -220,6 +220,14 @@
   .mdd-hist-danger { background: #d64545; }
   .mdd-hist-label { font-size: 10px; color: var(--text-muted); margin-top: 3px; }
   .mdd-hist-cur .mdd-hist-bar { outline: 2px solid #eda100; outline-offset: 1px; }
+  /* A11 시그널 상세 요약 카드 */
+  .sig-summary { border-radius: 10px; padding: 12px 14px; margin: 10px 0; background: rgba(127,127,127,.06); border-left: 4px solid var(--text-muted); }
+  .sig-summary-buy { border-left-color: #199e70; background: rgba(25,158,112,.08); }
+  .sig-summary-sell { border-left-color: #d64545; background: rgba(214,69,69,.08); }
+  .sig-summary-hold { border-left-color: #999; }
+  .sig-summary-line { font-size: 13px; margin: 3px 0; color: var(--text-secondary); line-height: 1.5; }
+  .sig-summary-verdict { font-size: 13.5px; font-weight: 700; margin: 8px 0 0; padding-top: 8px; border-top: 1px dashed var(--border); }
+  .sig-summary-note { font-weight: 400; font-size: 11.5px; color: var(--text-muted); }
 
   .compare-table { width: 100%; min-width: 480px; border-collapse: collapse; font-size: 13px; margin-bottom: 4px; }
   .compare-table th { text-align: left; font-size: 11.5px; color: var(--text-muted); font-weight: 600; padding: 0 10px 8px; white-space: nowrap; }
@@ -1361,6 +1369,7 @@ function buildCompareChart(container, seriesList, opts = {}) {
   const fmtAxis = opts.fmtAxis || ((v) => (v * 100).toFixed(0) + "%");
   const fmtTip = opts.fmtTip || ((v) => (v * 100).toFixed(1) + "%");
   const anchorZero = opts.anchorZero !== false;
+  const H = opts.height || CHART_H;
   // seriesList: [{ symbol, label, color, dates, values }] — 값은 비율(0.05=+5%).
   // 원래 낙폭(≤0) 전용이었으나 A6 지수비교 탭이 양수 수익률도 그리도록 y축을 일반화
   // (낙폭만 넣으면 vMax=0이 되어 기존 MDD Underwater 비교와 동일하게 그려짐).
@@ -1372,7 +1381,7 @@ function buildCompareChart(container, seriesList, opts = {}) {
   for (const s of seriesList) { vMin = Math.min(vMin, ...s.values); vMax = Math.max(vMax, ...s.values); }
   const ticks = niceTicks(vMin, vMax, 5);
   const tMin = ticks[0], tMax = ticks[ticks.length - 1];
-  const yAt = (v) => PAD_T + (1 - (v - tMin) / (tMax - tMin)) * (CHART_H - PAD_T - PAD_B);
+  const yAt = (v) => PAD_T + (1 - (v - tMin) / (tMax - tMin)) * (H - PAD_T - PAD_B);
 
   const tsLists = seriesList.map((s) => s.dates.map((d) => Date.parse(d)));
 
@@ -1390,7 +1399,7 @@ function buildCompareChart(container, seriesList, opts = {}) {
     const ts = domainMin + (k / xTickCount) * (domainMax - domainMin);
     const x = xAt(ts).toFixed(2);
     const label = new Date(ts).toISOString().slice(0, 7);
-    xLabelsSvg += `<text class="axis-label" x="${x}" y="${CHART_H - 4}" text-anchor="middle">${label}</text>`;
+    xLabelsSvg += `<text class="axis-label" x="${x}" y="${H - 4}" text-anchor="middle">${label}</text>`;
   }
 
   let linesSvg = "";
@@ -1410,12 +1419,12 @@ function buildCompareChart(container, seriesList, opts = {}) {
   container.innerHTML = `
     <div class="legend-row">${legendSvg}</div>
     <div class="chart-box">
-      <svg class="chart" viewBox="0 0 ${CHART_W} ${CHART_H}" preserveAspectRatio="xMidYMid meet">
+      <svg class="chart" viewBox="0 0 ${CHART_W} ${H}" preserveAspectRatio="xMidYMid meet">
         ${gridSvg}
-        <line class="baseline" x1="${PAD_L}" x2="${CHART_W - PAD_R}" y1="${CHART_H - PAD_B}" y2="${CHART_H - PAD_B}"/>
+        <line class="baseline" x1="${PAD_L}" x2="${CHART_W - PAD_R}" y1="${H - PAD_B}" y2="${H - PAD_B}"/>
         ${linesSvg}
         <g class="hover-layer" style="display:none">
-          <line class="crosshair-line" x1="0" x2="0" y1="${PAD_T}" y2="${CHART_H - PAD_B}"/>
+          <line class="crosshair-line" x1="0" x2="0" y1="${PAD_T}" y2="${H - PAD_B}"/>
         </g>
       </svg>
       <div class="tooltip"></div>
@@ -1440,7 +1449,7 @@ function buildCompareChart(container, seriesList, opts = {}) {
     const rect = svg.getBoundingClientRect();
     const px = rect.left + (x / CHART_W) * rect.width;
     tooltip.style.left = (px - rect.left) + "px";
-    tooltip.style.top = ((PAD_T + 4) / CHART_H) * 100 + "%";
+    tooltip.style.top = ((PAD_T + 4) / H) * 100 + "%";
     tooltip.style.transform = "translate(-50%, 0%)";
     tooltip.style.opacity = "1";
 
@@ -2006,6 +2015,8 @@ function serializeMyAssets() {
 
 function saveMyAssets() {
   localStorage.setItem(MY_ASSETS_KEY, JSON.stringify(serializeMyAssets()));
+  // A11c: 네이티브(APK)에서 데이터 변경 시 백업 파일 자동 갱신(비네이티브 no-op)
+  if (typeof window.autoBackupMyAssets === "function") window.autoBackupMyAssets();
 }
 
 /* 목표 도달 수익률 방식(통합 직접입력 / 종목별 실적) 전환 시 관련 UI 표시만 토글 */
@@ -3440,6 +3451,9 @@ async function renderMyAssets() {
 
       <p class="chart-title" style="margin-top:20px;">🏢 일반종목(개별주) 반영 상태</p>
       <p class="stat-sub">현재: <b>${includeStocks ? "포함" : "제외"}</b> — 위쪽 "일반종목: 포함/제외" 버튼으로 전환할 수 있습니다.</p>
+
+      <p class="chart-title" style="margin-top:20px;">💾 백업·복원</p>
+      <p class="stat-sub">📤 내보내기 파일에는 보유 종목·목표 설정과 함께 <b>스냅샷·변동이력·워치리스트가 모두 포함</b>되어, 재설치·다른 기기에서 📂 가져오기 한 번으로 전체 복원됩니다. (앱(APK)에서는 데이터가 바뀔 때마다 문서/14fiance/ 폴더에 백업 파일이 자동 저장되고 "📂 백업 폴더에서 복원" 버튼을 쓸 수 있습니다.)</p>
     </div>
 
     <p class="stat-sub" style="margin-top:10px;">현재가는 주간 수집 데이터의 마지막 종가 기준입니다. 월배당은 종목별 "확정 DPS(원/주)"를 입력하면 DPS×수량으로 계산해 우선 적용하고, 비워두면 최근 1년 배당(TTM)÷12 추정치를 사용합니다. 신규 상장·특별배당 종목은 TTM 추정이 실제보다 크게 낮을 수 있으니 시트/노션 배당기준의 확정 DPS 입력을 권장합니다.</p>
@@ -3493,6 +3507,7 @@ async function renderMyAssets() {
     if (idx >= 0) hist[idx] = entry; else hist.push(entry);
     hist.sort((a, b) => a.month.localeCompare(b.month));
     localStorage.setItem(MY_ASSETS_HISTORY_KEY, JSON.stringify(hist));
+    if (typeof window.autoBackupMyAssets === "function") window.autoBackupMyAssets();
     flashStatus("mySnapshotStatus", `${month} 스냅샷 저장 ✓ (이 브라우저에만 보관)`);
     renderMyAssets();
   });
@@ -3525,6 +3540,7 @@ async function renderMyAssets() {
     if (idx >= 0) hist[idx] = entry; else hist.push(entry);
     hist.sort((a, b) => a.date.localeCompare(b.date));
     localStorage.setItem(MY_ASSETS_DAILY_HISTORY_KEY, JSON.stringify(hist));
+    if (typeof window.autoBackupMyAssets === "function") window.autoBackupMyAssets();
     flashStatus("myDailySnapshotStatus", `${date} 일별 스냅샷 저장 ✓ (이 브라우저에만 보관)`);
     renderMyAssets();
   });
@@ -3869,11 +3885,37 @@ function setupSignalTab(perRow, liveKr) {
           <p class="stat-sub">연간 최대낙폭(매년 낙폭 리셋) 분포 · 분석 ${ann.length}개년(${ann[0].year}~${ann[ann.length - 1].year})${curYear ? ` · 올해(${thisYear}) MDD <b>${(-curYear.mdd * 100).toFixed(1)}%</b> — 테두리 강조 구간` : ""}</p>`;
       }
 
+      // A11a: RSI/MACD/볼린저 3줄 요약 + 종합평가 1줄 (기존 계산값 재사용)
+      const rsiLine = rsi == null ? "데이터 부족"
+        : `RSI14 ${rsi.toFixed(1)} — ${rsi <= 30 ? "과매도 구간(반등 가능성 주시)" : rsi >= 70 ? "과열 구간(과매수 주의)" : "중립(30~70), 방향성 약함"}`;
+      const macdLine = h == null ? "MACD 데이터 부족"
+        : `MACD 히스토그램 ${h >= 0 ? "+" : ""}${h.toFixed(2)} — ${(() => {
+            const hp = hist[hist.length - 2];
+            if (hp != null && hp <= 0 && h > 0) return "상향 전환(단기 반등 신호)";
+            if (hp != null && hp >= 0 && h < 0) return "하향 전환(단기 조정 신호)";
+            return h >= 0 ? "상승 모멘텀 지속(시그널선 위)" : "하락 모멘텀 지속(시그널선 아래)";
+          })()}`;
+      const bbLine = bb == null ? "볼린저 데이터 부족"
+        : `볼린저 %B ${(bb.pctB * 100).toFixed(0)}% — ${bb.pctB <= 0.05 ? "하단 접근(눌림 구간)" : bb.pctB >= 0.95 ? "상단 접근(과열 구간)" : "밴드 내 정상"}, 밴드폭 ${(bb.bandwidth * 100).toFixed(1)}%(변동성 ${bb.bandwidth >= 0.15 ? "높음" : "보통"})`;
+      const verdictText = buyN >= 2
+        ? `${grade} — 위 지표 중 ${buyN}개가 매수 방향으로 합의`
+        : sellN >= 2
+        ? `${grade} — 위 지표 중 ${sellN}개가 매도 방향으로 합의`
+        : `${grade} — 매수·매도 신호 지표가 각각 2개 미만이라 방향성 불명확, 관망 권장`;
+      const summaryCardHTML = `
+        <div class="sig-summary sig-summary-${buyN >= 2 ? "buy" : sellN >= 2 ? "sell" : "hold"}">
+          <p class="sig-summary-line">① ${rsiLine}</p>
+          <p class="sig-summary-line">② ${macdLine}</p>
+          <p class="sig-summary-line">③ ${bbLine}</p>
+          <p class="sig-summary-verdict">📌 종합평가: ${verdictText} <span class="sig-summary-note">(참고용 · 투자 조언 아님)</span></p>
+        </div>`;
+
       detailBody.innerHTML = `
         <div class="action-row" style="margin:8px 0;">
           <span class="sig-badge ${gradeCls}" style="font-size:14px;">종합 ${grade}</span>
           <span class="sig-badge ${zone.cls}">20일 포지션 ${pos == null ? "―" : Math.round(pos * 100) + "%"} · ${zone.label}</span>
         </div>
+        ${summaryCardHTML}
         <div style="max-width:420px;">${sigGaugeHTML(pos)}</div>
         <p class="stat-sub">종합 시그널은 아래 지표 중 <b>2개 이상이 같은 방향일 때만</b> 매수/매도로 판정합니다(단일 지표 터치·크로스만으로 매매하지 않음). ${votes.map((v) => `<b>${v.name}</b> ${v.text}`).join(" · ")}</p>
         <p class="stat-sub"><b>${arrText}</b> · ${crossMsgs.length ? crossMsgs.join(" · ") : "최근 5거래일 내 MA 교차 없음"}</p>
@@ -3890,7 +3932,7 @@ function setupSignalTab(perRow, liveKr) {
         const fmtAxisPrice = (v) => full.currency === "KRW"
           ? (v >= 10000 ? (v / 10000).toFixed(1) + "만" : String(Math.round(v)))
           : "$" + (v >= 100 ? v.toFixed(0) : v.toFixed(2));
-        buildCompareChart(chartEl, chartSeries, { anchorZero: false, fmtAxis: fmtAxisPrice, fmtTip: (v) => fmtPrice(v, full.currency) });
+        buildCompareChart(chartEl, chartSeries, { anchorZero: false, height: 360, fmtAxis: fmtAxisPrice, fmtTip: (v) => fmtPrice(v, full.currency) });
         chartEl.insertAdjacentHTML("beforeend",
           `<p class="stat-sub" style="margin-top:6px;">최근 1년(252거래일) — 종가·MA20/60/200·볼린저(20일·2σ). 주 1회 수집 데이터 기준이라 최신 거래일과 다를 수 있습니다.</p>`);
       }
@@ -5379,13 +5421,14 @@ async function init() {
   });
   document.getElementById("myInflationRate").addEventListener("input", () => { saveMyAssets(); renderMyAssets(); });
   document.getElementById("myExportBtn").addEventListener("click", () => {
+    const filename = `my-assets-${todayStr()}.json`;
     const blob = new Blob([JSON.stringify(serializeMyAssets(), null, 2)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `my-assets-${todayStr()}.json`;
+    a.download = filename;
     a.click();
     URL.revokeObjectURL(a.href);
-    flashStatus("myAssetStatus", "내보내기 완료 — 파일을 안전한 곳에 보관하세요");
+    flashStatus("myAssetStatus", `내보내기 완료 — ${filename} (브라우저 다운로드 폴더에서 확인, 안전한 곳에 보관하세요)`);
   });
   document.getElementById("myImportBtn").addEventListener("click", () => document.getElementById("myImportFile").click());
   document.getElementById("myImportFile").addEventListener("change", (e) => {
