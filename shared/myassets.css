@@ -124,10 +124,16 @@
   /* ---- 통계 타일 ---- */
   .stat-row { display: grid; grid-template-columns: 1.3fr 1fr 1fr 1fr; gap: 12px; margin-bottom: 16px; }
   @media (max-width: 640px) { .stat-row { grid-template-columns: 1fr 1fr; } }
-  .stat { padding: 4px 2px; }
+  /* A9(모아밸런스 참조): KPI를 흰 카드 그리드로 — 옅은 그림자·둥근 모서리·일관 패딩 */
+  .stat { padding: 14px 16px; background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
   .stat-label { font-size: 12px; color: var(--text-muted); margin: 0 0 6px; }
   .stat-hero { font-size: 40px; font-weight: 700; line-height: 1; margin: 0; }
   .stat-value { font-size: 18px; font-weight: 600; margin: 0; }
+  /* 총 평가액 히어로 카드 — 참조 이미지의 진한 배경+흰 글자 강조 카드 */
+  .stat.stat-hero-card { background: #1e2a44; border-color: #1e2a44; }
+  .stat.stat-hero-card .stat-label, .stat.stat-hero-card .stat-sub { color: rgba(255,255,255,.75); }
+  .stat.stat-hero-card .stat-hero { color: #fff; }
+  :root[data-theme="light"] .stat.stat-hero-card, .stat.stat-hero-card { color-scheme: dark; }
   .stat-sub { font-size: 12px; color: var(--text-secondary); margin: 4px 0 0; }
   .badge {
     display: inline-flex; align-items: center; gap: 5px;
@@ -274,7 +280,8 @@
     padding: 7px 8px; text-align: right; border-bottom: 1px solid var(--gridline);
   }
   .account-summary-table th:first-child, .account-summary-table td:first-child { text-align: left; }
-  .account-summary-table th { color: var(--text-muted); font-weight: 600; font-size: 12px; }
+  .account-summary-table th { color: var(--text-muted); font-weight: 600; font-size: 12px; border-bottom: 2px solid var(--baseline); }
+  .account-summary-table tbody tr:hover td { background: rgba(127,127,127,.07); }
   .btn-add {
     font: inherit; font-size: 13px; font-weight: 600;
     padding: 8px 14px; border-radius: 10px; border: 1px dashed var(--border);
