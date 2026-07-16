@@ -6,7 +6,8 @@ const MY_ASSETS_KEY = "my_assets_v1";
 const MY_ASSETS_HISTORY_KEY = "my_assets_history_v1";
 const MY_ASSETS_DAILY_HISTORY_KEY = "my_assets_daily_history_v1";
 const MY_INCLUDE_STOCKS_KEY = "my_assets_include_stocks_v1"; // "0"이면 일반종목(개별주) 제외
-const MY_ASSETS_CHANGELOG_KEY = "my_assets_changelog_v1"; // 최대 300건, A3b/c: 폼 채우기·가져오기 시 변경 이력
+const MY_ASSETS_CHANGELOG_KEY = "my_assets_changelog_v1";
+const MY_ASSETS_WATCHLIST_KEY = "my_assets_watchlist_v1"; // A10 📡 시그널 탭 워치리스트 // 최대 300건, A3b/c: 폼 채우기·가져오기 시 변경 이력
 
 /* ---------- A3c: 변동이력(🗂️) — 폼 채우기(캡처 반영)·가져오기 시마다 자동 기록되는 변경 로그.
    위 MY_ASSETS_HISTORY_KEY(월별 수동 스냅샷)와 달리, 이건 "무엇이 바뀌었는지" 이벤트 자체를
@@ -179,6 +180,7 @@ function serializeMyAssets() {
     snapshotHistory: (() => { try { return JSON.parse(localStorage.getItem(MY_ASSETS_HISTORY_KEY) || "[]"); } catch (e) { return []; } })(),
     dailyHistory: (() => { try { return JSON.parse(localStorage.getItem(MY_ASSETS_DAILY_HISTORY_KEY) || "[]"); } catch (e) { return []; } })(),
     changelog: (() => { try { return JSON.parse(localStorage.getItem(MY_ASSETS_CHANGELOG_KEY) || "[]"); } catch (e) { return []; } })(),
+    watchlist: (() => { try { return JSON.parse(localStorage.getItem(MY_ASSETS_WATCHLIST_KEY) || "[]"); } catch (e) { return []; } })(),
   };
 }
 
@@ -244,6 +246,7 @@ function applyMyAssets(data) {
   if (Array.isArray(data.snapshotHistory) && data.snapshotHistory.length) localStorage.setItem(MY_ASSETS_HISTORY_KEY, JSON.stringify(data.snapshotHistory));
   if (Array.isArray(data.dailyHistory) && data.dailyHistory.length) localStorage.setItem(MY_ASSETS_DAILY_HISTORY_KEY, JSON.stringify(data.dailyHistory));
   if (Array.isArray(data.changelog) && data.changelog.length) localStorage.setItem(MY_ASSETS_CHANGELOG_KEY, JSON.stringify(data.changelog.slice(0, 300)));
+  if (Array.isArray(data.watchlist) && data.watchlist.length) localStorage.setItem(MY_ASSETS_WATCHLIST_KEY, JSON.stringify(data.watchlist));
   document.getElementById("myAssetRows").innerHTML = "";
   for (const r of data.rows) {
     // 구버전(확정 월배당 총액) 데이터는 주당 DPS로 1회 변환
@@ -1019,7 +1022,31 @@ async function renderMyAssets() {
   // 보유(qty)뿐 아니라 매수계획만 있는 행(monthlyQty)도 포함 — 평가액은 0, 월매수만 집계됨
   const rows = cfg.rows.filter((r) => r.qty > 0 || r.monthlyQty > 0);
   if (!rows.length) {
-    result.innerHTML = `<p class="compare-empty">보유 종목과 수량을 입력하면 평가액·예상 월배당이 자동 계산됩니다.</p>`;
+    // 재설치·초기화 직후의 빈 상태 — 입력 섹션이 접혀 있으면 "대시보드가 사라진"
+    // 것처럼 보이므로 복원 경로를 크게 안내하고 입력 섹션을 자동으로 펼친다
+    result.innerHTML = `
+      <div class="empty-restore-card">
+        <p class="empty-restore-title">📭 표시할 자산 데이터가 없습니다</p>
+        <p class="empty-restore-desc">앱을 새로 설치했거나 데이터가 초기화된 경우, 백업해 둔 📤 내보내기 파일(myassets-…json)을 가져오면 보유 종목·목표 설정·스냅샷 이력까지 한 번에 복원됩니다. 백업 파일이 없다면 아래에서 직접 입력할 수 있습니다.</p>
+        <div class="action-row">
+          <button type="button" id="myEmptyImportBtn">📂 가져오기로 복원</button>
+          <button type="button" id="myEmptyInputBtn">⚙️ 직접 입력하기</button>
+        </div>
+      </div>`;
+    const emptySec = document.getElementById("sec-myassets");
+    if (emptySec) emptySec.classList.remove("collapsed");
+    const emptyImportBtn = document.getElementById("myEmptyImportBtn");
+    if (emptyImportBtn) emptyImportBtn.addEventListener("click", () => {
+      const importBtn = document.getElementById("myImportBtn");
+      if (importBtn) importBtn.click();
+    });
+    const emptyInputBtn = document.getElementById("myEmptyInputBtn");
+    if (emptyInputBtn) emptyInputBtn.addEventListener("click", () => {
+      const sec = document.getElementById("sec-myassets");
+      if (sec) { sec.classList.remove("collapsed"); sec.scrollIntoView({ behavior: "smooth" }); }
+      const rowsWrap = document.getElementById("myAssetRows");
+      if (rowsWrap && !sec) rowsWrap.scrollIntoView({ behavior: "smooth" });
+    });
     return;
   }
   result.innerHTML = `<p class="compare-empty">계산 중…</p>`;
@@ -1388,6 +1415,7 @@ async function renderMyAssets() {
       <button type="button" class="dash-tab-btn" data-tab="divbasis">💹 배당기준·이력</button>
       <button type="button" class="dash-tab-btn" data-tab="trend">📈 추이</button>
       <button type="button" class="dash-tab-btn" data-tab="benchmark">📊 지수비교</button>
+      <button type="button" class="dash-tab-btn" data-tab="signal">📡 시그널</button>
       <button type="button" class="dash-tab-btn" data-tab="changelog">🗂️ 변동이력</button>
       <button type="button" class="dash-tab-btn" data-tab="settings">⚙️ 설정</button>
     </div>
@@ -1526,6 +1554,38 @@ async function renderMyAssets() {
       </div>
       <div id="myBenchBadges" class="action-row" style="margin:6px 0 10px;"></div>
       <div id="myBenchChart"></div>
+    </div>
+
+    <div class="dash-panel" data-tab="signal" hidden>
+      <p class="chart-title" style="margin-top:20px;">👀 워치리스트 — 20일 포지션</p>
+      <p class="stat-sub">현재가가 최근 20거래일 최저~최고 범위의 어디에 있는지 표시합니다 — <b>하단 30% 이하 🟢 관심 구간, 상단 75% 이상 🔴 경계 구간</b>. 국내 종목은 🔄 최신시세 켜짐 시 실시간가, 미국 종목은 주 1회 수집 종가 기준입니다(참고용, 투자 조언 아님).</p>
+      <div id="mySignalWatchBody"></div>
+      <div class="controls" style="margin:8px 0;">
+        <select id="mySignalWatchAdd" aria-label="워치리스트에 추가할 종목"></select>
+        <button type="button" id="mySignalWatchAddBtn" class="btn-action">➕ 워치리스트 추가</button>
+      </div>
+
+      <p class="chart-title" style="margin-top:20px;">📡 선택 종목 시그널 상세</p>
+      <div class="controls" style="margin:8px 0;">
+        <select id="mySignalSymbol" aria-label="시그널 상세 종목 선택"></select>
+      </div>
+      <div id="mySignalDetailBody"></div>
+
+      <p class="chart-title" style="margin-top:20px;">📐 표준편차(σ)·매수목표가 — 주요 종목</p>
+      <p class="stat-sub">σ = 일간수익률 표준편차(%). <b>기본 1년(252거래일)</b> — 노션 매수테이블의 실측 σ와 같은 계산 계열이며, 30일 σ는 최근 급변을 반영해 더 큽니다.</p>
+      <div class="controls" style="margin:8px 0;">
+        <select id="mySignalSigmaWin" aria-label="시그마 계산 기간">
+          <option value="252" selected>σ 기간: 1년(252일)</option>
+          <option value="30">σ 기간: 30일</option>
+        </select>
+      </div>
+      <div id="mySignalSigmaBody"></div>
+
+      <p class="chart-title" style="margin-top:20px;">🎯 레버리지 σ 매수가 — 전일종가 기준</p>
+      <div class="controls" style="margin:8px 0;">
+        <select id="mySignalLevSymbol" aria-label="레버리지 매수가 종목 선택"></select>
+      </div>
+      <div id="mySignalLevBody"></div>
     </div>
 
     <div class="dash-panel" data-tab="changelog" hidden>
@@ -1755,6 +1815,362 @@ async function renderMyAssets() {
   if (state.myTreemapGroup) treemapSel.value = state.myTreemapGroup;
   treemapSel.addEventListener("change", renderTreemap);
   renderTreemap();
+
+  // A10: 📡 시그널 탭 — 워치리스트·지표·σ 매수가
+  setupSignalTab(perRow, liveKr);
+}
+
+/* ===== A10 📡 시그널 탭 — 워치리스트·MA/RSI/MACD/볼린저·σ 매수목표가 ===== */
+const SIGNAL_WATCHLIST_DEFAULT = ["005930.KS", "000660.KS", "SOXL"];
+const SIGNAL_SIGMA_EXTRA = ["VOO", "QQQ", "069500.KS"]; // 주요종목 σ표 고정 포함 3종
+
+function loadWatchlist() {
+  try {
+    const v = JSON.parse(localStorage.getItem(MY_ASSETS_WATCHLIST_KEY) || "null");
+    if (Array.isArray(v) && v.length) return v;
+  } catch (e) { /* 손상 시 기본값 */ }
+  return SIGNAL_WATCHLIST_DEFAULT.slice();
+}
+
+function saveWatchlist(list) {
+  localStorage.setItem(MY_ASSETS_WATCHLIST_KEY, JSON.stringify(list));
+}
+
+function symbolDisplayName(sym) {
+  const meta = state.metaBySymbol.get(sym);
+  return meta ? meta.name : sym;
+}
+
+/* 20일 위치 판정 — 참조 SIGNAL MAP 기준: 하단 30% 이하 관심, 상단 75% 이상 경계 */
+function posZoneInfo(pos) {
+  if (pos == null) return { cls: "sig-neutral", label: "―" };
+  if (pos <= 0.3) return { cls: "sig-watch", label: "🟢 관심 구간" };
+  if (pos >= 0.75) return { cls: "sig-alert", label: "🔴 경계 구간" };
+  return { cls: "sig-neutral", label: "중립" };
+}
+
+function sigGaugeHTML(pos) {
+  const pct = pos == null ? 50 : Math.round(pos * 100);
+  return `<div class="sig-gauge"><div class="sig-gauge-dot" style="left:${pct}%"></div></div>`;
+}
+
+function setupSignalTab(perRow, liveKr) {
+  const watchBody = document.getElementById("mySignalWatchBody");
+  if (!watchBody) return;
+  const addSel = document.getElementById("mySignalWatchAdd");
+  const addBtn = document.getElementById("mySignalWatchAddBtn");
+  const symSel = document.getElementById("mySignalSymbol");
+  const detailBody = document.getElementById("mySignalDetailBody");
+  const sigmaWinSel = document.getElementById("mySignalSigmaWin");
+  const sigmaBody = document.getElementById("mySignalSigmaBody");
+  const levSel = document.getElementById("mySignalLevSymbol");
+  const levBody = document.getElementById("mySignalLevBody");
+
+  // 시그널용 현재가: 국내 라이브 시세가 켜져 있으면 라이브가, 아니면 마지막 수집 종가
+  const curPriceOf = (sym, full) => {
+    const live = liveKr && liveKr.prices ? liveKr.prices[sym] : null;
+    return live > 0 ? live : full.closes[full.closes.length - 1];
+  };
+  // 등락률: 라이브가 있으면 라이브 vs 마지막 종가, 없으면 마지막 두 수집 종가 간 변화
+  const chgPctOf = (sym, full) => {
+    const c = full.closes, n = c.length;
+    if (n < 2) return null;
+    const cur = curPriceOf(sym, full);
+    return cur !== c[n - 1] ? cur / c[n - 1] - 1 : c[n - 1] / c[n - 2] - 1;
+  };
+  const chgHTML = (chg) => chg == null ? "―"
+    : `<span style="color:${chg >= 0 ? "#d64545" : "#2a78d6"};">${chg >= 0 ? "+" : ""}${(chg * 100).toFixed(2)}%</span>`;
+
+  // ① 워치리스트 — 20일 포지션 게이지
+  const renderWatch = async () => {
+    const list = loadWatchlist();
+    if (!list.length) {
+      watchBody.innerHTML = `<p class="compare-empty">워치리스트가 비어 있습니다 — 아래에서 종목을 추가하세요.</p>`;
+      return;
+    }
+    watchBody.innerHTML = `<p class="compare-empty">불러오는 중…</p>`;
+    const rows = [];
+    for (const sym of list) {
+      try {
+        const full = await loadSymbol(sym);
+        const cur = curPriceOf(sym, full);
+        const pos = pos20d(full.closes, cur);
+        const zone = posZoneInfo(pos);
+        rows.push(`<tr>
+          <td>${symbolDisplayName(sym)}</td>
+          <td style="text-align:right;">${fmtPrice(cur, full.currency)}</td>
+          <td style="text-align:right;">${chgHTML(chgPctOf(sym, full))}</td>
+          <td style="min-width:140px;">${sigGaugeHTML(pos)}</td>
+          <td><span class="sig-badge ${zone.cls}">${zone.label}</span></td>
+          <td><button type="button" class="sig-remove-btn" data-sym="${sym}" aria-label="워치리스트에서 제거">✕</button></td>
+        </tr>`);
+      } catch (err) {
+        rows.push(`<tr><td>${symbolDisplayName(sym)}</td><td colspan="4" style="color:var(--critical);">데이터 없음(${err.message})</td>` +
+          `<td><button type="button" class="sig-remove-btn" data-sym="${sym}" aria-label="워치리스트에서 제거">✕</button></td></tr>`);
+      }
+    }
+    watchBody.innerHTML = `<div style="overflow-x:auto;"><table class="account-summary-table">
+      <thead><tr><th>종목</th><th>현재가</th><th>등락</th><th>20일 포지션</th><th>판정</th><th></th></tr></thead>
+      <tbody>${rows.join("")}</tbody></table></div>`;
+    watchBody.querySelectorAll(".sig-remove-btn").forEach((btn) => btn.addEventListener("click", () => {
+      saveWatchlist(loadWatchlist().filter((s) => s !== btn.dataset.sym));
+      renderWatch();
+    }));
+  };
+
+  // ② 선택 종목 시그널 상세 — MA/RSI/MACD/볼린저/종합등급/연간 MDD
+  const renderDetail = async () => {
+    const sym = symSel.value;
+    state.mySignalSymbol = sym;
+    detailBody.innerHTML = `<p class="compare-empty">계산 중…</p>`;
+    try {
+      const full = await loadSymbol(sym);
+      const closes = full.closes, dates = full.dates;
+      const cur = curPriceOf(sym, full);
+      const name = symbolDisplayName(sym);
+
+      const maDefs = [5, 20, 60, 120, 200];
+      const mas = maDefs.map((n) => ({ n, v: smaAt(closes, n) }));
+      const maRows = mas.map(({ n, v }) => {
+        if (v == null) return `<tr><td>MA${n}</td><td colspan="3" style="color:var(--text-muted);">데이터 부족(현재 ${closes.length}거래일)</td></tr>`;
+        const gap = cur / v - 1;
+        let judge = "";
+        if (n === 200) {
+          judge = gap >= 0.15 ? `<span class="sig-badge sig-alert">🟡 과열권(MA200 +15%↑)</span>`
+            : gap <= -0.10 ? `<span class="sig-badge sig-watch">🟢 과매도권(MA200 −10%↓)</span>`
+            : Math.abs(gap) <= 0.02 ? `<span class="sig-badge sig-neutral">⚡ MA200 근접(±2%)</span>` : "";
+        } else if (Math.abs(gap) <= 0.02) {
+          judge = `<span class="sig-badge sig-neutral">⚡ 근접(±2%)</span>`;
+        }
+        return `<tr><td>MA${n}</td><td style="text-align:right;">${fmtPrice(v, full.currency)}</td>` +
+          `<td style="text-align:right; color:${gap >= 0 ? "#d64545" : "#2a78d6"};">${gap >= 0 ? "+" : ""}${(gap * 100).toFixed(1)}%</td><td>${judge}</td></tr>`;
+      }).join("");
+
+      const valid = mas.filter((m) => m.v != null);
+      let arrText = "MA 배열 판정 불가(데이터 부족)";
+      if (valid.length >= 3) {
+        const vs = valid.map((m) => m.v);
+        const bull = vs.every((v, i) => i === 0 || v <= vs[i - 1]);
+        const bear = vs.every((v, i) => i === 0 || v >= vs[i - 1]);
+        arrText = bull ? "🔔 정배열(단기MA>장기MA) — 추세 상승" : bear ? "☠️ 역배열(단기MA<장기MA) — 추세 하락" : "MA 혼조(교차 진행 중)";
+      }
+
+      // 골든/데드크로스 — 최근 5거래일 내 교차만 표시(지어내지 않음)
+      const crossMsgs = [];
+      const detectCross = (fast, slow, label) => {
+        const f = smaSeries(closes, fast), s = smaSeries(closes, slow);
+        for (let i = Math.max(1, closes.length - 5); i < closes.length; i++) {
+          if (f[i] == null || s[i] == null || f[i - 1] == null || s[i - 1] == null) continue;
+          if (f[i - 1] <= s[i - 1] && f[i] > s[i]) crossMsgs.push(`🔔 골든크로스 ${label} (${dates[i]})`);
+          if (f[i - 1] >= s[i - 1] && f[i] < s[i]) crossMsgs.push(`☠️ 데드크로스 ${label} (${dates[i]})`);
+        }
+      };
+      detectCross(5, 20, "MA5×MA20");
+      detectCross(20, 60, "MA20×MA60");
+
+      const rsiArr = rsiSeries(closes, 14);
+      const rsi = rsiArr[rsiArr.length - 1];
+      const { macd, signal, hist } = macdSeries(closes);
+      const m = macd[macd.length - 1], sg = signal[signal.length - 1], h = hist[hist.length - 1];
+      const bb = bollingerLast(closes);
+      const pos = pos20d(closes, cur);
+      const zone = posZoneInfo(pos);
+
+      // 종합 시그널 — 2개 이상 지표가 같은 방향으로 합의할 때만 매매 시그널(설계 원칙)
+      const votes = [];
+      if (rsi != null) votes.push({ name: "RSI14", v: rsi <= 30 ? 1 : rsi >= 70 ? -1 : 0,
+        text: `${rsi.toFixed(1)} ${rsi <= 30 ? "과매도" : rsi >= 70 ? "과열" : "중립(30~70)"}` });
+      if (bb) votes.push({ name: "볼린저 %B", v: bb.pctB <= 0.05 ? 1 : bb.pctB >= 0.95 ? -1 : 0,
+        text: `${(bb.pctB * 100).toFixed(0)}% ${bb.pctB <= 0.05 ? "하단 접근" : bb.pctB >= 0.95 ? "상단 접근" : "밴드 내"}` });
+      if (h != null) {
+        const hp = hist[hist.length - 2];
+        const v = hp != null && hp <= 0 && h > 0 ? 1 : hp != null && hp >= 0 && h < 0 ? -1 : 0;
+        votes.push({ name: "MACD", v,
+          text: `히스토그램 ${h >= 0 ? "+" : ""}${h.toFixed(2)} ${v === 1 ? "상향 전환" : v === -1 ? "하향 전환" : h >= 0 ? "상승 지속" : "하락 지속"}` });
+      }
+      const ma200 = mas[4].v;
+      if (ma200 != null) {
+        const gap = cur / ma200 - 1;
+        votes.push({ name: "MA200 이격", v: gap <= -0.10 ? 1 : gap >= 0.15 ? -1 : 0,
+          text: `${gap >= 0 ? "+" : ""}${(gap * 100).toFixed(1)}% ${gap >= 0.15 ? "과열권" : gap <= -0.10 ? "과매도권" : "정상 범위"}` });
+      }
+      const buyN = votes.filter((x) => x.v === 1).length, sellN = votes.filter((x) => x.v === -1).length;
+      const grade = buyN >= 3 ? "🟢 강매수" : buyN >= 2 ? "🟢 매수관심" : sellN >= 3 ? "🔴 강매도" : sellN >= 2 ? "🔴 매도검토" : "⏸ 홀드";
+      const gradeCls = buyN >= 2 ? "sig-watch" : sellN >= 2 ? "sig-alert" : "sig-neutral";
+
+      // 가격+MA20/60/200+볼린저 다중선 차트 (최근 1년, null 구간 제외)
+      const start = Math.max(0, closes.length - 252);
+      const sliceSeries = (vals, label, color) => {
+        const ds = [], vs = [];
+        for (let i = start; i < closes.length; i++) if (vals[i] != null) { ds.push(dates[i]); vs.push(vals[i]); }
+        return ds.length >= 2 ? { label, color, dates: ds, values: vs } : null;
+      };
+      const bbs = bollingerSeries(closes);
+      const chartSeries = [
+        sliceSeries(closes, `${name} 종가`, "#eda100"),
+        sliceSeries(smaSeries(closes, 20), "MA20", "#2a78d6"),
+        sliceSeries(smaSeries(closes, 60), "MA60", "#199e70"),
+        sliceSeries(smaSeries(closes, 200), "MA200", "#7b5ec9"),
+        sliceSeries(bbs.upper, "볼린저 상단", "#c9a24e"),
+        sliceSeries(bbs.lower, "볼린저 하단", "#c9a24e"),
+      ].filter(Boolean);
+
+      // 연간 MDD 분포 (연도별 낙폭 리셋)
+      const ann = annualMDDs(dates, closes);
+      let annHTML = `<p class="compare-empty">연간 MDD를 계산할 데이터가 부족합니다(2개 연도 이상 필요).</p>`;
+      if (ann.length >= 2) {
+        const vals = ann.map((a) => -a.mdd * 100);
+        const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+        const sortedV = vals.slice().sort((a, b) => a - b);
+        const median = sortedV.length % 2 ? sortedV[(sortedV.length - 1) / 2] : (sortedV[sortedV.length / 2 - 1] + sortedV[sortedV.length / 2]) / 2;
+        const sd = vals.length > 1 ? Math.sqrt(vals.reduce((a, b) => a + (b - mean) * (b - mean), 0) / (vals.length - 1)) : 0;
+        const over50 = vals.filter((v) => v >= 50).length;
+        const thisYear = String(new Date().getFullYear());
+        const curYear = ann.find((a) => a.year === thisYear);
+        const maxBucket = Math.max(30, Math.ceil(Math.max(...vals) / 5) * 5);
+        const buckets = [];
+        for (let b = 0; b < maxBucket; b += 5) buckets.push({ from: b, count: vals.filter((v) => v >= b && v < b + 5).length });
+        const maxCount = Math.max(...buckets.map((b) => b.count), 1);
+        const curBucketIdx = curYear ? Math.min(buckets.length - 1, Math.floor((-curYear.mdd * 100) / 5)) : -1;
+        const barsHTML = buckets.map((b, i) => `
+          <div class="mdd-hist-col${i === curBucketIdx ? " mdd-hist-cur" : ""}">
+            <div class="mdd-hist-count">${b.count || ""}</div>
+            <div class="mdd-hist-bar${b.from >= 50 ? " mdd-hist-danger" : b.from >= 35 ? " mdd-hist-warn" : ""}" style="height:${Math.round((b.count / maxCount) * 100)}%"></div>
+            <div class="mdd-hist-label">${b.from}%</div>
+          </div>`).join("");
+        annHTML = `
+          <div class="stats" style="margin-top:8px;">
+            <div class="stat"><p class="stat-label">평균 MDD</p><p class="stat-value">${mean.toFixed(1)}%</p></div>
+            <div class="stat"><p class="stat-label">중앙값 MDD</p><p class="stat-value">${median.toFixed(1)}%</p></div>
+            <div class="stat"><p class="stat-label">표준편차</p><p class="stat-value">${sd.toFixed(1)}%</p></div>
+            <div class="stat"><p class="stat-label">-50% 이상 하락</p><p class="stat-value">${over50} / ${ann.length}년</p></div>
+          </div>
+          <div class="mdd-hist">${barsHTML}</div>
+          <p class="stat-sub">연간 최대낙폭(매년 낙폭 리셋) 분포 · 분석 ${ann.length}개년(${ann[0].year}~${ann[ann.length - 1].year})${curYear ? ` · 올해(${thisYear}) MDD <b>${(-curYear.mdd * 100).toFixed(1)}%</b> — 테두리 강조 구간` : ""}</p>`;
+      }
+
+      detailBody.innerHTML = `
+        <div class="action-row" style="margin:8px 0;">
+          <span class="sig-badge ${gradeCls}" style="font-size:14px;">종합 ${grade}</span>
+          <span class="sig-badge ${zone.cls}">20일 포지션 ${pos == null ? "―" : Math.round(pos * 100) + "%"} · ${zone.label}</span>
+        </div>
+        <div style="max-width:420px;">${sigGaugeHTML(pos)}</div>
+        <p class="stat-sub">종합 시그널은 아래 지표 중 <b>2개 이상이 같은 방향일 때만</b> 매수/매도로 판정합니다(단일 지표 터치·크로스만으로 매매하지 않음). ${votes.map((v) => `<b>${v.name}</b> ${v.text}`).join(" · ")}</p>
+        <p class="stat-sub"><b>${arrText}</b> · ${crossMsgs.length ? crossMsgs.join(" · ") : "최근 5거래일 내 MA 교차 없음"}</p>
+        <div style="overflow-x:auto;"><table class="account-summary-table">
+          <thead><tr><th>이동평균</th><th>값</th><th>현재가 이격</th><th>신호</th></tr></thead>
+          <tbody>${maRows}</tbody></table></div>
+        <p class="stat-sub">현재가 ${fmtPrice(cur, full.currency)} 기준 · RSI14 <b>${rsi == null ? "―" : rsi.toFixed(1)}</b> · MACD ${m == null ? "―" : m.toFixed(2)} / 시그널 ${sg == null ? "―" : sg.toFixed(2)} / 히스토그램 ${h == null ? "―" : (h >= 0 ? "+" : "") + h.toFixed(2)} · 볼린저(20일·2σ) ${bb ? `상단 ${fmtPrice(bb.upper, full.currency)} · 하단 ${fmtPrice(bb.lower, full.currency)} · %B ${(bb.pctB * 100).toFixed(0)}% · 밴드폭 ${(bb.bandwidth * 100).toFixed(1)}%` : "―"}</p>
+        <div id="mySignalChart"></div>
+        <p class="chart-title" style="margin-top:20px;">📉 연간 MDD 분포 — ${name}</p>
+        ${annHTML}`;
+
+      const chartEl = document.getElementById("mySignalChart");
+      if (chartEl && chartSeries.length) {
+        const fmtAxisPrice = (v) => full.currency === "KRW"
+          ? (v >= 10000 ? (v / 10000).toFixed(1) + "만" : String(Math.round(v)))
+          : "$" + (v >= 100 ? v.toFixed(0) : v.toFixed(2));
+        buildCompareChart(chartEl, chartSeries, { anchorZero: false, fmtAxis: fmtAxisPrice, fmtTip: (v) => fmtPrice(v, full.currency) });
+        chartEl.insertAdjacentHTML("beforeend",
+          `<p class="stat-sub" style="margin-top:6px;">최근 1년(252거래일) — 종가·MA20/60/200·볼린저(20일·2σ). 주 1회 수집 데이터 기준이라 최신 거래일과 다를 수 있습니다.</p>`);
+      }
+    } catch (err) {
+      detailBody.innerHTML = `<p class="compare-empty" style="color:var(--critical)">지표를 계산하지 못했습니다: ${err.message}</p>`;
+    }
+  };
+
+  // ③ 주요종목 σ표 — 보유 비중 TOP10 + VOO·QQQ·KODEX200
+  const renderSigma = async () => {
+    state.mySignalSigmaWin = sigmaWinSel.value;
+    const win = Number(sigmaWinSel.value);
+    sigmaBody.innerHTML = `<p class="compare-empty">계산 중…</p>`;
+    const seen = new Set(), syms = [];
+    for (const p of perRow.slice().sort((a, b) => b.value - a.value)) {
+      if (syms.length >= 10) break;
+      if (p.value > 0 && !seen.has(p.symbol)) { seen.add(p.symbol); syms.push(p.symbol); }
+    }
+    for (const s of SIGNAL_SIGMA_EXTRA) if (!seen.has(s)) { seen.add(s); syms.push(s); }
+    const rows = [];
+    for (const sym of syms) {
+      try {
+        const full = await loadSymbol(sym);
+        const close = full.closes[full.closes.length - 1];
+        const s252 = dailyReturnSigma(full.closes, 252);
+        const s30 = dailyReturnSigma(full.closes, 30);
+        const sSel = win === 30 ? s30 : s252;
+        const t1 = sSel != null ? close * (1 - sSel / 100) : null;
+        const t2 = sSel != null ? close * (1 - 2 * sSel / 100) : null;
+        rows.push(`<tr><td>${symbolDisplayName(sym)}</td>
+          <td style="text-align:right;">${fmtPrice(close, full.currency)}</td>
+          <td style="text-align:right;${win === 252 ? " font-weight:700;" : ""}">${s252 == null ? "―" : s252.toFixed(2) + "%"}</td>
+          <td style="text-align:right;${win === 30 ? " font-weight:700;" : ""}">${s30 == null ? "―" : s30.toFixed(2) + "%"}</td>
+          <td style="text-align:right;">${t1 == null ? "―" : fmtPrice(t1, full.currency)}</td>
+          <td style="text-align:right;">${t2 == null ? "―" : fmtPrice(t2, full.currency)}</td></tr>`);
+      } catch (err) {
+        rows.push(`<tr><td>${symbolDisplayName(sym)}</td><td colspan="5" style="color:var(--critical);">데이터 없음(${err.message})</td></tr>`);
+      }
+    }
+    sigmaBody.innerHTML = rows.length
+      ? `<div style="overflow-x:auto;"><table class="account-summary-table">
+          <thead><tr><th>종목 (보유 TOP10 + VOO·QQQ·KODEX200)</th><th>전일종가</th><th>σ 1년</th><th>σ 30일</th><th>1σ 매수가</th><th>2σ 매수가</th></tr></thead>
+          <tbody>${rows.join("")}</tbody></table></div>
+         <p class="stat-sub">1σ/2σ 매수가는 선택한 σ 기간(굵게 표시) 기준 · 매수가 = 전일종가 × (1 − n×σ). "전일종가"는 주 1회 수집의 마지막 종가입니다.</p>`
+      : `<p class="compare-empty">표시할 종목이 없습니다.</p>`;
+  };
+
+  // ④ 레버리지 σ 매수가 — 전일종가 기준 1/2/3σ (+ 참고: 52주 전고점 기준)
+  const renderLev = async () => {
+    const sym = levSel.value;
+    state.mySignalLevSymbol = sym;
+    const win = Number(sigmaWinSel.value);
+    levBody.innerHTML = `<p class="compare-empty">계산 중…</p>`;
+    try {
+      const full = await loadSymbol(sym);
+      const closes = full.closes;
+      const close = closes[closes.length - 1];
+      const sSel = dailyReturnSigma(closes, win);
+      const hi = high52(closes);
+      const cur = curPriceOf(sym, full);
+      if (sSel == null) {
+        levBody.innerHTML = `<p class="compare-empty">σ 계산에 필요한 데이터(${win}거래일)가 부족합니다.</p>`;
+        return;
+      }
+      const rows = [1, 2, 3].map((n) => {
+        const target = close * (1 - (n * sSel) / 100);
+        const refTarget = hi != null ? hi * (1 - (n * sSel) / 100) : null;
+        return `<tr><td>${n}σ (−${(n * sSel).toFixed(2)}%)</td>
+          <td style="text-align:right; font-weight:700;">${fmtPrice(target, full.currency)}</td>
+          <td style="text-align:right;">${refTarget == null ? "―" : fmtPrice(refTarget, full.currency)}</td>
+          <td>${cur <= target ? `<span class="sig-badge sig-watch">▼ 도달(매수 검토)</span>` : ""}</td></tr>`;
+      }).join("");
+      levBody.innerHTML = `
+        <p class="stat-sub">전일종가 <b>${fmtPrice(close, full.currency)}</b> · 52주 전고점 ${hi == null ? "―" : fmtPrice(hi, full.currency)}${hi ? ` (전고점 대비 ${((close / hi - 1) * 100).toFixed(1)}%)` : ""} · σ(${win === 30 ? "30일" : "1년"}) <b>${sSel.toFixed(2)}%</b></p>
+        <div style="overflow-x:auto;"><table class="account-summary-table">
+          <thead><tr><th>구간</th><th>매수목표가 (전일종가 기준)</th><th>참고: 52주 전고점 기준</th><th>상태</th></tr></thead>
+          <tbody>${rows}</tbody></table></div>
+        <p class="stat-sub">매수목표가 = 전일종가 × (1 − n×σ). "전고점 기준" 열은 노션 SOXL 매수테이블 방식(52주 전고점 × (1 − n×σ)) 참고 병기입니다. 미국 종목의 σ·종가는 주 1회 수집 데이터 기준입니다.</p>`;
+    } catch (err) {
+      levBody.innerHTML = `<p class="compare-empty" style="color:var(--critical)">계산 실패: ${err.message}</p>`;
+    }
+  };
+
+  // 초기화 + 와이어링 (state.* 로 선택 보존 — 기존 탭 관례)
+  addSel.innerHTML = etfOptionsHTML("SOXX");
+  symSel.innerHTML = etfOptionsHTML(state.mySignalSymbol || loadWatchlist()[0] || "SOXL");
+  levSel.innerHTML = etfOptionsHTML(state.mySignalLevSymbol || "SOXL");
+  if (state.mySignalSigmaWin) sigmaWinSel.value = state.mySignalSigmaWin;
+  addBtn.addEventListener("click", () => {
+    const sym = addSel.value;
+    const list = loadWatchlist();
+    if (!list.includes(sym)) { list.push(sym); saveWatchlist(list); renderWatch(); }
+  });
+  symSel.addEventListener("change", renderDetail);
+  sigmaWinSel.addEventListener("change", () => { renderSigma(); renderLev(); });
+  levSel.addEventListener("change", renderLev);
+  renderWatch();
+  renderDetail();
+  renderSigma();
+  renderLev();
 }
 
 function buildMyAssetsText() {
