@@ -66,6 +66,184 @@ async function fetchJSON(path) {
   return res.json();
 }
 
+// 차트 좌표계 상수·눈금 계산 — index.html 원본과 동일 값(A6에서 이식).
+// 이전에는 shared에 이 정의가 없어서 buildChart가 월별 스냅샷 2건 이상일 때
+// ReferenceError로 터지는 잠재 버그가 있었다(캡처앱·APK에서만, 스냅샷을 안 쌓으면 미발현).
+const CHART_W = 800, CHART_H = 220, PAD_L = 46, PAD_R = 12, PAD_T = 14, PAD_B = 22;
+
+function niceTicks(min, max, count) {
+  if (min === max) { min -= 1; max += 1; }
+  const span = max - min;
+  const step0 = span / count;
+  const mag = Math.pow(10, Math.floor(Math.log10(step0)));
+  const norm = step0 / mag;
+  let step;
+  if (norm < 1.5) step = 1 * mag;
+  else if (norm < 3) step = 2 * mag;
+  else if (norm < 7) step = 5 * mag;
+  else step = 10 * mag;
+  const niceMin = Math.floor(min / step) * step;
+  const niceMax = Math.ceil(max / step) * step;
+  const ticks = [];
+  for (let v = niceMin; v <= niceMax + step * 0.001; v += step) ticks.push(v);
+  return ticks;
+}
+
+function nearestIndexByTime(tsArray, targetTs) {
+  let lo = 0, hi = tsArray.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (tsArray[mid] < targetTs) lo = mid + 1; else hi = mid;
+  }
+  if (lo > 0 && Math.abs(tsArray[lo - 1] - targetTs) <= Math.abs(tsArray[lo] - targetTs)) return lo - 1;
+  return lo;
+}
+
+/* squarified treemap 배치 계산(A7 비중 히트맵용) — items는 value 내림차순 배열,
+   (x,y,w,h) 직사각형 영역(% 좌표)을 각 아이템 면적이 value에 비례하도록 분할해
+   같은 순서의 {x,y,w,h} 목록을 반환. 셀이 최대한 정사각형에 가깝게 유지되는
+   고전 squarify 알고리즘(행 추가로 worst aspect ratio가 나빠지기 직전까지 채움). */
+function squarify(items, x, y, w, h) {
+  const out = [];
+  const total = items.reduce((a, it) => a + it.value, 0);
+  if (total <= 0 || !items.length || w <= 0 || h <= 0) return out;
+  const areas = items.map((it) => (it.value / total) * w * h);
+  const worstRatio = (row, side) => {
+    const sum = row.reduce((a, b) => a + b, 0);
+    let mx = 0;
+    for (const a of row) mx = Math.max(mx, Math.max((side * side * a) / (sum * sum), (sum * sum) / (side * side * a)));
+    return mx;
+  };
+  let i = 0, cx = x, cy = y, cw = w, ch = h;
+  while (i < areas.length) {
+    const side = Math.max(Math.min(cw, ch), 1e-9);
+    let row = [areas[i]];
+    let j = i + 1;
+    while (j < areas.length && worstRatio(row.concat(areas[j]), side) <= worstRatio(row, side)) {
+      row.push(areas[j]);
+      j++;
+    }
+    const rowSum = row.reduce((a, b) => a + b, 0);
+    const thick = rowSum / side;
+    let off = 0;
+    for (const a of row) {
+      const len = a / thick;
+      if (cw >= ch) out.push({ x: cx, y: cy + off, w: thick, h: len });
+      else out.push({ x: cx + off, y: cy, w: len, h: thick });
+      off += len;
+    }
+    if (cw >= ch) { cx += thick; cw -= thick; }
+    else { cy += thick; ch -= thick; }
+    i = j;
+  }
+  return out;
+}
+
+/* 여러 시리즈를 한 캔버스에 겹쳐 그리는 비교 차트 — index.html의 MDD Underwater 비교용을
+   이식하되, 낙폭(≤0) 전용이던 y축을 양수 수익률도 그릴 수 있게 일반화(A6 지수비교 탭용).
+   seriesList: [{ label, color, dates:[YYYY-MM-DD], values:[비율(0.05=+5%)] }] */
+function buildCompareChart(container, seriesList) {
+  const domainMin = Math.min(...seriesList.map((s) => Date.parse(s.dates[0])));
+  const domainMax = Math.max(...seriesList.map((s) => Date.parse(s.dates[s.dates.length - 1])));
+  const xAt = (ts) => PAD_L + ((ts - domainMin) / (domainMax - domainMin)) * (CHART_W - PAD_L - PAD_R);
+
+  let vMin = 0, vMax = 0;
+  for (const s of seriesList) { vMin = Math.min(vMin, ...s.values); vMax = Math.max(vMax, ...s.values); }
+  const ticks = niceTicks(vMin, vMax, 5);
+  const tMin = ticks[0], tMax = ticks[ticks.length - 1];
+  const yAt = (v) => PAD_T + (1 - (v - tMin) / (tMax - tMin)) * (CHART_H - PAD_T - PAD_B);
+
+  const tsLists = seriesList.map((s) => s.dates.map((d) => Date.parse(d)));
+
+  const gridSvg = ticks
+    .map((t) => {
+      const y = yAt(t).toFixed(2);
+      return `<line class="gridline" x1="${PAD_L}" x2="${CHART_W - PAD_R}" y1="${y}" y2="${y}"/>` +
+             `<text class="axis-label" x="${PAD_L - 6}" y="${Number(y) + 3}" text-anchor="end">${(t * 100).toFixed(0)}%</text>`;
+    })
+    .join("");
+
+  const xTickCount = 5;
+  let xLabelsSvg = "";
+  for (let k = 0; k <= xTickCount; k++) {
+    const ts = domainMin + (k / xTickCount) * (domainMax - domainMin);
+    const x = xAt(ts).toFixed(2);
+    const label = new Date(ts).toISOString().slice(0, 7);
+    xLabelsSvg += `<text class="axis-label" x="${x}" y="${CHART_H - 4}" text-anchor="middle">${label}</text>`;
+  }
+
+  // 0% 기준선(수익/손실 경계) — 낙폭 전용이던 원본과 달리 0이 축 중간에 올 수 있어 명시적으로 그린다
+  const zeroY = yAt(0).toFixed(2);
+
+  let linesSvg = "";
+  seriesList.forEach((s, si) => {
+    let path = "";
+    for (let i = 0; i < s.dates.length; i++) {
+      const x = xAt(tsLists[si][i]).toFixed(2), y = yAt(s.values[i]).toFixed(2);
+      path += (i === 0 ? "M" : "L") + x + "," + y + " ";
+    }
+    linesSvg += `<path fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" d="${path}"/>`;
+  });
+
+  const legendSvg = seriesList
+    .map((s) => `<span class="legend-item"><span class="line-key" style="background:${s.color}"></span>${s.label}</span>`)
+    .join("");
+
+  container.innerHTML = `
+    <div class="legend-row">${legendSvg}</div>
+    <div class="chart-box">
+      <svg class="chart" viewBox="0 0 ${CHART_W} ${CHART_H}" preserveAspectRatio="xMidYMid meet">
+        ${gridSvg}
+        ${xLabelsSvg}
+        <line class="baseline" x1="${PAD_L}" x2="${CHART_W - PAD_R}" y1="${zeroY}" y2="${zeroY}"/>
+        ${linesSvg}
+        <g class="hover-layer" style="display:none">
+          <line class="crosshair-line" x1="0" x2="0" y1="${PAD_T}" y2="${CHART_H - PAD_B}"/>
+        </g>
+      </svg>
+      <div class="tooltip"></div>
+    </div>`;
+
+  const svg = container.querySelector("svg");
+  const hoverLayer = container.querySelector(".hover-layer");
+  const crosshair = container.querySelector(".crosshair-line");
+  const tooltip = container.querySelector(".tooltip");
+
+  function onMove(evt) {
+    const pt = svg.createSVGPoint();
+    pt.x = evt.clientX; pt.y = evt.clientY;
+    const loc = pt.matrixTransform(svg.getScreenCTM().inverse());
+    const ratio = Math.min(1, Math.max(0, (loc.x - PAD_L) / (CHART_W - PAD_L - PAD_R)));
+    const targetTs = domainMin + ratio * (domainMax - domainMin);
+
+    hoverLayer.style.display = "";
+    const x = xAt(targetTs);
+    crosshair.setAttribute("x1", x); crosshair.setAttribute("x2", x);
+
+    const rect = svg.getBoundingClientRect();
+    const px = rect.left + (x / CHART_W) * rect.width;
+    tooltip.style.left = (px - rect.left) + "px";
+    tooltip.style.top = ((PAD_T + 4) / CHART_H) * 100 + "%";
+    tooltip.style.transform = "translate(-50%, 0%)";
+    tooltip.style.opacity = "1";
+
+    let refDate = "";
+    const rows = seriesList
+      .map((s, si) => {
+        const idx = nearestIndexByTime(tsLists[si], targetTs);
+        if (!refDate || s.dates[idx] > refDate) refDate = s.dates[idx];
+        return `<div class="t-row"><span class="t-key"><span class="t-swatch" style="background:${s.color}"></span>${s.label}</span>` +
+               `<strong>${(s.values[idx] * 100).toFixed(1)}%</strong></div>`;
+      })
+      .join("");
+    tooltip.innerHTML = `<div class="t-date">${refDate}</div>${rows}`;
+  }
+  function onLeave() { hoverLayer.style.display = "none"; tooltip.style.opacity = "0"; }
+
+  svg.addEventListener("pointermove", onMove);
+  svg.addEventListener("pointerleave", onLeave);
+}
+
 function buildChart(container, opts) {
   const { dates, values, color, mode, markers, valueFmt, seriesLabel } = opts;
   const axisPrefix = opts.currency === "KRW" ? "₩" : "$";

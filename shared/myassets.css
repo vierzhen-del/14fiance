@@ -335,13 +335,25 @@
   .dash-tab-btn.active { background: var(--text-primary); color: var(--surface-1); font-weight: 600; border-color: var(--text-primary); }
   .dash-panel[hidden] { display: none; }
 
-  /* ---- 계좌 히트맵 ---- */
-  .heatmap { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; margin: 10px 0 18px; }
-  .hm-cell { border-radius: 8px; padding: 8px; display: flex; flex-direction: column; justify-content: center; overflow: hidden; }
+  /* ---- 비중 트리맵 히트맵 (A7 — 크기=평가액 비중, 색=등락률) ---- */
   .hm-name { font-size: 11px; color: #fff; opacity: .92; line-height: 1.25; }
   .hm-val { font-size: 12.5px; color: #fff; font-weight: 700; margin-top: 4px; }
   .hm-sub { font-size: 10px; color: #fff; opacity: .75; margin-top: 2px; }
-  .hm-account-title { font-size: 12.5px; font-weight: 600; color: var(--text-muted); margin: 16px 0 6px; }
+  .hm-account-title { font-size: 12.5px; font-weight: 600; color: var(--text-muted); margin: 16px 0 6px; } /* 자급률·월매수 섹션에서도 사용 */
+  .treemap { position: relative; width: 100%; height: 520px; margin: 10px 0 18px; }
+  @media (max-width: 640px) { .treemap { height: 420px; } }
+  .tm-group { position: absolute; box-sizing: border-box; border: 1px solid var(--page-plane); display: flex; flex-direction: column; overflow: hidden; }
+  .tm-group-label { font-size: 10px; font-weight: 700; color: var(--text-muted); background: var(--surface-1); padding: 1px 4px; white-space: nowrap; overflow: hidden; flex-shrink: 0; }
+  .tm-group-label span { font-weight: 400; }
+  .tm-group-body { position: relative; flex: 1; min-height: 0; }
+  .tm-cell { position: absolute; box-sizing: border-box; border: 1px solid rgba(0,0,0,.25); padding: 3px 4px; overflow: hidden; display: flex; flex-direction: column; justify-content: center; }
+  .tm-cell .hm-name { font-size: 10.5px; }
+  .tm-cell .hm-val { font-size: 11.5px; margin-top: 1px; }
+  .tm-cell .hm-sub { font-size: 9.5px; margin-top: 1px; }
+  /* 등락 색 — 한국 관례(상승=빨강, 하락=파랑), 절대값 커질수록 진하게 */
+  .tm-flat { background: #6b6f76; }
+  .tm-up1 { background: #8a4a4a; } .tm-up2 { background: #a63d3d; } .tm-up3 { background: #c23030; } .tm-up4 { background: #de2121; }
+  .tm-dn1 { background: #4a5a8a; } .tm-dn2 { background: #3d4fa6; } .tm-dn3 { background: #3042c2; } .tm-dn4 { background: #2134de; }
 
   /* ---- 통합 탭: 도넛·월별 바·유형 스택바 ---- */
   .donut-wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; margin: 14px 0 8px; }
