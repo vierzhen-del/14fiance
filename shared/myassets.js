@@ -186,6 +186,8 @@ function serializeMyAssets() {
 
 function saveMyAssets() {
   localStorage.setItem(MY_ASSETS_KEY, JSON.stringify(serializeMyAssets()));
+  // A11c: 네이티브(APK)에서 데이터 변경 시 백업 파일 자동 갱신(비네이티브 no-op)
+  if (typeof window.autoBackupMyAssets === "function") window.autoBackupMyAssets();
 }
 
 /* 목표 도달 수익률 방식(통합 직접입력 / 종목별 실적) 전환 시 관련 UI 표시만 토글 */
@@ -1620,6 +1622,9 @@ async function renderMyAssets() {
 
       <p class="chart-title" style="margin-top:20px;">🏢 일반종목(개별주) 반영 상태</p>
       <p class="stat-sub">현재: <b>${includeStocks ? "포함" : "제외"}</b> — 위쪽 "일반종목: 포함/제외" 버튼으로 전환할 수 있습니다.</p>
+
+      <p class="chart-title" style="margin-top:20px;">💾 백업·복원</p>
+      <p class="stat-sub">📤 내보내기 파일에는 보유 종목·목표 설정과 함께 <b>스냅샷·변동이력·워치리스트가 모두 포함</b>되어, 재설치 후 📂 가져오기 한 번으로 전체 복원됩니다. 앱(APK)에서는 데이터가 바뀔 때마다 <b>문서/14fiance/ 폴더에 백업 파일이 자동 저장</b>되고, 재설치 후 "📂 백업 폴더에서 복원" 버튼으로 파일 선택 없이 복원할 수 있습니다(안드로이드 저장소 정책에 따라 폴더가 삭제될 수 있으니 중요한 시점엔 📤 내보내기도 함께 보관 권장).</p>
     </div>
 
     <p class="stat-sub" style="margin-top:10px;">현재가는 주간 수집 데이터의 마지막 종가 기준입니다. 월배당은 종목별 "확정 DPS(원/주)"를 입력하면 DPS×수량으로 계산해 우선 적용하고, 비워두면 최근 1년 배당(TTM)÷12 추정치를 사용합니다. 신규 상장·특별배당 종목은 TTM 추정이 실제보다 크게 낮을 수 있으니 시트/노션 배당기준의 확정 DPS 입력을 권장합니다.</p>
@@ -1673,6 +1678,7 @@ async function renderMyAssets() {
     if (idx >= 0) hist[idx] = entry; else hist.push(entry);
     hist.sort((a, b) => a.month.localeCompare(b.month));
     localStorage.setItem(MY_ASSETS_HISTORY_KEY, JSON.stringify(hist));
+    if (typeof window.autoBackupMyAssets === "function") window.autoBackupMyAssets();
     flashStatus("mySnapshotStatus", `${month} 스냅샷 저장 ✓ (이 브라우저에만 보관)`);
     renderMyAssets();
   });
@@ -1705,6 +1711,7 @@ async function renderMyAssets() {
     if (idx >= 0) hist[idx] = entry; else hist.push(entry);
     hist.sort((a, b) => a.date.localeCompare(b.date));
     localStorage.setItem(MY_ASSETS_DAILY_HISTORY_KEY, JSON.stringify(hist));
+    if (typeof window.autoBackupMyAssets === "function") window.autoBackupMyAssets();
     flashStatus("myDailySnapshotStatus", `${date} 일별 스냅샷 저장 ✓ (이 브라우저에만 보관)`);
     renderMyAssets();
   });
@@ -2049,11 +2056,37 @@ function setupSignalTab(perRow, liveKr) {
           <p class="stat-sub">연간 최대낙폭(매년 낙폭 리셋) 분포 · 분석 ${ann.length}개년(${ann[0].year}~${ann[ann.length - 1].year})${curYear ? ` · 올해(${thisYear}) MDD <b>${(-curYear.mdd * 100).toFixed(1)}%</b> — 테두리 강조 구간` : ""}</p>`;
       }
 
+      // A11a: RSI/MACD/볼린저 3줄 요약 + 종합평가 1줄 (기존 계산값 재사용)
+      const rsiLine = rsi == null ? "데이터 부족"
+        : `RSI14 ${rsi.toFixed(1)} — ${rsi <= 30 ? "과매도 구간(반등 가능성 주시)" : rsi >= 70 ? "과열 구간(과매수 주의)" : "중립(30~70), 방향성 약함"}`;
+      const macdLine = h == null ? "MACD 데이터 부족"
+        : `MACD 히스토그램 ${h >= 0 ? "+" : ""}${h.toFixed(2)} — ${(() => {
+            const hp = hist[hist.length - 2];
+            if (hp != null && hp <= 0 && h > 0) return "상향 전환(단기 반등 신호)";
+            if (hp != null && hp >= 0 && h < 0) return "하향 전환(단기 조정 신호)";
+            return h >= 0 ? "상승 모멘텀 지속(시그널선 위)" : "하락 모멘텀 지속(시그널선 아래)";
+          })()}`;
+      const bbLine = bb == null ? "볼린저 데이터 부족"
+        : `볼린저 %B ${(bb.pctB * 100).toFixed(0)}% — ${bb.pctB <= 0.05 ? "하단 접근(눌림 구간)" : bb.pctB >= 0.95 ? "상단 접근(과열 구간)" : "밴드 내 정상"}, 밴드폭 ${(bb.bandwidth * 100).toFixed(1)}%(변동성 ${bb.bandwidth >= 0.15 ? "높음" : "보통"})`;
+      const verdictText = buyN >= 2
+        ? `${grade} — 위 지표 중 ${buyN}개가 매수 방향으로 합의`
+        : sellN >= 2
+        ? `${grade} — 위 지표 중 ${sellN}개가 매도 방향으로 합의`
+        : `${grade} — 매수·매도 신호 지표가 각각 2개 미만이라 방향성 불명확, 관망 권장`;
+      const summaryCardHTML = `
+        <div class="sig-summary sig-summary-${buyN >= 2 ? "buy" : sellN >= 2 ? "sell" : "hold"}">
+          <p class="sig-summary-line">① ${rsiLine}</p>
+          <p class="sig-summary-line">② ${macdLine}</p>
+          <p class="sig-summary-line">③ ${bbLine}</p>
+          <p class="sig-summary-verdict">📌 종합평가: ${verdictText} <span class="sig-summary-note">(참고용 · 투자 조언 아님)</span></p>
+        </div>`;
+
       detailBody.innerHTML = `
         <div class="action-row" style="margin:8px 0;">
           <span class="sig-badge ${gradeCls}" style="font-size:14px;">종합 ${grade}</span>
           <span class="sig-badge ${zone.cls}">20일 포지션 ${pos == null ? "―" : Math.round(pos * 100) + "%"} · ${zone.label}</span>
         </div>
+        ${summaryCardHTML}
         <div style="max-width:420px;">${sigGaugeHTML(pos)}</div>
         <p class="stat-sub">종합 시그널은 아래 지표 중 <b>2개 이상이 같은 방향일 때만</b> 매수/매도로 판정합니다(단일 지표 터치·크로스만으로 매매하지 않음). ${votes.map((v) => `<b>${v.name}</b> ${v.text}`).join(" · ")}</p>
         <p class="stat-sub"><b>${arrText}</b> · ${crossMsgs.length ? crossMsgs.join(" · ") : "최근 5거래일 내 MA 교차 없음"}</p>
@@ -2070,7 +2103,7 @@ function setupSignalTab(perRow, liveKr) {
         const fmtAxisPrice = (v) => full.currency === "KRW"
           ? (v >= 10000 ? (v / 10000).toFixed(1) + "만" : String(Math.round(v)))
           : "$" + (v >= 100 ? v.toFixed(0) : v.toFixed(2));
-        buildCompareChart(chartEl, chartSeries, { anchorZero: false, fmtAxis: fmtAxisPrice, fmtTip: (v) => fmtPrice(v, full.currency) });
+        buildCompareChart(chartEl, chartSeries, { anchorZero: false, height: 360, fmtAxis: fmtAxisPrice, fmtTip: (v) => fmtPrice(v, full.currency) });
         chartEl.insertAdjacentHTML("beforeend",
           `<p class="stat-sub" style="margin-top:6px;">최근 1년(252거래일) — 종가·MA20/60/200·볼린저(20일·2σ). 주 1회 수집 데이터 기준이라 최신 거래일과 다를 수 있습니다.</p>`);
       }
