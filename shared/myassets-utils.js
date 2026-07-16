@@ -99,6 +99,46 @@ function nearestIndexByTime(tsArray, targetTs) {
   return lo;
 }
 
+/* squarified treemap 배치 계산(A7 비중 히트맵용) — items는 value 내림차순 배열,
+   (x,y,w,h) 직사각형 영역(% 좌표)을 각 아이템 면적이 value에 비례하도록 분할해
+   같은 순서의 {x,y,w,h} 목록을 반환. 셀이 최대한 정사각형에 가깝게 유지되는
+   고전 squarify 알고리즘(행 추가로 worst aspect ratio가 나빠지기 직전까지 채움). */
+function squarify(items, x, y, w, h) {
+  const out = [];
+  const total = items.reduce((a, it) => a + it.value, 0);
+  if (total <= 0 || !items.length || w <= 0 || h <= 0) return out;
+  const areas = items.map((it) => (it.value / total) * w * h);
+  const worstRatio = (row, side) => {
+    const sum = row.reduce((a, b) => a + b, 0);
+    let mx = 0;
+    for (const a of row) mx = Math.max(mx, Math.max((side * side * a) / (sum * sum), (sum * sum) / (side * side * a)));
+    return mx;
+  };
+  let i = 0, cx = x, cy = y, cw = w, ch = h;
+  while (i < areas.length) {
+    const side = Math.max(Math.min(cw, ch), 1e-9);
+    let row = [areas[i]];
+    let j = i + 1;
+    while (j < areas.length && worstRatio(row.concat(areas[j]), side) <= worstRatio(row, side)) {
+      row.push(areas[j]);
+      j++;
+    }
+    const rowSum = row.reduce((a, b) => a + b, 0);
+    const thick = rowSum / side;
+    let off = 0;
+    for (const a of row) {
+      const len = a / thick;
+      if (cw >= ch) out.push({ x: cx, y: cy + off, w: thick, h: len });
+      else out.push({ x: cx + off, y: cy, w: len, h: thick });
+      off += len;
+    }
+    if (cw >= ch) { cx += thick; cw -= thick; }
+    else { cy += thick; ch -= thick; }
+    i = j;
+  }
+  return out;
+}
+
 /* 여러 시리즈를 한 캔버스에 겹쳐 그리는 비교 차트 — index.html의 MDD Underwater 비교용을
    이식하되, 낙폭(≤0) 전용이던 y축을 양수 수익률도 그릴 수 있게 일반화(A6 지수비교 탭용).
    seriesList: [{ label, color, dates:[YYYY-MM-DD], values:[비율(0.05=+5%)] }] */

@@ -307,13 +307,25 @@
   .dash-tab-btn.active { background: var(--text-primary); color: var(--surface-1); font-weight: 600; border-color: var(--text-primary); }
   .dash-panel[hidden] { display: none; }
 
-  /* ---- 계좌 히트맵 ---- */
-  .heatmap { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; margin: 10px 0 18px; }
-  .hm-cell { border-radius: 8px; padding: 8px; display: flex; flex-direction: column; justify-content: center; overflow: hidden; }
+  /* ---- 비중 트리맵 히트맵 (A7 — 크기=평가액 비중, 색=등락률) ---- */
   .hm-name { font-size: 11px; color: #fff; opacity: .92; line-height: 1.25; }
   .hm-val { font-size: 12.5px; color: #fff; font-weight: 700; margin-top: 4px; }
   .hm-sub { font-size: 10px; color: #fff; opacity: .75; margin-top: 2px; }
-  .hm-account-title { font-size: 12.5px; font-weight: 600; color: var(--text-muted); margin: 16px 0 6px; }
+  .hm-account-title { font-size: 12.5px; font-weight: 600; color: var(--text-muted); margin: 16px 0 6px; } /* 자급률·월매수 섹션에서도 사용 */
+  .treemap { position: relative; width: 100%; height: 520px; margin: 10px 0 18px; }
+  @media (max-width: 640px) { .treemap { height: 420px; } }
+  .tm-group { position: absolute; box-sizing: border-box; border: 1px solid var(--page-plane); display: flex; flex-direction: column; overflow: hidden; }
+  .tm-group-label { font-size: 10px; font-weight: 700; color: var(--text-muted); background: var(--surface-1); padding: 1px 4px; white-space: nowrap; overflow: hidden; flex-shrink: 0; }
+  .tm-group-label span { font-weight: 400; }
+  .tm-group-body { position: relative; flex: 1; min-height: 0; }
+  .tm-cell { position: absolute; box-sizing: border-box; border: 1px solid rgba(0,0,0,.25); padding: 3px 4px; overflow: hidden; display: flex; flex-direction: column; justify-content: center; }
+  .tm-cell .hm-name { font-size: 10.5px; }
+  .tm-cell .hm-val { font-size: 11.5px; margin-top: 1px; }
+  .tm-cell .hm-sub { font-size: 9.5px; margin-top: 1px; }
+  /* 등락 색 — 한국 관례(상승=빨강, 하락=파랑), 절대값 커질수록 진하게 */
+  .tm-flat { background: #6b6f76; }
+  .tm-up1 { background: #8a4a4a; } .tm-up2 { background: #a63d3d; } .tm-up3 { background: #c23030; } .tm-up4 { background: #de2121; }
+  .tm-dn1 { background: #4a5a8a; } .tm-dn2 { background: #3d4fa6; } .tm-dn3 { background: #3042c2; } .tm-dn4 { background: #2134de; }
 
   /* ---- 통합 탭: 도넛·월별 바·유형 스택바 ---- */
   .donut-wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; margin: 14px 0 8px; }
@@ -1126,6 +1138,46 @@ function nearestIndexByTime(tsArray, targetTs) {
   return lo;
 }
 
+/* squarified treemap 배치 계산(A7 비중 히트맵용) — items는 value 내림차순 배열,
+   (x,y,w,h) 직사각형 영역(% 좌표)을 각 아이템 면적이 value에 비례하도록 분할해
+   같은 순서의 {x,y,w,h} 목록을 반환. 셀이 최대한 정사각형에 가깝게 유지되는
+   고전 squarify 알고리즘(행 추가로 worst aspect ratio가 나빠지기 직전까지 채움). */
+function squarify(items, x, y, w, h) {
+  const out = [];
+  const total = items.reduce((a, it) => a + it.value, 0);
+  if (total <= 0 || !items.length || w <= 0 || h <= 0) return out;
+  const areas = items.map((it) => (it.value / total) * w * h);
+  const worstRatio = (row, side) => {
+    const sum = row.reduce((a, b) => a + b, 0);
+    let mx = 0;
+    for (const a of row) mx = Math.max(mx, Math.max((side * side * a) / (sum * sum), (sum * sum) / (side * side * a)));
+    return mx;
+  };
+  let i = 0, cx = x, cy = y, cw = w, ch = h;
+  while (i < areas.length) {
+    const side = Math.max(Math.min(cw, ch), 1e-9);
+    let row = [areas[i]];
+    let j = i + 1;
+    while (j < areas.length && worstRatio(row.concat(areas[j]), side) <= worstRatio(row, side)) {
+      row.push(areas[j]);
+      j++;
+    }
+    const rowSum = row.reduce((a, b) => a + b, 0);
+    const thick = rowSum / side;
+    let off = 0;
+    for (const a of row) {
+      const len = a / thick;
+      if (cw >= ch) out.push({ x: cx, y: cy + off, w: thick, h: len });
+      else out.push({ x: cx + off, y: cy, w: len, h: thick });
+      off += len;
+    }
+    if (cw >= ch) { cx += thick; cw -= thick; }
+    else { cy += thick; ch -= thick; }
+    i = j;
+  }
+  return out;
+}
+
 function buildCompareChart(container, seriesList) {
   // seriesList: [{ symbol, label, color, dates, values }] — 값은 비율(0.05=+5%).
   // 원래 낙폭(≤0) 전용이었으나 A6 지수비교 탭이 양수 수익률도 그리도록 y축을 일반화
@@ -1893,7 +1945,6 @@ function showMyDashTab(id) {
   });
 }
 
-/* 계좌 히트맵 — 계좌별로 그룹핑해 비중이 클수록 큰 셀로 표시 */
 /* 수익률 분석 — ① 스냅샷 이력 기반 전체 자산 변동, ② 지역별 수익률(매입단가 입력분),
    ③ 배당수익률(계좌별), ④ 배당수익률(지역·스타일 비중별) */
 function buildReturnAnalysisHTML(regionRetMap, styleRetMap, accountMap, history) {
@@ -1976,34 +2027,74 @@ function buildReturnAnalysisHTML(regionRetMap, styleRetMap, accountMap, history)
     <p class="stat-sub" style="margin-top:6px;">시가배당률 = 연배당 ÷ 평가액(현재 조회 주가 기준 — "🔄 최신시세" 켜면 실시간 조회가로 계산). 투자배당률(YOC) = 연배당 ÷ 매입원가(매입단가 입력분만).</p>`;
 }
 
-function buildHeatmapHTML(perRow, accountMap) {
-  const byAccount = new Map();
+/* ---------- A7: 🗺️ 비중 트리맵 히트맵 (finviz류) ----------
+   사각형 크기 = 평가액 비중, 색 = 등락률(한국 관례: 상승 빨강·하락 파랑),
+   그룹(카테고리/계좌/지역/스타일) 먼저 트리맵으로 나눈 뒤 그룹 안에서 종목을 다시 분할.
+   기존 균일 그리드 히트맵(색=계좌 고정, 수익률 정보 없음)을 대체. */
+const TREEMAP_GROUP_FIELDS = {
+  category: (p) => (p.meta && p.meta.category) || "기타",
+  account: (p) => p.account || "계좌 미지정",
+  region: (p) => (p.meta && p.meta.region) || "미분류",
+  style: (p) => (p.meta && p.meta.style) || "미분류",
+};
+
+/* 등락률 — 라이브 시세가 적용됐으면 라이브가 vs 마지막 수집 종가, 아니면 마지막 두
+   수집 종가 간 변화. 주가 수집이 주 1회라 "일간" 등락이 아닐 수 있음(화면 문구로 명시). */
+function lastChangePct(p) {
+  const closes = p.full && p.full.closes;
+  if (!closes || closes.length < 2) return null;
+  const lastStored = closes[closes.length - 1];
+  if (p.close !== lastStored) return p.close / lastStored - 1;
+  return lastStored / closes[closes.length - 2] - 1;
+}
+
+function changeColorClass(chg) {
+  if (chg == null) return "tm-flat";
+  const a = Math.abs(chg) * 100;
+  if (a < 0.25) return "tm-flat";
+  const lv = a < 1 ? 1 : a < 2 ? 2 : a < 3 ? 3 : 4;
+  return (chg > 0 ? "tm-up" : "tm-dn") + lv;
+}
+
+function buildTreemapHTML(perRow, groupBy) {
+  const keyFn = TREEMAP_GROUP_FIELDS[groupBy] || TREEMAP_GROUP_FIELDS.category;
+  const groups = new Map();
   for (const p of perRow) {
-    const acc = p.account || "계좌 미지정";
-    if (!byAccount.has(acc)) byAccount.set(acc, []);
-    byAccount.get(acc).push(p);
+    if (p.value <= 0) continue;
+    const k = keyFn(p);
+    if (!groups.has(k)) groups.set(k, { key: k, value: 0, items: [] });
+    const g = groups.get(k);
+    g.value += p.value;
+    g.items.push(p);
   }
-  const accounts = [...byAccount.keys()].sort(
-    (a, b) => (accountMap.get(b)?.value || 0) - (accountMap.get(a)?.value || 0)
-  );
+  const glist = [...groups.values()].sort((a, b) => b.value - a.value);
+  if (!glist.length) return `<p class="compare-empty">표시할 보유 종목이 없습니다 — 수량을 입력하면 트리맵이 그려집니다.</p>`;
+  const total = glist.reduce((a, g) => a + g.value, 0);
+  const grects = squarify(glist, 0, 0, 100, 100);
   const fmtW = (v) => fmtPrice(v, "KRW");
-  return accounts.map((acc, ai) => {
-    const rows = byAccount.get(acc).slice().sort((a, b) => b.value - a.value);
-    const accTotal = accountMap.get(acc)?.value || 0;
-    const color = MY_ASSETS_PALETTE[ai % MY_ASSETS_PALETTE.length];
-    const cells = rows.map((p) => {
-      const pct = accTotal > 0 ? (p.value / accTotal) * 100 : 0;
-      const height = 70 + Math.min(60, pct * 1.2);
+  let html = "";
+  glist.forEach((g, gi) => {
+    const gr = grects[gi];
+    const items = g.items.slice().sort((a, b) => b.value - a.value);
+    const irects = squarify(items, 0, 0, 100, 100);
+    const cells = items.map((p, ii) => {
+      const r = irects[ii];
+      const chg = lastChangePct(p);
       const label = p.meta ? p.meta.name : p.symbol;
-      return `<div class="hm-cell" style="background:${color}; height:${height.toFixed(0)}px;">
+      const pct = total > 0 ? (p.value / total) * 100 : 0;
+      const chgText = chg == null ? "—" : `${chg >= 0 ? "+" : ""}${(chg * 100).toFixed(2)}%`;
+      return `<div class="tm-cell ${changeColorClass(chg)}" style="left:${r.x.toFixed(3)}%;top:${r.y.toFixed(3)}%;width:${r.w.toFixed(3)}%;height:${r.h.toFixed(3)}%;" title="${label} · ${fmtW(p.value)} · 비중 ${pct.toFixed(1)}% · 등락 ${chgText}">
         <div class="hm-name">${label}</div>
-        <div class="hm-val">${fmtW(p.value)}</div>
-        <div class="hm-sub">${p.qty.toLocaleString()}주 · ${pct.toFixed(1)}%</div>
+        <div class="hm-val">${chgText}</div>
+        <div class="hm-sub">${pct.toFixed(1)}%</div>
       </div>`;
     }).join("");
-    return `<p class="hm-account-title">${acc} <span style="color:var(--text-muted); font-weight:400;">(${fmtW(accTotal)})</span></p>
-    <div class="heatmap">${cells}</div>`;
-  }).join("");
+    html += `<div class="tm-group" style="left:${gr.x.toFixed(3)}%;top:${gr.y.toFixed(3)}%;width:${gr.w.toFixed(3)}%;height:${gr.h.toFixed(3)}%;">
+      <div class="tm-group-label">${g.key} <span>${((g.value / total) * 100).toFixed(1)}%</span></div>
+      <div class="tm-group-body">${cells}</div>
+    </div>`;
+  });
+  return `<div class="treemap">${html}</div>`;
 }
 
 /* 배당기준·이력 — 확정/추정 DPS, 다음달 기대월배당(배당률×현재가), 배당상승률(직전 스냅샷 대비) */
@@ -2862,8 +2953,8 @@ async function renderMyAssets() {
   const buyPlanHTML = buildBuyPlanHTML(perRow);
   const yearlyHTML = buildYearlyDivHTML(state.myAssetsDivHistory || {});
 
-  // 계좌 히트맵 — 첨부 대시보드의 "연금자산 히트맵" 탭에 해당하는 신규 컴포넌트
-  const heatmapHTML = buildHeatmapHTML(perRow, accountMap);
+  // 계좌 히트맵 탭은 A7에서 트리맵으로 대체 — 패널 컨테이너에 renderMyAssets 끝의
+  // 와이어링(renderTreemap)이 buildTreemapHTML 결과를 채운다.
 
   // 월별 스냅샷 추이 — "이번 달 스냅샷 저장" 버튼으로 기기에 누적(로그인 없이도 이력 확인 가능)
   const history = JSON.parse(localStorage.getItem(MY_ASSETS_HISTORY_KEY) || "[]");
@@ -2921,7 +3012,7 @@ async function renderMyAssets() {
       <button type="button" class="dash-tab-btn" data-tab="overview">📊 통합</button>
       <button type="button" class="dash-tab-btn" data-tab="summary">📋 종합</button>
       <button type="button" class="dash-tab-btn" data-tab="alloc">📊 비중분석</button>
-      <button type="button" class="dash-tab-btn" data-tab="heatmap">🗺️ 계좌 히트맵</button>
+      <button type="button" class="dash-tab-btn" data-tab="heatmap">🗺️ 비중 히트맵</button>
       <button type="button" class="dash-tab-btn" data-tab="divstatus">💰 월배당현황</button>
       <button type="button" class="dash-tab-btn" data-tab="suff">⚖️ 자급률·월매수</button>
       <button type="button" class="dash-tab-btn" data-tab="divbasis">💹 배당기준·이력</button>
@@ -2983,8 +3074,17 @@ async function renderMyAssets() {
     </div>
 
     <div class="dash-panel" data-tab="heatmap" hidden>
-      <p class="chart-title" style="margin-top:20px;">🗺️ 계좌별 보유 히트맵</p>
-      ${heatmapHTML}
+      <p class="chart-title" style="margin-top:20px;">🗺️ 비중 히트맵 (트리맵)</p>
+      <p class="stat-sub">사각형 크기 = 평가액 비중, 색 = 등락률(<b style="color:#de2121;">상승 빨강</b> · <b style="color:#3042c2;">하락 파랑</b>). 주가는 주 1회 수집이라 등락률은 <b>마지막 두 수집 종가 간 변화</b>(🔄 최신시세 켬 시 라이브가 vs 마지막 수집 종가)입니다 — 일간 등락이 아닐 수 있습니다.</p>
+      <div class="controls" style="margin:10px 0;">
+        <select id="myTreemapGroup" aria-label="트리맵 그룹 기준">
+          <option value="category" selected>카테고리별</option>
+          <option value="account">계좌별</option>
+          <option value="region">지역별</option>
+          <option value="style">스타일별</option>
+        </select>
+      </div>
+      <div id="myTreemapBody"></div>
     </div>
 
     <div class="dash-panel" data-tab="divstatus" hidden>
@@ -3251,6 +3351,18 @@ async function renderMyAssets() {
   benchEtfOn.addEventListener("change", renderBenchmark);
   benchEtfSel.addEventListener("change", renderBenchmark);
   renderBenchmark();
+
+  // A7: 🗺️ 비중 트리맵 — 그룹 기준 변경 시 트리맵만 재렌더
+  const treemapSel = document.getElementById("myTreemapGroup");
+  const renderTreemap = () => {
+    const body = document.getElementById("myTreemapBody");
+    if (!body) return;
+    state.myTreemapGroup = treemapSel.value;
+    body.innerHTML = buildTreemapHTML(perRow, treemapSel.value);
+  };
+  if (state.myTreemapGroup) treemapSel.value = state.myTreemapGroup;
+  treemapSel.addEventListener("change", renderTreemap);
+  renderTreemap();
 }
 
 function buildMyAssetsText() {
