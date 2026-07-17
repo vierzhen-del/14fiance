@@ -390,6 +390,66 @@
   .stack-seg { height: 100%; }
   .stack-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; }
   .stack-legend-item { display: inline-flex; align-items: center; gap: 5px; }
+
+  /* ---- A19: 애플 스타일 패널 — 🎯 트레이드 플랜·⚖️ 리스크 게이트·📝 결정 메모 ----
+     iOS 그룹 리스트/Stocks·Health 앱 스탯 타일 톤(둥근 큰 반경·레이어드 섀도·좌측 accent bar·
+     세그먼티드 컨트롤)을 이 3개 카드에만 한정 적용. 기존 .stat/.card 등은 그대로 둔다. */
+  .apple-panel {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 18px 18px 20px;
+    margin: 14px 0;
+    box-shadow: 0 1px 2px rgba(0,0,0,.05), 0 10px 28px rgba(0,0,0,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    .apple-panel { box-shadow: 0 1px 2px rgba(0,0,0,.35), 0 10px 28px rgba(0,0,0,.4); }
+  }
+  :root[data-theme="dark"] .apple-panel { box-shadow: 0 1px 2px rgba(0,0,0,.35), 0 10px 28px rgba(0,0,0,.4); }
+  .apple-panel-title {
+    font-size: 12.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em;
+    color: var(--text-muted); margin: 0 0 12px; display: flex; align-items: center; gap: 6px;
+  }
+  .apple-panel-note { font-size: 12px; color: var(--text-secondary); margin: -6px 0 12px; }
+  .apple-tile-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  @media (max-width: 640px) { .apple-tile-grid { grid-template-columns: repeat(2, 1fr); } }
+  .apple-tile {
+    position: relative; overflow: hidden; border-radius: 14px; padding: 12px 14px 12px 16px;
+    background: color-mix(in srgb, var(--text-primary) 4%, var(--surface-1));
+  }
+  .apple-tile::before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+    background: var(--text-muted);
+  }
+  .apple-tile.accent-good::before { background: var(--good); }
+  .apple-tile.accent-critical::before { background: var(--critical); }
+  .apple-tile.accent-blue::before { background: var(--series-price); }
+  .apple-tile.accent-warn::before { background: #ff9500; }
+  .apple-tile-label { font-size: 11px; font-weight: 600; color: var(--text-muted); margin: 0 0 4px; letter-spacing: 0.01em; }
+  .apple-tile-value { font-size: 18px; font-weight: 700; letter-spacing: -0.01em; margin: 0; color: var(--text-primary); }
+
+  .apple-segmented {
+    display: flex; gap: 3px; padding: 3px; margin: 4px 0 2px;
+    background: color-mix(in srgb, var(--text-primary) 6%, var(--surface-1));
+    border-radius: 13px;
+  }
+  .apple-segmented button {
+    flex: 1; font: inherit; font-size: 13px; font-weight: 600; letter-spacing: -0.01em;
+    padding: 10px 6px; border: none; border-radius: 10px; cursor: pointer;
+    background: transparent; color: var(--text-primary);
+    transition: transform .1s ease, opacity .1s ease;
+  }
+  .apple-segmented button:active { transform: scale(0.96); opacity: 0.75; }
+  .apple-segmented button.seg-approve { background: color-mix(in srgb, var(--good) 15%, transparent); color: var(--good); }
+  .apple-segmented button.seg-hold { background: color-mix(in srgb, var(--text-muted) 15%, transparent); color: var(--text-secondary); }
+  .apple-segmented button.seg-reject { background: color-mix(in srgb, var(--critical) 15%, transparent); color: var(--critical); }
+
+  .apple-pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 12.5px; font-weight: 700; padding: 5px 12px; border-radius: 999px;
+  }
+  .apple-pill.good { color: var(--good); background: color-mix(in srgb, var(--good) 15%, transparent); }
+  .apple-pill.warn { color: #ff9500; background: color-mix(in srgb, #ff9500 15%, transparent); }
 </style>
 </head>
 <body>
@@ -4211,39 +4271,45 @@ function setupSignalTab(perRow, liveKr) {
         </div>
         <div id="mySignalApiReviewResult"></div>
 
-        <p class="chart-title" style="margin-top:20px;">🎯 트레이드 플랜 (초안)</p>
-        <p class="stat-sub">아래 값은 지표로 자동 계산한 초안입니다 — 실제 매매는 직접 검토 후 결정하세요(투자 조언 아님).</p>
-        <div class="stats" style="margin-top:8px;">
-          <div class="stat"><p class="stat-label">진입 구간</p><p class="stat-value" style="font-size:16px;">${fmtPrice(entryLow, full.currency)} ~ ${fmtPrice(cur, full.currency)}</p></div>
-          <div class="stat"><p class="stat-label">목표가</p><p class="stat-value" style="font-size:16px;">${fmtPrice(targetPrice, full.currency)}</p></div>
-          <div class="stat"><p class="stat-label">손절선</p><p class="stat-value" style="font-size:16px;">${fmtPrice(stopPrice, full.currency)}</p></div>
-          <div class="stat"><p class="stat-label">무효화(MA200)</p><p class="stat-value" style="font-size:16px;">${ma200 == null ? "―" : fmtPrice(ma200, full.currency)}</p></div>
+        <div class="apple-panel">
+          <p class="apple-panel-title">🎯 트레이드 플랜 (초안)</p>
+          <p class="apple-panel-note">아래 값은 지표로 자동 계산한 초안입니다 — 실제 매매는 직접 검토 후 결정하세요(투자 조언 아님).</p>
+          <div class="apple-tile-grid">
+            <div class="apple-tile accent-blue"><p class="apple-tile-label">진입 구간</p><p class="apple-tile-value">${fmtPrice(entryLow, full.currency)} ~ ${fmtPrice(cur, full.currency)}</p></div>
+            <div class="apple-tile accent-good"><p class="apple-tile-label">목표가</p><p class="apple-tile-value">${fmtPrice(targetPrice, full.currency)}</p></div>
+            <div class="apple-tile accent-critical"><p class="apple-tile-label">손절선</p><p class="apple-tile-value">${fmtPrice(stopPrice, full.currency)}</p></div>
+            <div class="apple-tile"><p class="apple-tile-label">무효화(MA200)</p><p class="apple-tile-value">${ma200 == null ? "―" : fmtPrice(ma200, full.currency)}</p></div>
+          </div>
         </div>
 
-        <p class="chart-title" style="margin-top:20px;">⚖️ 리스크 게이트</p>
-        <div class="controls" style="margin:8px 0;">
-          <label style="font-size:12.5px; display:inline-flex; align-items:center; gap:4px;">1회 리스크 <input type="number" id="mySignalRiskPct" min="0.1" max="10" step="0.1" value="${riskPct}" style="width:60px;">%</label>
+        <div class="apple-panel">
+          <p class="apple-panel-title">⚖️ 리스크 게이트</p>
+          <div class="controls" style="margin:0 0 10px;">
+            <label style="font-size:12.5px; display:inline-flex; align-items:center; gap:4px;">1회 리스크 <input type="number" id="mySignalRiskPct" min="0.1" max="10" step="0.1" value="${riskPct}" style="width:60px;">%</label>
+          </div>
+          ${fxUnavailable
+            ? `<p class="apple-panel-note" style="color:var(--critical);">환율 정보를 불러오지 못해 원화 환산 리스크 계산을 생략했습니다.</p>`
+            : `<p class="apple-panel-note">총자산 ${fmtManwon(totalValue)} 기준 · 손절 거리 ${fmtPrice(stopDistanceNative, full.currency)} · 리스크 금액 ${fmtManwon(riskAmount)}</p>
+          <div class="apple-tile-grid">
+            <div class="apple-tile accent-blue"><p class="apple-tile-label">권장 수량</p><p class="apple-tile-value">${sizedShares.toLocaleString()}주</p></div>
+            <div class="apple-tile accent-blue"><p class="apple-tile-label">포지션 금액</p><p class="apple-tile-value">${fmtManwon(positionValueKRW || 0)}</p></div>
+            <div class="apple-tile ${concentrationWarn ? "accent-warn" : ""}"><p class="apple-tile-label">총자산 대비</p><p class="apple-tile-value">${positionPct.toFixed(1)}%</p></div>
+            <div class="apple-tile ${concentrationWarn ? "accent-warn" : "accent-good"}"><p class="apple-tile-label">판정</p><p class="apple-tile-value" style="font-size:14px;">${concentrationWarn ? '<span class="apple-pill warn">⚠️ 집중 경고</span>' : '<span class="apple-pill good">✅ Continue</span>'}</p></div>
+          </div>
+          ${concentrationWarn ? `<p class="apple-panel-note" style="color:var(--critical); margin-top:10px;">⚠️ 이 포지션이 총자산의 ${positionPct.toFixed(0)}%를 차지합니다(기준 20%) — 비중을 줄이거나 리스크%를 낮추는 것을 검토하세요.</p>` : ""}`
+          }
         </div>
-        ${fxUnavailable
-          ? `<p class="stat-sub" style="color:var(--critical);">환율 정보를 불러오지 못해 원화 환산 리스크 계산을 생략했습니다.</p>`
-          : `<p class="stat-sub">총자산 ${fmtManwon(totalValue)} 기준 · 손절 거리 ${fmtPrice(stopDistanceNative, full.currency)} · 리스크 금액 ${fmtManwon(riskAmount)}</p>
-        <div class="stats" style="margin-top:8px;">
-          <div class="stat"><p class="stat-label">권장 수량</p><p class="stat-value" style="font-size:16px;">${sizedShares.toLocaleString()}주</p></div>
-          <div class="stat"><p class="stat-label">포지션 금액</p><p class="stat-value" style="font-size:16px;">${fmtManwon(positionValueKRW || 0)}</p></div>
-          <div class="stat"><p class="stat-label">총자산 대비</p><p class="stat-value" style="font-size:16px;">${positionPct.toFixed(1)}%</p></div>
-          <div class="stat"><p class="stat-label">판정</p><p class="stat-value" style="font-size:15px;">${concentrationWarn ? '<span class="sig-badge sig-alert">⚠️ 집중 경고</span>' : '<span class="sig-badge sig-watch">✅ Continue</span>'}</p></div>
-        </div>
-        ${concentrationWarn ? `<p class="stat-sub" style="color:var(--critical);">⚠️ 이 포지션이 총자산의 ${positionPct.toFixed(0)}%를 차지합니다(기준 20%) — 비중을 줄이거나 리스크%를 낮추는 것을 검토하세요.</p>` : ""}`
-        }
 
-        <p class="chart-title" style="margin-top:20px;">📝 결정 메모</p>
-        <div class="action-row" style="margin:8px 0;">
-          <button type="button" class="btn-action sig-decide-btn" data-decision="approved">✅ 승인</button>
-          <button type="button" class="btn-action sig-decide-btn" data-decision="hold">⏸ 보류</button>
-          <button type="button" class="btn-action sig-decide-btn" data-decision="rejected">❌ 거부</button>
-          <span id="mySignalDecideStatus" class="action-status"></span>
+        <div class="apple-panel">
+          <p class="apple-panel-title">📝 결정 메모</p>
+          <div class="apple-segmented">
+            <button type="button" class="sig-decide-btn seg-approve" data-decision="approved">✅ 승인</button>
+            <button type="button" class="sig-decide-btn seg-hold" data-decision="hold">⏸ 보류</button>
+            <button type="button" class="sig-decide-btn seg-reject" data-decision="rejected">❌ 거부</button>
+          </div>
+          <p class="action-status" id="mySignalDecideStatus" style="margin:6px 0 2px;"></p>
+          <div id="mySignalDecisionsBody">${buildDecisionsListHTML()}</div>
         </div>
-        <div id="mySignalDecisionsBody">${buildDecisionsListHTML()}</div>
 
         <div id="mySignalChart"></div>
         <p class="chart-title" style="margin-top:20px;">📉 연간 MDD 분포 — ${name}</p>
