@@ -1,5 +1,5 @@
 {
- "updated": "2026-07-17 13:41 UTC",
+ "updated": "2026-07-17 14:05 UTC",
  "us": [
   {
    "symbol": "SPY",
@@ -42,6 +42,20 @@
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
+  },
+  {
+   "symbol": "QQQ",
+   "name": "QQQ (나스닥100)",
+   "category": "대표 지수",
+   "region": "미국",
+   "style": "성장",
+   "assetType": "etf",
+   "currency": "USD",
+   "first": "2006-08-30",
+   "last": "2026-07-17",
+   "count": 5000,
+   "ttmDividend": 3.03434,
+   "dividendYield": 0.004363
   },
   {
    "symbol": "DIA",
@@ -268,6 +282,20 @@
    "dividendYield": 0.0
   },
   {
+   "symbol": "GLD",
+   "name": "GLD (금)",
+   "category": "자산배분",
+   "region": "글로벌",
+   "style": "안전",
+   "assetType": "etf",
+   "currency": "USD",
+   "first": "2006-08-30",
+   "last": "2026-07-17",
+   "count": 5000,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
+  },
+  {
    "symbol": "TLT",
    "name": "TLT (미국 장기국채)",
    "category": "자산배분",
@@ -377,7 +405,7 @@
    "last": "2026-07-17",
    "count": 5000,
    "ttmDividend": 1.05,
-   "dividendYield": 0.00317
+   "dividendYield": 0.00318
   },
   {
    "symbol": "MSFT",
