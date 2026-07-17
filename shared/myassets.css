@@ -112,20 +112,30 @@
   }
   #periodSelect { min-width: 120px; }
 
-  /* ---- 카드 공통 ---- */
+  /* ---- 카드 공통 (A20: 애플 스타일 전면 적용 — 둥근 대형 반경 + 레이어드 섀도) ---- */
   .card {
     background: var(--surface-1);
     border: 1px solid var(--border);
-    border-radius: 16px;
+    border-radius: 20px;
     padding: 20px 22px;
     margin-bottom: 16px;
+    box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(0,0,0,.05);
   }
+  @media (prefers-color-scheme: dark) { .card { box-shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35); } }
+  :root[data-theme="dark"] .card { box-shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35); }
 
   /* ---- 통계 타일 ---- */
   .stat-row { display: grid; grid-template-columns: 1.3fr 1fr 1fr 1fr; gap: 12px; margin-bottom: 16px; }
-  @media (max-width: 640px) { .stat-row { grid-template-columns: 1fr 1fr; } }
-  /* A9(모아밸런스 참조): KPI를 흰 카드 그리드로 — 옅은 그림자·둥근 모서리·일관 패딩 */
-  .stat { padding: 14px 16px; background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+  @media (max-width: 640px) { .stat-row { grid-template-columns: 1fr 1fr; grid-auto-rows: 1fr; } }
+  /* A9→A20(애플 스타일): 큰 반경·레이어드 섀도·최소 높이로 2x2 그리드가 고르게 보이도록 */
+  .stat {
+    padding: 14px 16px; background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 18px; box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 6px 18px rgba(0,0,0,.05);
+    display: flex; flex-direction: column; justify-content: flex-start;
+    min-height: 108px;
+  }
+  @media (prefers-color-scheme: dark) { .stat { box-shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 18px rgba(0,0,0,.3); } }
+  :root[data-theme="dark"] .stat { box-shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 18px rgba(0,0,0,.3); }
   .stat-label { font-size: 12px; color: var(--text-muted); margin: 0 0 6px; }
   .stat-hero { font-size: 40px; font-weight: 700; line-height: 1; margin: 0; }
   .stat-value { font-size: 18px; font-weight: 600; margin: 0; }
@@ -315,21 +325,26 @@
   .account-summary-table tbody tr:hover td { background: rgba(127,127,127,.07); }
   .btn-add {
     font: inherit; font-size: 13px; font-weight: 600;
-    padding: 8px 14px; border-radius: 10px; border: 1px dashed var(--border);
+    padding: 8px 16px; border-radius: 999px; border: 1px dashed var(--border);
     background: transparent; color: var(--text-secondary); cursor: pointer;
-    margin-bottom: 14px;
+    margin-bottom: 14px; transition: transform .1s ease, opacity .1s ease;
   }
   .btn-add:hover { color: var(--text-primary); border-color: var(--text-muted); }
+  .btn-add:active { transform: scale(0.97); opacity: .8; }
   .portfolio-sum { font-size: 12px; color: var(--text-muted); margin: 0 0 16px; }
   .portfolio-sum.ok { color: var(--good); }
 
   .action-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 16px; }
+  /* A20: 애플 스타일 필 버튼 — 얇은 테두리 대신 은은한 틴트 배경, 완전 라운드 */
   .btn-action {
     font: inherit; font-size: 12.5px; font-weight: 600;
-    padding: 7px 12px; border-radius: 9px; border: 1px solid var(--border);
-    background: var(--surface-1); color: var(--text-secondary); cursor: pointer;
+    padding: 8px 14px; border-radius: 999px; border: none;
+    background: color-mix(in srgb, var(--text-primary) 6%, var(--surface-1));
+    color: var(--text-primary); cursor: pointer;
+    transition: transform .1s ease, opacity .1s ease;
   }
-  .btn-action:hover { color: var(--text-primary); border-color: var(--text-muted); }
+  .btn-action:hover { opacity: .85; }
+  .btn-action:active { transform: scale(0.96); opacity: .75; }
   .action-status { font-size: 12px; color: var(--good); }
 
   /* ---- 시뮬레이터: 종목별 개별 입력 모드 ---- */
@@ -353,24 +368,30 @@
   .sim-per-asset-table th:first-child, .sim-per-asset-table td:first-child { text-align: left; }
   .sim-per-asset-table th { color: var(--text-muted); font-weight: 600; font-size: 12px; }
 
-  /* ---- 시장 구분 선택 ---- */
-  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
-  .seg button {
-    font: inherit; font-size: 13px; padding: 9px 16px;
-    background: var(--surface-1); color: var(--text-muted);
-    border: none; cursor: pointer;
+  /* ---- 시장 구분 선택 (A20: 애플 세그먼티드 컨트롤 — 완전 라운드 캡슐) ---- */
+  .seg {
+    display: inline-flex; gap: 2px; padding: 3px; border-radius: 999px;
+    background: color-mix(in srgb, var(--text-primary) 6%, var(--surface-1));
   }
-  .seg button + button { border-left: 1px solid var(--border); }
-  .seg button.active { background: var(--text-primary); color: var(--surface-1); font-weight: 600; }
+  .seg button {
+    font: inherit; font-size: 13px; font-weight: 600; padding: 8px 16px;
+    background: transparent; color: var(--text-secondary);
+    border: none; border-radius: 999px; cursor: pointer;
+    transition: transform .1s ease;
+  }
+  .seg button:active { transform: scale(0.96); }
+  .seg button.active { background: var(--surface-1); color: var(--text-primary); box-shadow: 0 1px 3px rgba(0,0,0,.12); }
 
-  /* ---- 내 자산 대시보드 탭 ---- */
+  /* ---- 내 자산 대시보드 탭 (A20: 애플 캡슐 탭바) ---- */
   .dash-tabs { display: flex; gap: 6px; overflow-x: auto; margin: 14px 0 4px; padding-bottom: 2px; }
   .dash-tab-btn {
-    font: inherit; font-size: 12.5px; padding: 8px 14px; white-space: nowrap;
-    background: var(--surface-1); color: var(--text-muted);
-    border: 1px solid var(--border); border-radius: 8px; cursor: pointer;
+    font: inherit; font-size: 12.5px; font-weight: 600; padding: 8px 15px; white-space: nowrap;
+    background: color-mix(in srgb, var(--text-primary) 6%, var(--surface-1)); color: var(--text-secondary);
+    border: none; border-radius: 999px; cursor: pointer;
+    transition: transform .1s ease;
   }
-  .dash-tab-btn.active { background: var(--text-primary); color: var(--surface-1); font-weight: 600; border-color: var(--text-primary); }
+  .dash-tab-btn:active { transform: scale(0.96); }
+  .dash-tab-btn.active { background: var(--text-primary); color: var(--surface-1); font-weight: 700; }
   .dash-panel[hidden] { display: none; }
 
   /* ---- 비중 트리맵 히트맵 (A7 — 크기=평가액 비중, 색=등락률) ---- */
