@@ -324,6 +324,22 @@ def main():
     lines = [f"📡 <b>시그널 요약</b> · {now_kst}"]
     new_state, signal_count = {}, 0
 
+    # A17: 변동성 체제(VIX vs VIXEQ) — data/vol/*.json 수집돼 있을 때만 1줄 표시
+    try:
+        vol = {}
+        for vs in ("VIX", "VIXEQ"):
+            with open(os.path.join(DATA_DIR, "vol", f"{vs}.json"), encoding="utf-8") as f:
+                d = json.load(f)
+            win = sorted(d["closes"][-252:])
+            med = win[len(win) // 2] if len(win) % 2 else (win[len(win) // 2 - 1] + win[len(win) // 2]) / 2
+            vol[vs] = {"last": d["closes"][-1], "up": d["closes"][-1] > med}
+        v_up, q_up = vol["VIX"]["up"], vol["VIXEQ"]["up"]
+        regime = ("🔴 거시 리스크" if v_up and q_up else "🟢 평온 강세장" if not v_up and not q_up
+                  else "🟠 차별화 장세" if q_up else "🟡 지수 일시 충격")
+        lines.append(f"🌡️ VIX {vol['VIX']['last']:.1f}{'↑' if v_up else '↓'} · VIXEQ {vol['VIXEQ']['last']:.1f}{'↑' if q_up else '↓'} → {regime}")
+    except Exception:
+        pass  # 변동성 데이터 미수집 시 생략(무해)
+
     for sym in watchlist:
         try:
             dates, closes, currency, live = load_series(sym, td_key)

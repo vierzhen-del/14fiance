@@ -1421,6 +1421,7 @@ async function renderMyAssets() {
       <button type="button" class="dash-tab-btn" data-tab="trend">📈 추이</button>
       <button type="button" class="dash-tab-btn" data-tab="benchmark">📊 지수비교</button>
       <button type="button" class="dash-tab-btn" data-tab="signal">📡 시그널</button>
+      <button type="button" class="dash-tab-btn" data-tab="review">🧺 포트폴리오검토</button>
       <button type="button" class="dash-tab-btn" data-tab="changelog">🗂️ 변동이력</button>
       <button type="button" class="dash-tab-btn" data-tab="settings">⚙️ 설정</button>
     </div>
@@ -1562,6 +1563,9 @@ async function renderMyAssets() {
     </div>
 
     <div class="dash-panel" data-tab="signal" hidden>
+      <p class="chart-title" style="margin-top:20px;">🌡️ 변동성 체제 — VIX vs VIXEQ</p>
+      <div id="mySignalVolBody"><p class="compare-empty">불러오는 중…</p></div>
+
       <p class="chart-title" style="margin-top:20px;">🔍 전 종목 스캔</p>
       <p class="stat-sub">선택한 범위의 종목을 한 번에 스캔해 종합등급순으로 정렬합니다(강매수→강매도). 데이터 로딩량이 있어 버튼을 눌러야 실행됩니다.</p>
       <div class="controls" style="margin:8px 0;">
@@ -1604,6 +1608,25 @@ async function renderMyAssets() {
         <select id="mySignalLevSymbol" aria-label="레버리지 매수가 종목 선택"></select>
       </div>
       <div id="mySignalLevBody"></div>
+    </div>
+
+    <div class="dash-panel" data-tab="review" hidden>
+      <p class="chart-title" style="margin-top:20px;">⚖️ 스타일 비중 검토 — 배당/성장 목표 대비</p>
+      <p class="stat-sub">은퇴 후 배당 포트폴리오 전환 검토용 — 내 보유의 배당/성장 비중을 목표와 비교합니다(참고용, 투자 조언 아님).</p>
+      <div class="controls" style="margin:8px 0;">
+        <label style="font-size:12.5px; display:inline-flex; align-items:center; gap:4px;">목표 배당 비중 <input type="number" id="myReviewDivTarget" value="70" min="0" max="100" step="5" style="width:60px;">%</label>
+        <span class="stat-sub">(나머지 = 성장 목표)</span>
+      </div>
+      <div id="myReviewStyleBody"></div>
+
+      <p class="chart-title" style="margin-top:20px;">🧺 모델 포트폴리오 대조 — 평온 배당70/성장30 (24종)</p>
+      <div id="myReviewModelBody"></div>
+
+      <p class="chart-title" style="margin-top:20px;">🏁 운용 목표 진행률</p>
+      <div class="controls" style="margin:8px 0;">
+        <label style="font-size:12.5px; display:inline-flex; align-items:center; gap:4px;">목표금액 <input type="number" id="myReviewGoal" value="4000000000" step="100000000" style="width:150px;">원</label>
+      </div>
+      <div id="myReviewGoalBody"></div>
     </div>
 
     <div class="dash-panel" data-tab="changelog" hidden>
@@ -1841,6 +1864,9 @@ async function renderMyAssets() {
 
   // A10: 📡 시그널 탭 — 워치리스트·지표·σ 매수가
   setupSignalTab(perRow, liveKr);
+
+  // A16b: 🧺 포트폴리오검토 — 스타일 비중·모델 대조·운용 목표
+  setupReviewTab(perRow, totalMonthlyInvest, goalRate);
 }
 
 /* ===== A10 📡 시그널 탭 — 워치리스트·MA/RSI/MACD/볼린저·σ 매수목표가 ===== */
@@ -1910,6 +1936,97 @@ function posZoneInfo(pos) {
 function sigGaugeHTML(pos) {
   const pct = pos == null ? 50 : Math.round(pos * 100);
   return `<div class="sig-gauge"><div class="sig-gauge-dot" style="left:${pct}%"></div></div>`;
+}
+
+/* A16b: 🧺 포트폴리오검토 — 스타일 비중 vs 목표(기본 배당70/성장30), 평온 모델 대조, 운용 목표 진행률 */
+const PYEONGON_MODEL = [
+  { group: "미국 성장", syms: ["AAPL", "MSFT", "TSLA", "GOOGL", "AMZN", "TSM", "SCHG", "BMNR", "HOOD"] },
+  { group: "미국 배당", syms: ["SCHD", "DIVO", "JEPQ", "GPIQ", "O", "IRM"] },
+  { group: "국내 배당", syms: ["498400.KS", "498410.KS", "441640.KS", "0144L0.KS", "486290.KS", "0177R0.KS"] },
+  { group: "일본 배당", syms: ["1489"] },
+  { group: "채권", syms: ["481060.KS", "0000D0.KS"] },
+];
+
+function setupReviewTab(perRow, totalMonthlyInvest, goalRate) {
+  const styleBody = document.getElementById("myReviewStyleBody");
+  if (!styleBody) return;
+  const divTargetInput = document.getElementById("myReviewDivTarget");
+  const modelBody = document.getElementById("myReviewModelBody");
+  const goalInput = document.getElementById("myReviewGoal");
+  const goalBody = document.getElementById("myReviewGoalBody");
+  const totalValue = perRow.reduce((a, p) => a + (p.value || 0), 0);
+  const heldSyms = new Set(perRow.filter((p) => p.value > 0).map((p) => p.symbol));
+
+  const renderStyle = () => {
+    const target = Math.min(100, Math.max(0, Number(divTargetInput.value) || 70));
+    state.myReviewDivTarget = target;
+    if (!(totalValue > 0)) { styleBody.innerHTML = `<p class="compare-empty">보유 자산이 없습니다 — 보유 입력 후 확인하세요.</p>`; return; }
+    const sums = { div: 0, gro: 0, etc: 0 };
+    for (const p of perRow) {
+      const st = p.meta && p.meta.style;
+      if (st === "배당") sums.div += p.value || 0;
+      else if (st === "성장") sums.gro += p.value || 0;
+      else sums.etc += p.value || 0;
+    }
+    const divPct = (sums.div / totalValue) * 100;
+    const groPct = (sums.gro / totalValue) * 100;
+    const etcPct = (sums.etc / totalValue) * 100;
+    const gapDiv = target - divPct; // +면 배당 부족(성장→배당 이동 필요)
+    const moveAmt = (Math.abs(gapDiv) / 100) * totalValue;
+    styleBody.innerHTML = `
+      <div class="stats" style="margin-top:8px;">
+        <div class="stat"><p class="stat-label">배당 비중</p><p class="stat-value">${divPct.toFixed(1)}%</p><p class="stat-sub">목표 ${target}%</p></div>
+        <div class="stat"><p class="stat-label">성장 비중</p><p class="stat-value">${groPct.toFixed(1)}%</p><p class="stat-sub">목표 ${100 - target}%</p></div>
+        <div class="stat"><p class="stat-label">기타(안전·개별주)</p><p class="stat-value">${etcPct.toFixed(1)}%</p></div>
+        <div class="stat"><p class="stat-label">리밸런싱 필요액</p><p class="stat-value" style="font-size:16px;">${fmtManwon(moveAmt)}</p><p class="stat-sub">${gapDiv >= 0 ? "성장·기타 → 배당" : "배당 → 성장"} 이동 시 목표 근접</p></div>
+      </div>
+      <p class="stat-sub">스타일 분류는 수집 목록(manifest)의 성장/배당/안전 필드 기준입니다. 개별주·안전(채권 등) 자산은 "기타"로 집계됩니다.</p>`;
+  };
+
+  const renderModel = () => {
+    const rows = PYEONGON_MODEL.map((g) => g.syms.map((s) => {
+      const known = state.metaBySymbol.has(s);
+      const held = heldSyms.has(s);
+      const nm = known ? symbolDisplayName(s) : s;
+      const badge = held ? `<span class="sig-badge sig-watch">보유중</span>`
+        : known ? `<span class="sig-badge sig-neutral">미보유</span>`
+        : `<span class="sig-badge sig-alert">데이터 미수집</span>`;
+      return `<tr><td>${g.group}</td><td>${nm}</td><td>${badge}</td></tr>`;
+    }).join("")).join("");
+    modelBody.innerHTML = `<div style="overflow-x:auto;"><table class="account-summary-table">
+      <thead><tr><th>그룹</th><th>종목</th><th>상태</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <p class="stat-sub">"평온 배당70/성장30" 참조 모델 — "데이터 미수집" 종목은 수집 파이프라인 반영 후 자동으로 이름·시그널이 연결됩니다. 모델은 구성 참고용이며 매수 권유가 아닙니다.</p>`;
+  };
+
+  const renderGoal = () => {
+    const goal = Number(goalInput.value) || 4000000000;
+    state.myReviewGoal = goal;
+    const pct = totalValue > 0 ? (totalValue / goal) * 100 : 0;
+    const r = monthsToGoal(goal, totalValue, totalMonthlyInvest || 0, goalRate || 0.07);
+    // 배당70 구성 시 예상 월배당 — 현재 배당 스타일 보유의 가중평균 TTM 수익률 적용(추정)
+    let wSum = 0, ySum = 0;
+    for (const p of perRow) {
+      if (p.meta && p.meta.style === "배당" && p.meta.dividendYield > 0 && p.value > 0) {
+        wSum += p.value; ySum += p.value * p.meta.dividendYield;
+      }
+    }
+    const avgYield = wSum > 0 ? ySum / wSum : 0;
+    const divMonthly = (goal * 0.7 * avgYield) / 12;
+    goalBody.innerHTML = `
+      <div class="stats" style="margin-top:8px;">
+        <div class="stat"><p class="stat-label">진행률</p><p class="stat-value">${pct.toFixed(1)}%</p><p class="stat-sub">${fmtManwon(totalValue)} / ${fmtManwon(goal)}</p></div>
+        <div class="stat"><p class="stat-label">도달 예상</p><p class="stat-value" style="font-size:16px;">${r && r.months != null ? `${Math.floor(r.months / 12)}년 ${r.months % 12}개월` : "600개월 내 미도달"}</p><p class="stat-sub">연 ${(100 * (goalRate || 0.07)).toFixed(1)}% 가정 · 월 ${fmtManwon(totalMonthlyInvest || 0)} 적립 반영</p></div>
+        <div class="stat"><p class="stat-label">목표 달성+배당70 구성 시 월배당</p><p class="stat-value" style="font-size:16px;">${avgYield > 0 ? fmtManwon(divMonthly) : "―"}</p><p class="stat-sub">${avgYield > 0 ? `배당 보유 가중 TTM 수익률 ${(avgYield * 100).toFixed(2)}% 적용 — 추정치(확정 배당 아님)` : "배당 스타일 보유가 없어 추정 불가"}</p></div>
+      </div>`;
+  };
+
+  if (state.myReviewDivTarget != null) divTargetInput.value = state.myReviewDivTarget;
+  if (state.myReviewGoal != null) goalInput.value = state.myReviewGoal;
+  divTargetInput.addEventListener("change", renderStyle);
+  goalInput.addEventListener("change", renderGoal);
+  renderStyle();
+  renderModel();
+  renderGoal();
 }
 
 /* A13: 종목 하나의 종합 시그널 등급 계산 — renderDetail·전종목 스캔 표·트레이드 플랜이 공유하는
@@ -2479,6 +2596,62 @@ function setupSignalTab(perRow, liveKr) {
   };
   if (state.mySignalScanGroup) scanGroupSel.value = state.mySignalScanGroup;
   scanBtn.addEventListener("click", runScan);
+
+  // A17: 🌡️ 변동성 체제 — VIX(지수 옵션) vs VIXEQ(개별종목 옵션 평균, Cboe) 4분면 판독.
+  // Cboe 데이터 미수집 시 실현변동성 근사(주 1회 수집 종가)로 폴백 — 근사임을 명시.
+  const volBody = document.getElementById("mySignalVolBody");
+  const renderVolRegime = async () => {
+    if (!volBody) return;
+    const loadVol = async (volSym) => {
+      const key = `vol:${volSym}`;
+      if (state.cache.has(key)) return state.cache.get(key);
+      const d = await fetchJSON(`${DATA_DIR}/vol/${volSym}.json`);
+      state.cache.set(key, d);
+      return d;
+    };
+    try {
+      const [vix, vixeq] = await Promise.all([loadVol("VIX"), loadVol("VIXEQ")]);
+      const median = (arr) => { const s = arr.slice().sort((a, b) => a - b); const n = s.length; return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2; };
+      const judge = (d) => {
+        const win = d.closes.slice(-252);
+        const med = median(win);
+        const last = d.closes[d.closes.length - 1];
+        return { last, med, up: last > med };
+      };
+      const v = judge(vix), q = judge(vixeq);
+      const regime = v.up && q.up ? { label: "🔴 거시 리스크", desc: "시장 전체가 위험 — 지수·개별종목 변동성 동반 상승" }
+        : !v.up && !q.up ? { label: "🟢 평온 강세장", desc: "전반적으로 평온한 강세장" }
+        : !v.up && q.up ? { label: "🟠 차별화 장세", desc: "지수는 조용한데 개별 종목 변동성이 큼 — 종목 간 수익률 편차 극심(멘탈 주의)" }
+        : { label: "🟡 지수 일시 충격", desc: "드문 경우 — 지수 중심의 일시적 충격 가능성" };
+      const sliceVol = (d, color, label) => { const n = d.dates.length; const s = Math.max(0, n - 252); return { label, color, dates: d.dates.slice(s), values: d.closes.slice(s) }; };
+      volBody.innerHTML = `
+        <div class="action-row" style="margin:6px 0;">
+          <span class="sig-badge sig-neutral">VIX ${v.last.toFixed(2)} (1년 중앙값 ${v.med.toFixed(1)} ${v.up ? "↑" : "↓"})</span>
+          <span class="sig-badge sig-neutral">VIXEQ ${q.last.toFixed(2)} (1년 중앙값 ${q.med.toFixed(1)} ${q.up ? "↑" : "↓"})</span>
+          <span class="sig-badge ${v.up && q.up ? "sig-alert" : !v.up && !q.up ? "sig-watch" : "sig-neutral"}" style="font-size:13px;">${regime.label}</span>
+        </div>
+        <p class="stat-sub">${regime.desc}. VIX = S&amp;P500 지수 옵션 변동성, VIXEQ = 개별 종목 옵션 평균 변동성(Cboe Constituent Volatility). ↑/↓는 각 지수의 최근 1년 중앙값 대비입니다.</p>
+        <div id="mySignalVolChart"></div>
+        <p class="stat-sub">해석표 — VIX↑·VIXEQ↑ 거시 리스크 / VIX↓·VIXEQ↓ 평온 강세장 / VIX↓·VIXEQ↑ 차별화 장세 / VIX↑·VIXEQ↓ 지수 일시 충격</p>`;
+      const volChartEl = document.getElementById("mySignalVolChart");
+      if (volChartEl) buildCompareChart(volChartEl, [sliceVol(vix, "#2a78d6", "VIX"), sliceVol(vixeq, "#d64545", "VIXEQ")],
+        { anchorZero: false, fmtAxis: (x) => x.toFixed(0), fmtTip: (x) => x.toFixed(2) });
+    } catch (err) {
+      try {
+        const spy = await loadSymbol("SPY");
+        const rv = (closes) => { const s = dailyReturnSigma(closes, 20); return s != null ? s * Math.sqrt(252) : null; };
+        const spyRv = rv(spy.closes);
+        const proxySyms = [...new Set([...loadWatchlist(), ...perRow.filter((p) => p.value > 0).map((p) => p.symbol)])].slice(0, 8);
+        const rvs = [];
+        for (const ps of proxySyms) { try { const f = await loadSymbol(ps); const r0 = rv(f.closes); if (r0 != null) rvs.push(r0); } catch (e2) { /* skip */ } }
+        const avgRv = rvs.length ? rvs.reduce((a, b) => a + b, 0) / rvs.length : null;
+        volBody.innerHTML = `<p class="stat-sub">Cboe VIX/VIXEQ 데이터가 아직 없어 <b>실현변동성 근사</b>로 표시합니다(주 1회 수집 종가 기준, 옵션 내재변동성 아님): SPY 20일 실현변동성(연율화) <b>${spyRv != null ? spyRv.toFixed(1) + "%" : "―"}</b> vs 워치리스트·보유 주요 ${rvs.length}종목 평균 <b>${avgRv != null ? avgRv.toFixed(1) + "%" : "―"}</b>${spyRv != null && avgRv != null ? ` — ${avgRv > spyRv * 1.8 ? "개별 종목 변동성이 지수 대비 큼(차별화 장세 성격)" : "지수·종목 변동성 격차 보통"}` : ""}</p>`;
+      } catch (e3) {
+        volBody.innerHTML = `<p class="compare-empty">변동성 지수 데이터를 불러오지 못했습니다.</p>`;
+      }
+    }
+  };
+  renderVolRegime();
 
   renderWatch();
   renderDetail();
