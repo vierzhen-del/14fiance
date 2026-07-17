@@ -1987,6 +1987,14 @@ function setupSignalTab(perRow, liveKr) {
       const votes = [];
       if (rsi != null) votes.push({ name: "RSI14", v: rsi <= 30 ? 1 : rsi >= 70 ? -1 : 0,
         text: `${rsi.toFixed(1)} ${rsi <= 30 ? "과매도" : rsi >= 70 ? "과열" : "중립(30~70)"}` });
+      // A12: RSI 다이버전스 — 가격 저점/고점 vs RSI 저점/고점 방향 불일치(5번째 투표, MA200 이격과 병행)
+      const div = detectRsiDivergence(closes, rsiArr);
+      const divVote = div.bull
+        ? { name: "RSI 다이버전스", v: 1, text: `강세 감지 — 가격 저점 하락(${dates[div.bull.d1]}→${dates[div.bull.d2]})인데 RSI 저점 상승` }
+        : div.bear
+        ? { name: "RSI 다이버전스", v: -1, text: `약세 감지 — 가격 고점 상승(${dates[div.bear.d1]}→${dates[div.bear.d2]})인데 RSI 고점 하락` }
+        : { name: "RSI 다이버전스", v: 0, text: "미감지(최근 90거래일)" };
+      votes.push(divVote);
       if (bb) votes.push({ name: "볼린저 %B", v: bb.pctB <= 0.05 ? 1 : bb.pctB >= 0.95 ? -1 : 0,
         text: `${(bb.pctB * 100).toFixed(0)}% ${bb.pctB <= 0.05 ? "하단 접근" : bb.pctB >= 0.95 ? "상단 접근" : "밴드 내"}` });
       if (h != null) {
@@ -2068,6 +2076,9 @@ function setupSignalTab(perRow, liveKr) {
           })()}`;
       const bbLine = bb == null ? "볼린저 데이터 부족"
         : `볼린저 %B ${(bb.pctB * 100).toFixed(0)}% — ${bb.pctB <= 0.05 ? "하단 접근(눌림 구간)" : bb.pctB >= 0.95 ? "상단 접근(과열 구간)" : "밴드 내 정상"}, 밴드폭 ${(bb.bandwidth * 100).toFixed(1)}%(변동성 ${bb.bandwidth >= 0.15 ? "높음" : "보통"})`;
+      const divLine = divVote.v === 1 ? `${divVote.text} → 반등 가능성 신호`
+        : divVote.v === -1 ? `${divVote.text} → 상승 동력 약화 신호`
+        : "다이버전스 미감지 — 가격과 RSI의 고점/저점 방향이 일치(최근 90거래일)";
       const verdictText = buyN >= 2
         ? `${grade} — 위 지표 중 ${buyN}개가 매수 방향으로 합의`
         : sellN >= 2
@@ -2078,6 +2089,7 @@ function setupSignalTab(perRow, liveKr) {
           <p class="sig-summary-line">① ${rsiLine}</p>
           <p class="sig-summary-line">② ${macdLine}</p>
           <p class="sig-summary-line">③ ${bbLine}</p>
+          <p class="sig-summary-line">④ ${divLine}</p>
           <p class="sig-summary-verdict">📌 종합평가: ${verdictText} <span class="sig-summary-note">(참고용 · 투자 조언 아님)</span></p>
         </div>`;
 
