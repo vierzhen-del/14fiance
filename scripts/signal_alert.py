@@ -257,6 +257,37 @@ def grade_symbol(dates, closes):
     return grade, votes, crosses, pos20d(closes)
 
 
+GRADE_BUY_RANK = {"🟢 강매수": 0, "🟢 매수관심": 1}
+GRADE_SELL_RANK = {"🔴 강매도": 0, "🔴 매도검토": 1}
+
+
+def scan_universe(names):
+    """전 수집 종목(주간 종가만, 실시간 fetch 없음)을 스캔해 상위 매수/매도 후보를 뽑는다.
+    개인 보유 데이터는 저장소에 없으므로 워치리스트 상세 스캔(main 루프)과 달리 실시간가
+    조회를 하지 않는다 — 86종목 API 콜을 피해 Actions 실행시간·레이트리밋 부담을 줄인다."""
+    buys, sells = [], []
+    for fname in sorted(os.listdir(DATA_DIR)):
+        if not fname.endswith(".json") or fname == "manifest.json":
+            continue
+        sym = fname[:-5]
+        try:
+            with open(os.path.join(DATA_DIR, fname), encoding="utf-8") as f:
+                d = json.load(f)
+            closes = d["closes"]
+            if len(closes) < 60:
+                continue
+            grade, votes, crosses, pos = grade_symbol(d["dates"], closes)
+        except Exception:
+            continue
+        if grade in GRADE_BUY_RANK:
+            buys.append((GRADE_BUY_RANK[grade], sym, grade))
+        elif grade in GRADE_SELL_RANK:
+            sells.append((GRADE_SELL_RANK[grade], sym, grade))
+    buys.sort(key=lambda x: x[0])
+    sells.sort(key=lambda x: x[0])
+    return buys[:3], sells[:3]
+
+
 def zone_label(pos):
     if pos is None:
         return "―"
@@ -293,6 +324,22 @@ def main():
     lines = [f"📡 <b>시그널 요약</b> · {now_kst}"]
     new_state, signal_count = {}, 0
 
+    # A17: 변동성 체제(VIX vs VIXEQ) — data/vol/*.json 수집돼 있을 때만 1줄 표시
+    try:
+        vol = {}
+        for vs in ("VIX", "VIXEQ"):
+            with open(os.path.join(DATA_DIR, "vol", f"{vs}.json"), encoding="utf-8") as f:
+                d = json.load(f)
+            win = sorted(d["closes"][-252:])
+            med = win[len(win) // 2] if len(win) % 2 else (win[len(win) // 2 - 1] + win[len(win) // 2]) / 2
+            vol[vs] = {"last": d["closes"][-1], "up": d["closes"][-1] > med}
+        v_up, q_up = vol["VIX"]["up"], vol["VIXEQ"]["up"]
+        regime = ("🔴 거시 리스크" if v_up and q_up else "🟢 평온 강세장" if not v_up and not q_up
+                  else "🟠 차별화 장세" if q_up else "🟡 지수 일시 충격")
+        lines.append(f"🌡️ VIX {vol['VIX']['last']:.1f}{'↑' if v_up else '↓'} · VIXEQ {vol['VIXEQ']['last']:.1f}{'↑' if q_up else '↓'} → {regime}")
+    except Exception:
+        pass  # 변동성 데이터 미수집 시 생략(무해)
+
     for sym in watchlist:
         try:
             dates, closes, currency, live = load_series(sym, td_key)
@@ -318,6 +365,19 @@ def main():
         lines.append(" · ".join(f"{n} {t}" for n, _, t in votes))
         for c in crosses:
             lines.append(c)
+
+    # A15: 전 수집 종목 스캔(주간 종가 기준) 상위 매수/매도 후보 — 워치리스트 상세와 달리
+    # 실시간가 조회 없이 가볍게 훑어 참고용 후보만 제시(개인 보유 데이터 접근 불가라 범위 확장)
+    try:
+        top_buys, top_sells = scan_universe(names)
+        if top_buys or top_sells:
+            lines.append("\n🔎 <b>전 종목 스캔 후보</b>(주간종가 기준, 참고용)")
+            if top_buys:
+                lines.append("매수 후보: " + " · ".join(f"{names.get(s, s)}({g})" for _, s, g in top_buys))
+            if top_sells:
+                lines.append("매도 후보: " + " · ".join(f"{names.get(s, s)}({g})" for _, s, g in top_sells))
+    except Exception as e:
+        print(f"전 종목 스캔 실패(무해, 워치리스트 요약은 정상): {e}")
 
     lines.append(f"\n지표 2개 이상 합의 시에만 매수/매도 판정 · 참고용, 투자 조언 아님")
     message = "\n".join(lines)

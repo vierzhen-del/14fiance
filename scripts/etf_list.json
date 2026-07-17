@@ -196,6 +196,100 @@
       "category": "커버드콜(미국)",
       "region": "미국",
       "style": "배당"
+    },
+    {
+      "symbol": "AAPL",
+      "name": "AAPL (애플)",
+      "category": "개별주(비ETF)",
+      "region": "미국",
+      "style": "개별주",
+      "assetType": "stock"
+    },
+    {
+      "symbol": "MSFT",
+      "name": "MSFT (마이크로소프트)",
+      "category": "개별주(비ETF)",
+      "region": "미국",
+      "style": "개별주",
+      "assetType": "stock"
+    },
+    {
+      "symbol": "TSLA",
+      "name": "TSLA (테슬라)",
+      "category": "개별주(비ETF)",
+      "region": "미국",
+      "style": "개별주",
+      "assetType": "stock"
+    },
+    {
+      "symbol": "GOOGL",
+      "name": "GOOGL (알파벳 A)",
+      "category": "개별주(비ETF)",
+      "region": "미국",
+      "style": "개별주",
+      "assetType": "stock"
+    },
+    {
+      "symbol": "AMZN",
+      "name": "AMZN (아마존)",
+      "category": "개별주(비ETF)",
+      "region": "미국",
+      "style": "개별주",
+      "assetType": "stock"
+    },
+    {
+      "symbol": "TSM",
+      "name": "TSM (TSMC ADR)",
+      "category": "개별주(비ETF)",
+      "region": "미국",
+      "style": "개별주",
+      "assetType": "stock"
+    },
+    {
+      "symbol": "HOOD",
+      "name": "HOOD (로빈후드)",
+      "category": "개별주(비ETF)",
+      "region": "미국",
+      "style": "개별주",
+      "assetType": "stock"
+    },
+    {
+      "symbol": "BMNR",
+      "name": "BMNR (비트마인)",
+      "category": "개별주(비ETF)",
+      "region": "미국",
+      "style": "개별주",
+      "assetType": "stock"
+    },
+    {
+      "symbol": "JEPQ",
+      "name": "JEPQ (나스닥 커버드콜)",
+      "category": "배당",
+      "region": "미국",
+      "style": "배당"
+    },
+    {
+      "symbol": "GPIQ",
+      "name": "GPIQ (골드만 나스닥 커버드콜)",
+      "category": "배당",
+      "region": "미국",
+      "style": "배당"
+    },
+    {
+      "symbol": "O",
+      "name": "O (리얼티인컴 리츠)",
+      "category": "개별주(비ETF)",
+      "region": "미국",
+      "style": "배당",
+      "assetType": "stock"
+    },
+    {
+      "symbol": "IRM",
+      "name": "IRM (아이언마운틴 리츠)",
+      "category": "개별주(비ETF)",
+      "region": "미국",
+      "style": "배당",
+      "assetType": "stock"
     }
   ],
   "kr": [
@@ -599,6 +693,27 @@
       "category": "미국·글로벌 테마 액티브(국내상장)",
       "region": "미국",
       "style": "성장"
+    },
+    {
+      "symbol": "498410.KS",
+      "name": "KODEX 금융고배당TOP10타겟위클리커버드콜",
+      "category": "배당·커버드콜",
+      "region": "한국",
+      "style": "배당"
+    },
+    {
+      "symbol": "481060.KS",
+      "name": "KODEX 미국30년국채타겟커버드콜(합성H)",
+      "category": "채권·커버드콜",
+      "region": "미국",
+      "style": "안전"
+    },
+    {
+      "symbol": "0000D0.KS",
+      "name": "TIGER 엔비디아미국채커버드콜밸런스(합성)",
+      "category": "채권·커버드콜",
+      "region": "미국",
+      "style": "배당"
     }
   ]
 }
