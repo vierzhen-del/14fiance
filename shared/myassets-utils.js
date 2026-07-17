@@ -628,3 +628,45 @@ function annualMDDs(dates, closes) {
   }
   return out;
 }
+
+/* 국소 피벗(저점/고점) 인덱스 — 좌우 k개 이웃보다 낮으면 저점, 높으면 고점 */
+function findPivots(vals, k = 3) {
+  const lows = [], highs = [];
+  for (let i = k; i < vals.length - k; i++) {
+    let isLow = true, isHigh = true;
+    for (let j = i - k; j <= i + k; j++) {
+      if (vals[j] < vals[i]) isLow = false;
+      if (vals[j] > vals[i]) isHigh = false;
+    }
+    if (isLow) lows.push(i);
+    if (isHigh) highs.push(i);
+  }
+  return { lows, highs };
+}
+
+/* RSI 다이버전스 감지 — 최근 lookback 거래일 내 마지막 두 가격 피벗의 방향과 RSI 방향 불일치.
+   강세(bull): 가격 저점은 낮아지는데 RSI 저점은 높아짐 / 약세(bear): 가격 고점은 높아지는데 RSI 고점은 낮아짐.
+   두 번째 피벗이 마지막 recentBars 거래일 이내일 때만 유효(오래된 다이버전스로 시그널 내지 않음). */
+function detectRsiDivergence(closes, rsiArr, lookback = 90, k = 3, recentBars = 25) {
+  const n = closes.length;
+  const out = { bull: null, bear: null };
+  if (n < 30) return out;
+  const start = Math.max(0, n - lookback);
+  const { lows, highs } = findPivots(closes.slice(start), k);
+  const pick = (idxs) => {
+    const abs = idxs.map((i) => start + i).filter((i) => rsiArr[i] != null);
+    return abs.length >= 2 ? abs.slice(-2) : null;
+  };
+  const lowPair = pick(lows);
+  if (lowPair && lowPair[1] >= n - recentBars &&
+      closes[lowPair[1]] < closes[lowPair[0]] && rsiArr[lowPair[1]] > rsiArr[lowPair[0]]) {
+    out.bull = { d1: lowPair[0], d2: lowPair[1] };
+  }
+  const highPair = pick(highs);
+  if (highPair && highPair[1] >= n - recentBars &&
+      closes[highPair[1]] > closes[highPair[0]] && rsiArr[highPair[1]] < rsiArr[highPair[0]]) {
+    out.bear = { d1: highPair[0], d2: highPair[1] };
+  }
+  return out;
+}
+
