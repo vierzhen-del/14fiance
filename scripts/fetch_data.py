@@ -392,6 +392,17 @@ def main() -> int:
     manifest = {"updated": time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime()), "us": [], "kr": []}
     failures = []
 
+    # 이전 manifest — 일시 실패(레이트리밋 등) 심볼이 목록에서 사라지지 않도록 이전 항목을 보관.
+    # (실측: 2026-07-17 QQQ·GLD가 429로 한 번 실패하자 manifest에서 빠져 드롭다운·스캔에서 사라짐)
+    prev_entries = {}
+    try:
+        prev = json.loads((DATA_DIR / "manifest.json").read_text(encoding="utf-8"))
+        for mk in ("us", "kr"):
+            for e in prev.get(mk, []):
+                prev_entries[e["symbol"]] = e
+    except (OSError, ValueError):
+        pass
+
     print("fetching USD/KRW fx (FRED) ...")
     fx = fetch_fx_usdkrw()
     if fx is not None:
@@ -428,6 +439,10 @@ def main() -> int:
             time.sleep(interval)
             if series is None:
                 failures.append(symbol)
+                # 기존 데이터 파일과 이전 manifest 항목이 있으면 유지 — 다음 수집에서 자연 갱신
+                if (DATA_DIR / f"{symbol}.json").exists() and symbol in prev_entries:
+                    manifest[market].append(prev_entries[symbol])
+                    print("  .. 일시 실패 — 기존 데이터·manifest 항목 유지")
                 continue
 
             out = DATA_DIR / f"{symbol}.json"

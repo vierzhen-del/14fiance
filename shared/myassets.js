@@ -2609,8 +2609,49 @@ function setupSignalTab(perRow, liveKr) {
       state.cache.set(key, d);
       return d;
     };
+    const tryLoadVol = async (volSym) => { try { return await loadVol(volSym); } catch (e) { return null; } };
+    const vixD = await tryLoadVol("VIX");
+    const vixeqD = await tryLoadVol("VIXEQ");
+    // VIXEQ는 Cboe 공개 CSV 미제공 확인(2026-07-17) — VIX 실제값 + 개별종목 실현변동성 근사를
+    // 대용으로 쓰는 하이브리드 경로가 사실상 기본 경로다(대용임을 화면에 명시).
+    if (vixD && !vixeqD) {
+      try {
+        const median = (arr) => { const s2 = arr.slice().sort((a, b) => a - b); const n = s2.length; return n % 2 ? s2[(n - 1) / 2] : (s2[n / 2 - 1] + s2[n / 2]) / 2; };
+        const win = vixD.closes.slice(-252);
+        const vMed = median(win);
+        const vLast = vixD.closes[vixD.closes.length - 1];
+        const vUp = vLast > vMed;
+        const rv = (closes) => { const s3 = dailyReturnSigma(closes, 20); return s3 != null ? s3 * Math.sqrt(252) : null; };
+        const spy = await loadSymbol("SPY");
+        const spyRv = rv(spy.closes);
+        const proxySyms = [...new Set([...loadWatchlist(), ...perRow.filter((p) => p.value > 0).map((p) => p.symbol)])].slice(0, 8);
+        const rvs = [];
+        for (const ps of proxySyms) { try { const f = await loadSymbol(ps); const r0 = rv(f.closes); if (r0 != null) rvs.push(r0); } catch (e2) { /* skip */ } }
+        const avgRv = rvs.length ? rvs.reduce((a, b) => a + b, 0) / rvs.length : null;
+        const eqHigh = spyRv != null && avgRv != null && avgRv > spyRv * 1.8;
+        const regime = vUp && eqHigh ? { label: "🔴 거시 리스크", cls: "sig-alert", desc: "시장 전체가 위험 — 지수·개별종목 변동성 동반 상승" }
+          : !vUp && !eqHigh ? { label: "🟢 평온 강세장", cls: "sig-watch", desc: "전반적으로 평온한 강세장" }
+          : !vUp && eqHigh ? { label: "🟠 차별화 장세", cls: "sig-neutral", desc: "지수는 조용한데 개별 종목 변동성이 큼 — 종목 간 수익률 편차 극심(멘탈 주의)" }
+          : { label: "🟡 지수 일시 충격", cls: "sig-neutral", desc: "드문 경우 — 지수 중심의 일시적 충격 가능성" };
+        const startV = Math.max(0, vixD.dates.length - 252);
+        volBody.innerHTML = `
+          <div class="action-row" style="margin:6px 0;">
+            <span class="sig-badge sig-neutral">VIX ${vLast.toFixed(2)} (1년 중앙값 ${vMed.toFixed(1)} ${vUp ? "↑" : "↓"})</span>
+            <span class="sig-badge sig-neutral">개별종목 변동성(근사) ${avgRv != null ? avgRv.toFixed(1) + "%" : "―"} vs SPY ${spyRv != null ? spyRv.toFixed(1) + "%" : "―"}</span>
+            <span class="sig-badge ${regime.cls}" style="font-size:13px;">${regime.label}</span>
+          </div>
+          <p class="stat-sub">${regime.desc}. VIX는 Cboe 실제값, 개별종목 쪽은 <b>VIXEQ 대용 실현변동성 근사</b>(워치리스트·보유 ${rvs.length}종목 20일 연율화 평균 — Cboe가 VIXEQ 일별 CSV를 제공하지 않아 근사 사용, 옵션 내재변동성 아님)입니다.</p>
+          <div id="mySignalVolChart"></div>
+          <p class="stat-sub">해석표 — VIX↑·개별↑ 거시 리스크 / VIX↓·개별↓ 평온 강세장 / VIX↓·개별↑ 차별화 장세 / VIX↑·개별↓ 지수 일시 충격</p>`;
+        const volChartEl0 = document.getElementById("mySignalVolChart");
+        if (volChartEl0) buildCompareChart(volChartEl0, [{ label: "VIX", color: "#2a78d6", dates: vixD.dates.slice(startV), values: vixD.closes.slice(startV) }],
+          { anchorZero: false, fmtAxis: (x) => x.toFixed(0), fmtTip: (x) => x.toFixed(2) });
+        return;
+      } catch (eHybrid) { /* 아래 일반 경로/폴백으로 진행 */ }
+    }
     try {
-      const [vix, vixeq] = await Promise.all([loadVol("VIX"), loadVol("VIXEQ")]);
+      if (!vixD || !vixeqD) throw new Error("변동성 지수 데이터 없음");
+      const vix = vixD, vixeq = vixeqD;
       const median = (arr) => { const s = arr.slice().sort((a, b) => a - b); const n = s.length; return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2; };
       const judge = (d) => {
         const win = d.closes.slice(-252);
