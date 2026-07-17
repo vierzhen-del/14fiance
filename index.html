@@ -97,9 +97,11 @@
   :root[data-theme="dark"] .card { box-shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35); }
 
   /* ---- 통계 타일 ---- */
-  .stat-row { display: grid; grid-template-columns: 1.3fr 1fr 1fr 1fr; gap: 12px; margin-bottom: 16px; }
-  @media (max-width: 640px) { .stat-row { grid-template-columns: 1fr 1fr; grid-auto-rows: 1fr; } }
-  /* A9→A20(애플 스타일): 큰 반경·레이어드 섀도·최소 높이로 2x2 그리드가 고르게 보이도록 */
+  /* A21: 좁은 화면에서 2열로 강제하면 긴 설명 문구가 있는 카드(예상 월배당·목표 도달 등)의
+     글자가 심하게 밀려 보여 1열(1x4)로 전환 — 카드마다 전체 폭을 써서 줄바꿈 여유를 확보한다. */
+  .stat-row, .stats { display: grid; grid-template-columns: 1.3fr 1fr 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+  @media (max-width: 640px) { .stat-row, .stats { grid-template-columns: 1fr; } }
+  /* A9→A20(애플 스타일): 큰 반경·레이어드 섀도로 카드가 고르게 보이도록 */
   .stat {
     padding: 14px 16px; background: var(--surface-1); border: 1px solid var(--border);
     border-radius: 18px; box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 6px 18px rgba(0,0,0,.05);
@@ -230,6 +232,20 @@
   .mdd-hist-danger { background: #d64545; }
   .mdd-hist-label { font-size: 10px; color: var(--text-muted); margin-top: 3px; }
   .mdd-hist-cur .mdd-hist-bar { outline: 2px solid #eda100; outline-offset: 1px; }
+  /* A21: 길이가 긴 목록을 접어두는 공용 <details> 박스 — 상세종목·모델대조·자산배분 전종목 등 */
+  .collapse-box {
+    border: 1px solid var(--border); border-radius: 16px; padding: 4px 16px; margin: 8px 0 16px;
+    background: color-mix(in srgb, var(--text-primary) 2.5%, var(--surface-1));
+  }
+  .collapse-box summary {
+    cursor: pointer; list-style: none; padding: 12px 0; font-size: 13.5px; font-weight: 700;
+    color: var(--text-primary); display: flex; align-items: center; justify-content: space-between;
+  }
+  .collapse-box summary::-webkit-details-marker { display: none; }
+  .collapse-box summary::after { content: "▾"; color: var(--text-muted); font-weight: 400; transition: transform .15s; }
+  .collapse-box[open] summary::after { transform: rotate(180deg); }
+  .collapse-box .collapse-body { padding-bottom: 14px; }
+
   /* A11 시그널 상세 요약 카드 */
   .sig-summary { border-radius: 10px; padding: 12px 14px; margin: 10px 0; background: rgba(127,127,127,.06); border-left: 4px solid var(--text-muted); }
   .sig-summary-buy { border-left-color: #199e70; background: rgba(25,158,112,.08); }
@@ -385,6 +401,30 @@
   .tm-flat { background: #6b6f76; }
   .tm-up1 { background: #8a4a4a; } .tm-up2 { background: #a63d3d; } .tm-up3 { background: #c23030; } .tm-up4 { background: #de2121; }
   .tm-dn1 { background: #4a5a8a; } .tm-dn2 { background: #3d4fa6; } .tm-dn3 { background: #3042c2; } .tm-dn4 { background: #2134de; }
+  .tm-cell { cursor: pointer; }
+
+  /* A21: 트리맵 셀 확대 오버레이 */
+  .tm-zoom-overlay {
+    position: fixed; inset: 0; z-index: 100; display: none;
+    align-items: center; justify-content: center; padding: 24px;
+    background: rgba(0,0,0,.45); backdrop-filter: blur(2px);
+  }
+  .tm-zoom-overlay.open { display: flex; }
+  .tm-zoom-card {
+    position: relative; width: 100%; max-width: 340px; padding: 28px 24px 24px;
+    background: var(--surface-1); border-radius: 22px; text-align: center;
+    box-shadow: 0 20px 60px rgba(0,0,0,.35);
+  }
+  .tm-zoom-close {
+    position: absolute; top: 12px; right: 12px; width: 30px; height: 30px; border-radius: 50%;
+    border: none; background: color-mix(in srgb, var(--text-primary) 8%, var(--surface-1));
+    color: var(--text-secondary); font-size: 14px; cursor: pointer;
+  }
+  .tm-zoom-name { font-size: 17px; font-weight: 700; margin: 0 0 8px; color: var(--text-primary); }
+  .tm-zoom-chg { font-size: 32px; font-weight: 700; margin: 0 0 10px; color: var(--text-secondary); }
+  .tm-zoom-chg.tm-up1 { color: #de2121; background: none; }
+  .tm-zoom-chg.tm-dn1 { color: #3042c2; background: none; }
+  .tm-zoom-sub { font-size: 13px; color: var(--text-muted); margin: 0; }
 
   /* ---- 통합 탭: 도넛·월별 바·유형 스택바 ---- */
   .donut-wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; margin: 14px 0 8px; }
@@ -2386,6 +2426,26 @@ function changeColorClass(chg) {
   return (chg > 0 ? "tm-up" : "tm-dn") + lv;
 }
 
+/* A21: 트리맵 셀은 폭이 매우 좁아 종목명이 겹치거나 밀려 보임 — 발행사·유형 단어를
+   약어로 줄여 좁은 셀에서도 읽히게 한다(전체 이름은 title 툴팁·확대 클릭 시 그대로 표시). */
+const ETF_ISSUER_ABBR = [
+  ["KIWOOM", "Q"], ["KODEX", "K"], ["TIGER", "T"], ["PLUS", "PLS"], ["TIME", "TM"],
+  ["HANARO", "HN"], ["KBSTAR", "KB"], ["RISE", "RS"], ["ACE", "ACE"], ["SOL", "SOL"],
+];
+const ETF_WORD_ABBR = [
+  ["커버드콜", "CC"], ["액티브", "A"], ["채권", "채"],
+];
+const STOCK_NAME_ABBR = { "삼성전자": "삼전", "SK하이닉스": "하닉" };
+function abbrevEtfName(name) {
+  if (STOCK_NAME_ABBR[name]) return STOCK_NAME_ABBR[name];
+  let s = name;
+  for (const [full, abbr] of ETF_ISSUER_ABBR) {
+    if (s.startsWith(full)) { s = abbr + s.slice(full.length); break; }
+  }
+  for (const [full, abbr] of ETF_WORD_ABBR) s = s.split(full).join(abbr);
+  return s;
+}
+
 function buildTreemapHTML(perRow, groupBy) {
   const keyFn = TREEMAP_GROUP_FIELDS[groupBy] || TREEMAP_GROUP_FIELDS.category;
   const groups = new Map();
@@ -2413,8 +2473,10 @@ function buildTreemapHTML(perRow, groupBy) {
       const label = p.meta ? p.meta.name : p.symbol;
       const pct = total > 0 ? (p.value / total) * 100 : 0;
       const chgText = chg == null ? "—" : `${chg >= 0 ? "+" : ""}${(chg * 100).toFixed(2)}%`;
-      return `<div class="tm-cell ${changeColorClass(chg)}" style="left:${r.x.toFixed(3)}%;top:${r.y.toFixed(3)}%;width:${r.w.toFixed(3)}%;height:${r.h.toFixed(3)}%;" title="${label} · ${fmtW(p.value)} · 비중 ${pct.toFixed(1)}% · 등락 ${chgText}">
-        <div class="hm-name">${label}</div>
+      return `<div class="tm-cell ${changeColorClass(chg)}" style="left:${r.x.toFixed(3)}%;top:${r.y.toFixed(3)}%;width:${r.w.toFixed(3)}%;height:${r.h.toFixed(3)}%;"
+        data-tm-name="${label.replace(/"/g, "&quot;")}" data-tm-value="${fmtW(p.value)}" data-tm-pct="${pct.toFixed(1)}%" data-tm-chg="${chgText}"
+        title="${label} · ${fmtW(p.value)} · 비중 ${pct.toFixed(1)}% · 등락 ${chgText}">
+        <div class="hm-name">${abbrevEtfName(label)}</div>
         <div class="hm-val">${chgText}</div>
         <div class="hm-sub">${pct.toFixed(1)}%</div>
       </div>`;
@@ -2425,6 +2487,32 @@ function buildTreemapHTML(perRow, groupBy) {
     </div>`;
   });
   return `<div class="treemap">${html}</div>`;
+}
+
+/* A21: 트리맵 셀 확대 오버레이 — 좁은 셀에서 약어·겹친 텍스트로는 알아보기 어려우므로
+   탭하면 전체 이름·평가액·비중·등락을 큰 카드로 보여준다(배경 탭 또는 닫기로 해제). */
+function showTmZoom(name, value, pct, chg, cellClass) {
+  let overlay = document.getElementById("tmZoomOverlay");
+  if (!overlay) {
+    overlay = document.createElement("div");
+    overlay.id = "tmZoomOverlay";
+    overlay.className = "tm-zoom-overlay";
+    overlay.addEventListener("click", (evt) => { if (evt.target === overlay) hideTmZoom(); });
+    document.body.appendChild(overlay);
+  }
+  const chgClass = /tm-up/.test(cellClass) ? "tm-up1" : /tm-dn/.test(cellClass) ? "tm-dn1" : "";
+  overlay.innerHTML = `<div class="tm-zoom-card">
+    <button type="button" class="tm-zoom-close" aria-label="닫기">✕</button>
+    <p class="tm-zoom-name">${name}</p>
+    <p class="tm-zoom-chg ${chgClass}">${chg}</p>
+    <p class="tm-zoom-sub">평가액 ${value} · 비중 ${pct}</p>
+  </div>`;
+  overlay.querySelector(".tm-zoom-close").addEventListener("click", hideTmZoom);
+  overlay.classList.add("open");
+}
+function hideTmZoom() {
+  const overlay = document.getElementById("tmZoomOverlay");
+  if (overlay) overlay.classList.remove("open");
 }
 
 /* 배당기준·이력 — 확정/추정 DPS, 다음달 기대월배당(배당률×현재가), 배당상승률(직전 스냅샷 대비) */
@@ -3394,14 +3482,6 @@ async function renderMyAssets() {
     </div>
 
     <div class="dash-panel" data-tab="summary" hidden>
-      <p class="chart-title" style="margin-top:20px;">보유 종목</p>
-      <div style="overflow-x:auto;">
-      <table class="account-summary-table">
-        <thead><tr><th>계좌</th><th>종목</th><th>수량</th><th>현재가</th><th>평가액</th><th>손익</th><th>분배금(주당·월평균)</th><th>월배당</th></tr></thead>
-        <tbody>${rowsHTML}</tbody>
-      </table>
-      </div>
-
       <p class="chart-title" style="margin-top:20px;">계좌별 합계</p>
       <div style="overflow-x:auto;">
       <table class="account-summary-table">
@@ -3409,13 +3489,20 @@ async function renderMyAssets() {
         <tbody>${accHTML}</tbody>
       </table>
       </div>
+
+      <details class="collapse-box" style="margin-top:20px;">
+        <summary>보유 종목 상세 (${perRow.length}건)</summary>
+        <div class="collapse-body" style="overflow-x:auto;">
+        <table class="account-summary-table">
+          <thead><tr><th>계좌</th><th>종목</th><th>수량</th><th>현재가</th><th>평가액</th><th>손익</th><th>분배금(주당·월평균)</th><th>월배당</th></tr></thead>
+          <tbody>${rowsHTML}</tbody>
+        </table>
+        </div>
+      </details>
     </div>
 
     <div class="dash-panel" data-tab="alloc" hidden>
       ${marketKpiHTML}
-      <p class="chart-title" style="margin-top:20px;">📊 자산배분 비중 (종목별)</p>
-      <div class="bar-list">${assetAllocHTML}</div>
-
       <p class="chart-title" style="margin-top:20px;">🌱 성장·배당·안전 비중</p>
       <div class="bar-list">${styleAllocHTML}</div>
 
@@ -3427,6 +3514,11 @@ async function renderMyAssets() {
       <p class="stat-sub" style="margin-top:8px;">시장 전망(드러켄밀러 OS·매크로 스코어)은 외부 시장데이터가 필요해 이 사이트 범위 밖입니다 — 클로드 세션(금융비서)에서 제공됩니다.</p>
 
       ${returnAnalysisHTML}
+
+      <details class="collapse-box" style="margin-top:20px;">
+        <summary>📊 자산배분 비중 — 전종목 (${bySymbolValue.length}건)</summary>
+        <div class="collapse-body bar-list">${assetAllocHTML}</div>
+      </details>
     </div>
 
     <div class="dash-panel" data-tab="heatmap" hidden>
@@ -3515,51 +3607,73 @@ async function renderMyAssets() {
     </div>
 
     <div class="dash-panel" data-tab="signal" hidden>
-      <p class="chart-title" style="margin-top:20px;">🌡️ 변동성 체제 — VIX vs VIXEQ</p>
-      <div id="mySignalVolBody"><p class="compare-empty">불러오는 중…</p></div>
+      <details class="collapse-box" open>
+        <summary>🌡️ 변동성 체제 — VIX vs VIXEQ</summary>
+        <div class="collapse-body" id="mySignalVolBody"><p class="compare-empty">불러오는 중…</p></div>
+      </details>
 
-      <p class="chart-title" style="margin-top:20px;">🔍 전 종목 스캔</p>
-      <p class="stat-sub">선택한 범위의 종목을 한 번에 스캔해 종합등급순으로 정렬합니다(강매수→강매도). 데이터 로딩량이 있어 버튼을 눌러야 실행됩니다.</p>
-      <div class="controls" style="margin:8px 0;">
-        <select id="mySignalScanGroup" aria-label="스캔 범위 선택">
-          <option value="mine">보유+워치리스트</option>
-          <option value="kr">국내 전체</option>
-          <option value="us">미국 전체</option>
-          <option value="all">전체(국내+미국)</option>
-        </select>
-        <button type="button" id="mySignalScanBtn" class="btn-action">🔍 스캔 실행</button>
-      </div>
-      <div id="mySignalScanBody"></div>
+      <details class="collapse-box" open>
+        <summary>🔍 전 종목 스캔</summary>
+        <div class="collapse-body">
+          <p class="stat-sub">선택한 범위의 종목을 한 번에 스캔해 종합등급순으로 정렬합니다(강매수→강매도). 데이터 로딩량이 있어 버튼을 눌러야 실행됩니다.</p>
+          <div class="controls" style="margin:8px 0;">
+            <select id="mySignalScanGroup" aria-label="스캔 범위 선택">
+              <option value="mine">보유+워치리스트</option>
+              <option value="kr">국내 전체</option>
+              <option value="us">미국 전체</option>
+              <option value="all">전체(국내+미국)</option>
+            </select>
+            <button type="button" id="mySignalScanBtn" class="btn-action">🔍 스캔 실행</button>
+          </div>
+          <div id="mySignalScanBody"></div>
+        </div>
+      </details>
 
-      <p class="chart-title" style="margin-top:20px;">👀 워치리스트 — 20일 포지션</p>
-      <p class="stat-sub">현재가가 최근 20거래일 최저~최고 범위의 어디에 있는지 표시합니다 — <b>하단 30% 이하 🟢 관심 구간, 상단 75% 이상 🔴 경계 구간</b>. 국내 종목은 🔄 최신시세 켜짐 시 실시간가, 미국 종목은 주 1회 수집 종가 기준입니다(참고용, 투자 조언 아님).</p>
-      <div id="mySignalWatchBody"></div>
-      <div class="controls" style="margin:8px 0;">
-        <select id="mySignalWatchAdd" aria-label="워치리스트에 추가할 종목"></select>
-        <button type="button" id="mySignalWatchAddBtn" class="btn-action">➕ 워치리스트 추가</button>
-      </div>
+      <details class="collapse-box" open>
+        <summary>👀 워치리스트 — 20일 포지션</summary>
+        <div class="collapse-body">
+          <p class="stat-sub">현재가가 최근 20거래일 최저~최고 범위의 어디에 있는지 표시합니다 — <b>하단 30% 이하 🟢 관심 구간, 상단 75% 이상 🔴 경계 구간</b>. 국내 종목은 🔄 최신시세 켜짐 시 실시간가, 미국 종목은 주 1회 수집 종가 기준입니다(참고용, 투자 조언 아님).</p>
+          <div id="mySignalWatchBody"></div>
+          <div class="controls" style="margin:8px 0;">
+            <select id="mySignalWatchAdd" aria-label="워치리스트에 추가할 종목"></select>
+            <button type="button" id="mySignalWatchAddBtn" class="btn-action">➕ 워치리스트 추가</button>
+          </div>
+        </div>
+      </details>
 
-      <p class="chart-title" style="margin-top:20px;">📡 선택 종목 시그널 상세</p>
-      <div class="controls" style="margin:8px 0;">
-        <select id="mySignalSymbol" aria-label="시그널 상세 종목 선택"></select>
-      </div>
-      <div id="mySignalDetailBody"></div>
+      <details class="collapse-box" open>
+        <summary>📡 선택 종목 시그널 상세</summary>
+        <div class="collapse-body">
+          <div class="controls" style="margin:8px 0;">
+            <select id="mySignalSymbol" aria-label="시그널 상세 종목 선택"></select>
+          </div>
+          <div id="mySignalDetailBody"></div>
+        </div>
+      </details>
 
-      <p class="chart-title" style="margin-top:20px;">📐 표준편차(σ)·매수목표가 — 주요 종목</p>
-      <p class="stat-sub">σ = 일간수익률 표준편차(%). <b>기본 1년(252거래일)</b> — 노션 매수테이블의 실측 σ와 같은 계산 계열이며, 30일 σ는 최근 급변을 반영해 더 큽니다.</p>
-      <div class="controls" style="margin:8px 0;">
-        <select id="mySignalSigmaWin" aria-label="시그마 계산 기간">
-          <option value="252" selected>σ 기간: 1년(252일)</option>
-          <option value="30">σ 기간: 30일</option>
-        </select>
-      </div>
-      <div id="mySignalSigmaBody"></div>
+      <details class="collapse-box">
+        <summary>📐 표준편차(σ)·매수목표가 — 주요 종목</summary>
+        <div class="collapse-body">
+          <p class="stat-sub">σ = 일간수익률 표준편차(%). <b>기본 1년(252거래일)</b> — 노션 매수테이블의 실측 σ와 같은 계산 계열이며, 30일 σ는 최근 급변을 반영해 더 큽니다.</p>
+          <div class="controls" style="margin:8px 0;">
+            <select id="mySignalSigmaWin" aria-label="시그마 계산 기간">
+              <option value="252" selected>σ 기간: 1년(252일)</option>
+              <option value="30">σ 기간: 30일</option>
+            </select>
+          </div>
+          <div id="mySignalSigmaBody"></div>
+        </div>
+      </details>
 
-      <p class="chart-title" style="margin-top:20px;">🎯 레버리지 σ 매수가 — 전일종가 기준</p>
-      <div class="controls" style="margin:8px 0;">
-        <select id="mySignalLevSymbol" aria-label="레버리지 매수가 종목 선택"></select>
-      </div>
-      <div id="mySignalLevBody"></div>
+      <details class="collapse-box">
+        <summary>🎯 레버리지 σ 매수가 — 전일종가 기준</summary>
+        <div class="collapse-body">
+          <div class="controls" style="margin:8px 0;">
+            <select id="mySignalLevSymbol" aria-label="레버리지 매수가 종목 선택"></select>
+          </div>
+          <div id="mySignalLevBody"></div>
+        </div>
+      </details>
     </div>
 
     <div class="dash-panel" data-tab="review" hidden>
@@ -3571,14 +3685,16 @@ async function renderMyAssets() {
       </div>
       <div id="myReviewStyleBody"></div>
 
-      <p class="chart-title" style="margin-top:20px;">🧺 모델 포트폴리오 대조 — 평온 배당70/성장30 (24종)</p>
-      <div id="myReviewModelBody"></div>
-
       <p class="chart-title" style="margin-top:20px;">🏁 운용 목표 진행률</p>
       <div class="controls" style="margin:8px 0;">
         <label style="font-size:12.5px; display:inline-flex; align-items:center; gap:4px;">목표금액 <input type="number" id="myReviewGoal" value="4000000000" step="100000000" style="width:150px;">원</label>
       </div>
       <div id="myReviewGoalBody"></div>
+
+      <details class="collapse-box" style="margin-top:20px;">
+        <summary>🧺 모델 포트폴리오 대조 — 평온 배당70/성장30 (24종)</summary>
+        <div class="collapse-body" id="myReviewModelBody"></div>
+      </details>
     </div>
 
     <div class="dash-panel" data-tab="changelog" hidden>
@@ -3813,6 +3929,17 @@ async function renderMyAssets() {
   if (state.myTreemapGroup) treemapSel.value = state.myTreemapGroup;
   treemapSel.addEventListener("change", renderTreemap);
   renderTreemap();
+
+  // A21: 트리맵 셀 탭하면 확대 — 좁은 셀은 이름이 겹쳐 보이므로 전체 정보를 오버레이로 표시
+  const tmBody = document.getElementById("myTreemapBody");
+  if (tmBody && !tmBody.dataset.zoomWired) {
+    tmBody.dataset.zoomWired = "1";
+    tmBody.addEventListener("click", (evt) => {
+      const cell = evt.target.closest(".tm-cell");
+      if (!cell) return;
+      showTmZoom(cell.dataset.tmName, cell.dataset.tmValue, cell.dataset.tmPct, cell.dataset.tmChg, cell.className);
+    });
+  }
 
   // A10: 📡 시그널 탭 — 워치리스트·지표·σ 매수가
   setupSignalTab(perRow, liveKr);
