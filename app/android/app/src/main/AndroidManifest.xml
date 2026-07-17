@@ -6,6 +6,7 @@
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
+        android:requestLegacyExternalStorage="true"
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
 
@@ -38,4 +39,8 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 문서 폴더(Directory.DOCUMENTS) 백업 파일 읽기/쓰기용. Android 13+(API 33+)는 무시되지만
+         낮은 버전 기기에서 필요하며, maxSdkVersion 지정은 @capacitor/filesystem 권장 방식(deprecated 경고 억제). -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
 </manifest>

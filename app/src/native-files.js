@@ -9,24 +9,47 @@
   const Filesystem = window.Capacitor.Plugins && window.Capacitor.Plugins.Filesystem;
   if (!Filesystem) return;
 
-  const DIR = "Documents"; // Capacitor Directory.Documents — 앱 삭제 후에도 대개 잔존
+  // Capacitor Directory enum의 실제 네이티브 문자열 값(대소문자 그대로 일치해야 함 — "Documents"처럼
+  // TS enum 키를 그대로 쓰면 안드로이드 플러그인이 매칭 못 해 INVALID_DIR 오류가 난다).
+  const DIR_PRIMARY = "DOCUMENTS"; // 공용 문서 폴더 — 앱 삭제 후에도 대개 잔존하지만 Android 11+ 권한 필요
+  const DIR_FALLBACK = "EXTERNAL"; // 앱 전용 외부 저장소 — 권한 불필요, 항상 쓰기 가능(단, 완전 삭제 시 함께 삭제될 수 있음)
   const FOLDER = "14fiance";
   const BACKUP_NAME = "latest-backup.json";
   const DISPLAY_PATH = "문서/14fiance"; // 사용자에게 보여줄 사람이 읽는 경로
 
-  async function writeJson(name, jsonStr) {
+  async function writeJsonTo(dir, name, jsonStr) {
     await Filesystem.writeFile({
       path: `${FOLDER}/${name}`,
       data: jsonStr,
-      directory: DIR,
+      directory: dir,
       encoding: "utf8",
       recursive: true,
     });
     try {
-      const { uri } = await Filesystem.getUri({ path: `${FOLDER}/${name}`, directory: DIR });
+      const { uri } = await Filesystem.getUri({ path: `${FOLDER}/${name}`, directory: dir });
       return uri;
     } catch (e) {
       return `${DISPLAY_PATH}/${name}`;
+    }
+  }
+
+  // 공용 문서 폴더 우선 시도(권한 거부·스코프드 스토리지 제한 등으로 실패하면) 앱 전용 외부
+  // 저장소로 자동 폴백 — 둘 중 하나는 항상 성공하도록 해 "내보내기 실패"가 뜨지 않게 한다.
+  let lastWorkingDir = null;
+  async function writeJson(name, jsonStr) {
+    try {
+      const uri = await writeJsonTo(DIR_PRIMARY, name, jsonStr);
+      lastWorkingDir = DIR_PRIMARY;
+      return uri;
+    } catch (primaryErr) {
+      try {
+        const uri = await writeJsonTo(DIR_FALLBACK, name, jsonStr);
+        lastWorkingDir = DIR_FALLBACK;
+        console.warn("Documents 저장 실패, 앱 전용 저장소로 대체:", primaryErr.message);
+        return uri;
+      } catch (fallbackErr) {
+        throw fallbackErr;
+      }
     }
   }
 
@@ -39,7 +62,8 @@
     try {
       const uri = await writeJson(filename, jsonStr);
       await writeJson(BACKUP_NAME, jsonStr); // 복원 버튼이 읽는 고정 파일도 최신화
-      flash(statusElId, `내보내기 완료 — ${DISPLAY_PATH}/${filename}`);
+      const note = lastWorkingDir === DIR_FALLBACK ? " (앱 전용 저장소 — 완전 삭제 시 함께 삭제될 수 있어 중요 시점엔 📤 내보내기 파일도 별도 보관 권장)" : "";
+      flash(statusElId, `내보내기 완료 — ${DISPLAY_PATH}/${filename}${note}`);
       console.log("native export saved:", uri);
     } catch (err) {
       flash(statusElId, `내보내기 실패: ${err.message}`);
@@ -61,6 +85,25 @@
     }, 800);
   };
 
+  async function readBackupJson() {
+    // 저장 시 DOCUMENTS/EXTERNAL 중 어느 쪽에 실제로 기록됐는지 알 수 없으므로(권한 상태가
+    // 그 사이 바뀔 수도 있음) 두 위치를 순서대로 시도한다.
+    let lastErr = null;
+    for (const dir of [DIR_PRIMARY, DIR_FALLBACK]) {
+      try {
+        const { data } = await Filesystem.readFile({
+          path: `${FOLDER}/${BACKUP_NAME}`,
+          directory: dir,
+          encoding: "utf8",
+        });
+        return data;
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+    throw lastErr || new Error("백업 파일을 찾을 수 없습니다");
+  }
+
   // "📂 백업 폴더에서 복원" 버튼 — 고정 백업 파일을 읽어 파일 선택 없이 복원
   function wireRestoreButton() {
     const btn = document.getElementById("myBackupRestoreBtn");
@@ -68,11 +111,7 @@
     btn.style.display = ""; // 네이티브에서만 노출
     btn.addEventListener("click", async () => {
       try {
-        const { data } = await Filesystem.readFile({
-          path: `${FOLDER}/${BACKUP_NAME}`,
-          directory: DIR,
-          encoding: "utf8",
-        });
+        const data = await readBackupJson();
         const parsed = JSON.parse(data);
         if (typeof applyMyAssets !== "function" || !applyMyAssets(parsed)) throw new Error("백업 형식이 맞지 않습니다");
         if (typeof state === "object") state.myAssetsImportedAt = typeof nowDateTimeStr === "function" ? nowDateTimeStr() : "";
@@ -80,7 +119,7 @@
         if (typeof renderMyAssets === "function") await renderMyAssets();
         flash("myAssetStatus", `복원 완료 ✓ — ${DISPLAY_PATH}/${BACKUP_NAME} (보유·이력 전체)`);
       } catch (err) {
-        const notFound = /not exist|not found|ENOENT/i.test(err.message || "");
+        const notFound = /not exist|not found|ENOENT|unable to read/i.test(err.message || "");
         flash("myAssetStatus", notFound
           ? `백업 파일이 없습니다 — 먼저 📤 내보내기를 한 번 하거나, 수동 내보내기 파일을 📂 가져오기 하세요`
           : `복원 실패: ${err.message}`);

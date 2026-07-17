@@ -18,7 +18,7 @@ mkdirSync(join(www, "shared"), { recursive: true });
 mkdirSync(join(www, "icons"), { recursive: true });
 
 // shared 모듈·CSS 그대로 복사
-for (const f of ["myassets-utils.js", "price-data.js", "myassets.js", "myassets.css"]) {
+for (const f of ["myassets-utils.js", "price-data.js", "myassets.js", "calculators.js", "myassets.css"]) {
   cpSync(join(repoRoot, "shared", f), join(www, "shared", f));
 }
 // capture 파싱 엔진 그대로 복사
@@ -57,6 +57,7 @@ const replacements = [
   ['src="../shared/myassets-utils.js"', 'src="shared/myassets-utils.js"'],
   ['src="../shared/price-data.js"></script>', 'src="shared/price-data.js"></script>\n<script src="native-quotes.js"></script>\n<script src="native-files.js"></script>'],
   ['src="../shared/myassets.js"', 'src="shared/myassets.js"'],
+  ['src="../shared/calculators.js"', 'src="shared/calculators.js"'],
   // 데이터는 원격 raw URL에서 조회
   ['const DATA_DIR = "../data";', `const DATA_DIR = "${REMOTE_DATA_DIR}";`],
   // PWA 전용 요소는 앱(WebView)에선 불필요 — manifest 링크 제거, SW 등록은 지원 안 되는 환경에서 catch로 무해하지만 명시적으로 끔
