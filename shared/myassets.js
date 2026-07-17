@@ -7,7 +7,8 @@ const MY_ASSETS_HISTORY_KEY = "my_assets_history_v1";
 const MY_ASSETS_DAILY_HISTORY_KEY = "my_assets_daily_history_v1";
 const MY_INCLUDE_STOCKS_KEY = "my_assets_include_stocks_v1"; // "0"이면 일반종목(개별주) 제외
 const MY_ASSETS_CHANGELOG_KEY = "my_assets_changelog_v1";
-const MY_ASSETS_WATCHLIST_KEY = "my_assets_watchlist_v1"; // A10 📡 시그널 탭 워치리스트 // 최대 300건, A3b/c: 폼 채우기·가져오기 시 변경 이력
+const MY_ASSETS_WATCHLIST_KEY = "my_assets_watchlist_v1"; // A10 📡 시그널 탭 워치리스트, 최대 300건, A3b/c: 폼 채우기·가져오기 시 변경 이력
+const MY_SIGNAL_DECISIONS_KEY = "my_signal_decisions_v1"; // A14 트레이드플랜 결정메모(승인/보류/거부), 최대 200건
 
 /* ---------- A3c: 변동이력(🗂️) — 폼 채우기(캡처 반영)·가져오기 시마다 자동 기록되는 변경 로그.
    위 MY_ASSETS_HISTORY_KEY(월별 수동 스냅샷)와 달리, 이건 "무엇이 바뀌었는지" 이벤트 자체를
@@ -181,6 +182,7 @@ function serializeMyAssets() {
     dailyHistory: (() => { try { return JSON.parse(localStorage.getItem(MY_ASSETS_DAILY_HISTORY_KEY) || "[]"); } catch (e) { return []; } })(),
     changelog: (() => { try { return JSON.parse(localStorage.getItem(MY_ASSETS_CHANGELOG_KEY) || "[]"); } catch (e) { return []; } })(),
     watchlist: (() => { try { return JSON.parse(localStorage.getItem(MY_ASSETS_WATCHLIST_KEY) || "[]"); } catch (e) { return []; } })(),
+    signalDecisions: (() => { try { return JSON.parse(localStorage.getItem(MY_SIGNAL_DECISIONS_KEY) || "[]"); } catch (e) { return []; } })(),
   };
 }
 
@@ -249,6 +251,7 @@ function applyMyAssets(data) {
   if (Array.isArray(data.dailyHistory) && data.dailyHistory.length) localStorage.setItem(MY_ASSETS_DAILY_HISTORY_KEY, JSON.stringify(data.dailyHistory));
   if (Array.isArray(data.changelog) && data.changelog.length) localStorage.setItem(MY_ASSETS_CHANGELOG_KEY, JSON.stringify(data.changelog.slice(0, 300)));
   if (Array.isArray(data.watchlist) && data.watchlist.length) localStorage.setItem(MY_ASSETS_WATCHLIST_KEY, JSON.stringify(data.watchlist));
+  if (Array.isArray(data.signalDecisions) && data.signalDecisions.length) localStorage.setItem(MY_SIGNAL_DECISIONS_KEY, JSON.stringify(data.signalDecisions.slice(0, 200)));
   document.getElementById("myAssetRows").innerHTML = "";
   for (const r of data.rows) {
     // 구버전(확정 월배당 총액) 데이터는 주당 DPS로 1회 변환
@@ -1559,6 +1562,19 @@ async function renderMyAssets() {
     </div>
 
     <div class="dash-panel" data-tab="signal" hidden>
+      <p class="chart-title" style="margin-top:20px;">🔍 전 종목 스캔</p>
+      <p class="stat-sub">선택한 범위의 종목을 한 번에 스캔해 종합등급순으로 정렬합니다(강매수→강매도). 데이터 로딩량이 있어 버튼을 눌러야 실행됩니다.</p>
+      <div class="controls" style="margin:8px 0;">
+        <select id="mySignalScanGroup" aria-label="스캔 범위 선택">
+          <option value="mine">보유+워치리스트</option>
+          <option value="kr">국내 전체</option>
+          <option value="us">미국 전체</option>
+          <option value="all">전체(국내+미국)</option>
+        </select>
+        <button type="button" id="mySignalScanBtn" class="btn-action">🔍 스캔 실행</button>
+      </div>
+      <div id="mySignalScanBody"></div>
+
       <p class="chart-title" style="margin-top:20px;">👀 워치리스트 — 20일 포지션</p>
       <p class="stat-sub">현재가가 최근 20거래일 최저~최고 범위의 어디에 있는지 표시합니다 — <b>하단 30% 이하 🟢 관심 구간, 상단 75% 이상 🔴 경계 구간</b>. 국내 종목은 🔄 최신시세 켜짐 시 실시간가, 미국 종목은 주 1회 수집 종가 기준입니다(참고용, 투자 조언 아님).</p>
       <div id="mySignalWatchBody"></div>
@@ -1848,6 +1864,41 @@ function symbolDisplayName(sym) {
   return meta ? meta.name : sym;
 }
 
+/* A14: 결정 메모(승인/보류/거부) — 최대 200건, export/import로 재설치 후에도 복원 */
+function loadDecisions() {
+  try {
+    const v = JSON.parse(localStorage.getItem(MY_SIGNAL_DECISIONS_KEY) || "[]");
+    return Array.isArray(v) ? v : [];
+  } catch (e) { return []; }
+}
+function saveDecisions(list) {
+  localStorage.setItem(MY_SIGNAL_DECISIONS_KEY, JSON.stringify(list.slice(0, 200)));
+}
+function buildDecisionsListHTML() {
+  const list = loadDecisions().slice(0, 8);
+  if (!list.length) return `<p class="compare-empty">아직 기록된 결정이 없습니다.</p>`;
+  const icon = { approved: "✅ 승인", hold: "⏸ 보류", rejected: "❌ 거부" };
+  return `<div style="overflow-x:auto;"><table class="account-summary-table">
+    <thead><tr><th>일시</th><th>종목</th><th>결정</th><th>등급</th><th>진입/목표/손절</th></tr></thead>
+    <tbody>${list.map((d) => `<tr><td>${d.ts}</td><td>${d.name}</td><td>${icon[d.decision] || d.decision}</td><td>${d.grade}</td><td>${d.entry}/${d.target}/${d.stop}</td></tr>`).join("")}</tbody>
+    </table></div>`;
+}
+
+/* A13: AI 셋업 리뷰 요청 문구 — API 호출 없이 클립보드 복사 후 AI 세션에 붙여넣는 방식(기존 SOP 요약 패턴과 동일 원칙) */
+function buildSignalReviewText(sym, name, cur, currency, core) {
+  const { grade, votes, arrText, crossMsgs } = core;
+  const lines = [`[📡 시그널 셋업 리뷰 요청 — ${name}(${sym}), ${todayStr()}]`];
+  lines.push(`현재가: ${fmtPrice(cur, currency)} · 종합등급: ${grade}`);
+  lines.push(`지표: ${votes.map((v) => `${v.name} ${v.text}`).join(" · ")}`);
+  lines.push(`MA 배열: ${arrText}${crossMsgs.length ? " · " + crossMsgs.join(" · ") : ""}`);
+  lines.push("");
+  lines.push("위 시그널 셋업에 대해 다음 3가지를 검토 의견으로 답해줘(투자 조언이 아니라 참고용 검토):");
+  lines.push("1) 강세 시나리오(Bull Case) — 이 판단을 뒷받침하는 근거");
+  lines.push("2) 약세 시나리오(Bear Case) — 반대로 틀릴 수 있는 리스크·하방 요인");
+  lines.push("3) 핵심 미지수(Key Unknown) — 결과를 좌우할 수 있는 불확실한 요인");
+  return lines.join("\n");
+}
+
 /* 20일 위치 판정 — 참조 SIGNAL MAP 기준: 하단 30% 이하 관심, 상단 75% 이상 경계 */
 function posZoneInfo(pos) {
   if (pos == null) return { cls: "sig-neutral", label: "―" };
@@ -1861,6 +1912,74 @@ function sigGaugeHTML(pos) {
   return `<div class="sig-gauge"><div class="sig-gauge-dot" style="left:${pct}%"></div></div>`;
 }
 
+/* A13: 종목 하나의 종합 시그널 등급 계산 — renderDetail·전종목 스캔 표·트레이드 플랜이 공유하는
+   순수 계산부(HTML 없음). closes/dates=일별 종가·날짜, cur=판정에 쓸 현재가(라이브가 또는 마지막 종가). */
+function computeSignalGrade(closes, dates, cur) {
+  const maDefs = [5, 20, 60, 120, 200];
+  const mas = maDefs.map((n) => ({ n, v: smaAt(closes, n) }));
+
+  const valid = mas.filter((m) => m.v != null);
+  let arrText = "MA 배열 판정 불가(데이터 부족)";
+  if (valid.length >= 3) {
+    const vs = valid.map((m) => m.v);
+    const bull = vs.every((v, i) => i === 0 || v <= vs[i - 1]);
+    const bear = vs.every((v, i) => i === 0 || v >= vs[i - 1]);
+    arrText = bull ? "🔔 정배열(단기MA>장기MA) — 추세 상승" : bear ? "☠️ 역배열(단기MA<장기MA) — 추세 하락" : "MA 혼조(교차 진행 중)";
+  }
+
+  // 골든/데드크로스 — 최근 5거래일 내 교차만 표시(지어내지 않음)
+  const crossMsgs = [];
+  const detectCross = (fast, slow, label) => {
+    const f = smaSeries(closes, fast), s = smaSeries(closes, slow);
+    for (let i = Math.max(1, closes.length - 5); i < closes.length; i++) {
+      if (f[i] == null || s[i] == null || f[i - 1] == null || s[i - 1] == null) continue;
+      if (f[i - 1] <= s[i - 1] && f[i] > s[i]) crossMsgs.push(`🔔 골든크로스 ${label} (${dates[i]})`);
+      if (f[i - 1] >= s[i - 1] && f[i] < s[i]) crossMsgs.push(`☠️ 데드크로스 ${label} (${dates[i]})`);
+    }
+  };
+  detectCross(5, 20, "MA5×MA20");
+  detectCross(20, 60, "MA20×MA60");
+
+  const rsiArr = rsiSeries(closes, 14);
+  const rsi = rsiArr[rsiArr.length - 1];
+  const { macd, signal, hist } = macdSeries(closes);
+  const m = macd[macd.length - 1], sg = signal[signal.length - 1], h = hist[hist.length - 1];
+  const bb = bollingerLast(closes);
+  const pos = pos20d(closes, cur);
+  const zone = posZoneInfo(pos);
+
+  // 종합 시그널 — 2개 이상 지표가 같은 방향으로 합의할 때만 매매 시그널(설계 원칙)
+  const votes = [];
+  if (rsi != null) votes.push({ name: "RSI14", v: rsi <= 30 ? 1 : rsi >= 70 ? -1 : 0,
+    text: `${rsi.toFixed(1)} ${rsi <= 30 ? "과매도" : rsi >= 70 ? "과열" : "중립(30~70)"}` });
+  const div = detectRsiDivergence(closes, rsiArr);
+  const divVote = div.bull
+    ? { name: "RSI 다이버전스", v: 1, text: `강세 감지 — 가격 저점 하락(${dates[div.bull.d1]}→${dates[div.bull.d2]})인데 RSI 저점 상승` }
+    : div.bear
+    ? { name: "RSI 다이버전스", v: -1, text: `약세 감지 — 가격 고점 상승(${dates[div.bear.d1]}→${dates[div.bear.d2]})인데 RSI 고점 하락` }
+    : { name: "RSI 다이버전스", v: 0, text: "미감지(최근 90거래일)" };
+  votes.push(divVote);
+  if (bb) votes.push({ name: "볼린저 %B", v: bb.pctB <= 0.05 ? 1 : bb.pctB >= 0.95 ? -1 : 0,
+    text: `${(bb.pctB * 100).toFixed(0)}% ${bb.pctB <= 0.05 ? "하단 접근" : bb.pctB >= 0.95 ? "상단 접근" : "밴드 내"}` });
+  if (h != null) {
+    const hp = hist[hist.length - 2];
+    const v = hp != null && hp <= 0 && h > 0 ? 1 : hp != null && hp >= 0 && h < 0 ? -1 : 0;
+    votes.push({ name: "MACD", v,
+      text: `히스토그램 ${h >= 0 ? "+" : ""}${h.toFixed(2)} ${v === 1 ? "상향 전환" : v === -1 ? "하향 전환" : h >= 0 ? "상승 지속" : "하락 지속"}` });
+  }
+  const ma200 = mas[4].v;
+  if (ma200 != null) {
+    const gap = cur / ma200 - 1;
+    votes.push({ name: "MA200 이격", v: gap <= -0.10 ? 1 : gap >= 0.15 ? -1 : 0,
+      text: `${gap >= 0 ? "+" : ""}${(gap * 100).toFixed(1)}% ${gap >= 0.15 ? "과열권" : gap <= -0.10 ? "과매도권" : "정상 범위"}` });
+  }
+  const buyN = votes.filter((x) => x.v === 1).length, sellN = votes.filter((x) => x.v === -1).length;
+  const grade = buyN >= 3 ? "🟢 강매수" : buyN >= 2 ? "🟢 매수관심" : sellN >= 3 ? "🔴 강매도" : sellN >= 2 ? "🔴 매도검토" : "⏸ 홀드";
+  const gradeCls = buyN >= 2 ? "sig-watch" : sellN >= 2 ? "sig-alert" : "sig-neutral";
+
+  return { mas, arrText, crossMsgs, rsi, rsiArr, m, sg, h, bb, pos, zone, votes, divVote, ma200, buyN, sellN, grade, gradeCls };
+}
+
 function setupSignalTab(perRow, liveKr) {
   const watchBody = document.getElementById("mySignalWatchBody");
   if (!watchBody) return;
@@ -1872,6 +1991,9 @@ function setupSignalTab(perRow, liveKr) {
   const sigmaBody = document.getElementById("mySignalSigmaBody");
   const levSel = document.getElementById("mySignalLevSymbol");
   const levBody = document.getElementById("mySignalLevBody");
+  const scanGroupSel = document.getElementById("mySignalScanGroup");
+  const scanBtn = document.getElementById("mySignalScanBtn");
+  const scanBody = document.getElementById("mySignalScanBody");
 
   // 시그널용 현재가: 국내 라이브 시세가 켜져 있으면 라이브가, 아니면 마지막 수집 종가
   const curPriceOf = (sym, full) => {
@@ -1887,6 +2009,9 @@ function setupSignalTab(perRow, liveKr) {
   };
   const chgHTML = (chg) => chg == null ? "―"
     : `<span style="color:${chg >= 0 ? "#d64545" : "#2a78d6"};">${chg >= 0 ? "+" : ""}${(chg * 100).toFixed(2)}%</span>`;
+
+  // A14 리스크 게이트에서 쓸 총 평가액(KRW) — perRow.value가 이미 원화 환산 평가액
+  const totalValue = perRow.reduce((a, p) => a + (p.value || 0), 0);
 
   // ① 워치리스트 — 20일 포지션 게이지
   const renderWatch = async () => {
@@ -1936,8 +2061,8 @@ function setupSignalTab(perRow, liveKr) {
       const cur = curPriceOf(sym, full);
       const name = symbolDisplayName(sym);
 
-      const maDefs = [5, 20, 60, 120, 200];
-      const mas = maDefs.map((n) => ({ n, v: smaAt(closes, n) }));
+      const core = computeSignalGrade(closes, dates, cur);
+      const { mas, arrText, crossMsgs, rsi, rsiArr, m, sg, h, bb, pos, zone, votes, divVote, ma200, buyN, sellN, grade, gradeCls } = core;
       const maRows = mas.map(({ n, v }) => {
         if (v == null) return `<tr><td>MA${n}</td><td colspan="3" style="color:var(--text-muted);">데이터 부족(현재 ${closes.length}거래일)</td></tr>`;
         const gap = cur / v - 1;
@@ -1952,66 +2077,6 @@ function setupSignalTab(perRow, liveKr) {
         return `<tr><td>MA${n}</td><td style="text-align:right;">${fmtPrice(v, full.currency)}</td>` +
           `<td style="text-align:right; color:${gap >= 0 ? "#d64545" : "#2a78d6"};">${gap >= 0 ? "+" : ""}${(gap * 100).toFixed(1)}%</td><td>${judge}</td></tr>`;
       }).join("");
-
-      const valid = mas.filter((m) => m.v != null);
-      let arrText = "MA 배열 판정 불가(데이터 부족)";
-      if (valid.length >= 3) {
-        const vs = valid.map((m) => m.v);
-        const bull = vs.every((v, i) => i === 0 || v <= vs[i - 1]);
-        const bear = vs.every((v, i) => i === 0 || v >= vs[i - 1]);
-        arrText = bull ? "🔔 정배열(단기MA>장기MA) — 추세 상승" : bear ? "☠️ 역배열(단기MA<장기MA) — 추세 하락" : "MA 혼조(교차 진행 중)";
-      }
-
-      // 골든/데드크로스 — 최근 5거래일 내 교차만 표시(지어내지 않음)
-      const crossMsgs = [];
-      const detectCross = (fast, slow, label) => {
-        const f = smaSeries(closes, fast), s = smaSeries(closes, slow);
-        for (let i = Math.max(1, closes.length - 5); i < closes.length; i++) {
-          if (f[i] == null || s[i] == null || f[i - 1] == null || s[i - 1] == null) continue;
-          if (f[i - 1] <= s[i - 1] && f[i] > s[i]) crossMsgs.push(`🔔 골든크로스 ${label} (${dates[i]})`);
-          if (f[i - 1] >= s[i - 1] && f[i] < s[i]) crossMsgs.push(`☠️ 데드크로스 ${label} (${dates[i]})`);
-        }
-      };
-      detectCross(5, 20, "MA5×MA20");
-      detectCross(20, 60, "MA20×MA60");
-
-      const rsiArr = rsiSeries(closes, 14);
-      const rsi = rsiArr[rsiArr.length - 1];
-      const { macd, signal, hist } = macdSeries(closes);
-      const m = macd[macd.length - 1], sg = signal[signal.length - 1], h = hist[hist.length - 1];
-      const bb = bollingerLast(closes);
-      const pos = pos20d(closes, cur);
-      const zone = posZoneInfo(pos);
-
-      // 종합 시그널 — 2개 이상 지표가 같은 방향으로 합의할 때만 매매 시그널(설계 원칙)
-      const votes = [];
-      if (rsi != null) votes.push({ name: "RSI14", v: rsi <= 30 ? 1 : rsi >= 70 ? -1 : 0,
-        text: `${rsi.toFixed(1)} ${rsi <= 30 ? "과매도" : rsi >= 70 ? "과열" : "중립(30~70)"}` });
-      // A12: RSI 다이버전스 — 가격 저점/고점 vs RSI 저점/고점 방향 불일치(5번째 투표, MA200 이격과 병행)
-      const div = detectRsiDivergence(closes, rsiArr);
-      const divVote = div.bull
-        ? { name: "RSI 다이버전스", v: 1, text: `강세 감지 — 가격 저점 하락(${dates[div.bull.d1]}→${dates[div.bull.d2]})인데 RSI 저점 상승` }
-        : div.bear
-        ? { name: "RSI 다이버전스", v: -1, text: `약세 감지 — 가격 고점 상승(${dates[div.bear.d1]}→${dates[div.bear.d2]})인데 RSI 고점 하락` }
-        : { name: "RSI 다이버전스", v: 0, text: "미감지(최근 90거래일)" };
-      votes.push(divVote);
-      if (bb) votes.push({ name: "볼린저 %B", v: bb.pctB <= 0.05 ? 1 : bb.pctB >= 0.95 ? -1 : 0,
-        text: `${(bb.pctB * 100).toFixed(0)}% ${bb.pctB <= 0.05 ? "하단 접근" : bb.pctB >= 0.95 ? "상단 접근" : "밴드 내"}` });
-      if (h != null) {
-        const hp = hist[hist.length - 2];
-        const v = hp != null && hp <= 0 && h > 0 ? 1 : hp != null && hp >= 0 && h < 0 ? -1 : 0;
-        votes.push({ name: "MACD", v,
-          text: `히스토그램 ${h >= 0 ? "+" : ""}${h.toFixed(2)} ${v === 1 ? "상향 전환" : v === -1 ? "하향 전환" : h >= 0 ? "상승 지속" : "하락 지속"}` });
-      }
-      const ma200 = mas[4].v;
-      if (ma200 != null) {
-        const gap = cur / ma200 - 1;
-        votes.push({ name: "MA200 이격", v: gap <= -0.10 ? 1 : gap >= 0.15 ? -1 : 0,
-          text: `${gap >= 0 ? "+" : ""}${(gap * 100).toFixed(1)}% ${gap >= 0.15 ? "과열권" : gap <= -0.10 ? "과매도권" : "정상 범위"}` });
-      }
-      const buyN = votes.filter((x) => x.v === 1).length, sellN = votes.filter((x) => x.v === -1).length;
-      const grade = buyN >= 3 ? "🟢 강매수" : buyN >= 2 ? "🟢 매수관심" : sellN >= 3 ? "🔴 강매도" : sellN >= 2 ? "🔴 매도검토" : "⏸ 홀드";
-      const gradeCls = buyN >= 2 ? "sig-watch" : sellN >= 2 ? "sig-alert" : "sig-neutral";
 
       // 가격+MA20/60/200+볼린저 다중선 차트 (최근 1년, null 구간 제외)
       const start = Math.max(0, closes.length - 252);
@@ -2067,13 +2132,13 @@ function setupSignalTab(perRow, liveKr) {
       // A11a: RSI/MACD/볼린저 3줄 요약 + 종합평가 1줄 (기존 계산값 재사용)
       const rsiLine = rsi == null ? "데이터 부족"
         : `RSI14 ${rsi.toFixed(1)} — ${rsi <= 30 ? "과매도 구간(반등 가능성 주시)" : rsi >= 70 ? "과열 구간(과매수 주의)" : "중립(30~70), 방향성 약함"}`;
+      const macdVote = votes.find((v) => v.name === "MACD");
       const macdLine = h == null ? "MACD 데이터 부족"
-        : `MACD 히스토그램 ${h >= 0 ? "+" : ""}${h.toFixed(2)} — ${(() => {
-            const hp = hist[hist.length - 2];
-            if (hp != null && hp <= 0 && h > 0) return "상향 전환(단기 반등 신호)";
-            if (hp != null && hp >= 0 && h < 0) return "하향 전환(단기 조정 신호)";
-            return h >= 0 ? "상승 모멘텀 지속(시그널선 위)" : "하락 모멘텀 지속(시그널선 아래)";
-          })()}`;
+        : `MACD 히스토그램 ${h >= 0 ? "+" : ""}${h.toFixed(2)} — ${
+            macdVote && macdVote.v === 1 ? "상향 전환(단기 반등 신호)"
+            : macdVote && macdVote.v === -1 ? "하향 전환(단기 조정 신호)"
+            : h >= 0 ? "상승 모멘텀 지속(시그널선 위)" : "하락 모멘텀 지속(시그널선 아래)"
+          }`;
       const bbLine = bb == null ? "볼린저 데이터 부족"
         : `볼린저 %B ${(bb.pctB * 100).toFixed(0)}% — ${bb.pctB <= 0.05 ? "하단 접근(눌림 구간)" : bb.pctB >= 0.95 ? "상단 접근(과열 구간)" : "밴드 내 정상"}, 밴드폭 ${(bb.bandwidth * 100).toFixed(1)}%(변동성 ${bb.bandwidth >= 0.15 ? "높음" : "보통"})`;
       const divLine = divVote.v === 1 ? `${divVote.text} → 반등 가능성 신호`
@@ -2093,6 +2158,48 @@ function setupSignalTab(perRow, liveKr) {
           <p class="sig-summary-verdict">📌 종합평가: ${verdictText} <span class="sig-summary-note">(참고용 · 투자 조언 아님)</span></p>
         </div>`;
 
+      // A13: 지지·저항 레벨 — 최근 180거래일 피벗(findPivots, A12과 동일 원칙) 중 최근 3개씩 + 52주 최고가
+      const pivotWindow = Math.min(closes.length, 180);
+      const pivotStart = closes.length - pivotWindow;
+      const pivots = findPivots(closes.slice(pivotStart), 3);
+      const supportLevels = pivots.lows.map((i) => pivotStart + i).map((idx) => ({ date: dates[idx], price: closes[idx] })).slice(-3).reverse();
+      const resistLevels = pivots.highs.map((i) => pivotStart + i).map((idx) => ({ date: dates[idx], price: closes[idx] })).slice(-3).reverse();
+      const hi52 = high52(closes);
+      const supportHTML = supportLevels.length
+        ? supportLevels.map((s) => `${fmtPrice(s.price, full.currency)}(${s.date})`).join(" · ")
+        : "감지된 지지 피벗 없음(최근 180거래일)";
+      const resistHTML = resistLevels.length
+        ? resistLevels.map((r) => `${fmtPrice(r.price, full.currency)}(${r.date})`).join(" · ")
+        : "감지된 저항 피벗 없음(최근 180거래일)";
+
+      // A14: 트레이드 플랜 초안 — 진입(σ매수가 구간)·목표(저항/52주 전고점)·손절(지지/σ)·무효화(MA200)
+      const planSigma = dailyReturnSigma(closes, Number(sigmaWinSel.value));
+      const entryLow = planSigma != null ? cur * (1 - planSigma / 100) : cur;
+      const nearestResistAbove = resistLevels.map((r) => r.price).filter((p) => p > cur).sort((a, b) => a - b)[0];
+      const targetPrice = nearestResistAbove || (hi52 && hi52 > cur ? hi52 : cur * 1.10);
+      const nearestSupportBelow = supportLevels.map((s) => s.price).filter((p) => p < cur).sort((a, b) => b - a)[0];
+      const stopFallback = planSigma != null ? cur * (1 - 2 * planSigma / 100) : cur * 0.9;
+      const stopPrice = nearestSupportBelow || stopFallback;
+
+      // A14: 리스크 게이트 — 총자산은 원화(KRW)이므로 미국 종목은 환율 환산 후 수량 산정
+      let fxRate = null;
+      if (full.currency === "USD") {
+        try {
+          const fx = await loadFx();
+          if (fx && fx.rates && fx.rates.length) fxRate = fx.rates[fx.rates.length - 1];
+        } catch (e) { /* 환율 조회 실패 시 원화 환산 리스크 계산 생략 */ }
+      }
+      const toKRW = (v) => full.currency === "USD" ? (fxRate ? v * fxRate : null) : v;
+      const riskPct = state.mySignalRiskPct != null ? state.mySignalRiskPct : 1;
+      const stopDistanceNative = cur - stopPrice;
+      const stopDistanceKRW = toKRW(stopDistanceNative);
+      const riskAmount = totalValue * (riskPct / 100);
+      const sizedShares = (stopDistanceKRW && stopDistanceKRW > 0) ? Math.floor(riskAmount / stopDistanceKRW) : 0;
+      const positionValueKRW = toKRW(sizedShares * cur);
+      const positionPct = (totalValue > 0 && positionValueKRW != null) ? (positionValueKRW / totalValue) * 100 : 0;
+      const concentrationWarn = positionPct > 20;
+      const fxUnavailable = full.currency === "USD" && fxRate == null;
+
       detailBody.innerHTML = `
         <div class="action-row" style="margin:8px 0;">
           <span class="sig-badge ${gradeCls}" style="font-size:14px;">종합 ${grade}</span>
@@ -2106,9 +2213,120 @@ function setupSignalTab(perRow, liveKr) {
           <thead><tr><th>이동평균</th><th>값</th><th>현재가 이격</th><th>신호</th></tr></thead>
           <tbody>${maRows}</tbody></table></div>
         <p class="stat-sub">현재가 ${fmtPrice(cur, full.currency)} 기준 · RSI14 <b>${rsi == null ? "―" : rsi.toFixed(1)}</b> · MACD ${m == null ? "―" : m.toFixed(2)} / 시그널 ${sg == null ? "―" : sg.toFixed(2)} / 히스토그램 ${h == null ? "―" : (h >= 0 ? "+" : "") + h.toFixed(2)} · 볼린저(20일·2σ) ${bb ? `상단 ${fmtPrice(bb.upper, full.currency)} · 하단 ${fmtPrice(bb.lower, full.currency)} · %B ${(bb.pctB * 100).toFixed(0)}% · 밴드폭 ${(bb.bandwidth * 100).toFixed(1)}%` : "―"}</p>
+        <p class="chart-title" style="margin-top:20px;">📍 지지·저항 레벨 — 최근 180거래일</p>
+        <p class="stat-sub">지지(하단): ${supportHTML}</p>
+        <p class="stat-sub">저항(상단): ${resistHTML}</p>
+        <p class="stat-sub">52주 최고가: ${hi52 == null ? "―" : fmtPrice(hi52, full.currency)}</p>
+
+        <div class="action-row" style="margin:12px 0 4px;">
+          <button type="button" id="mySignalAiReviewBtn" class="btn-action">🤖 AI 셋업 리뷰 복사</button>
+          <button type="button" id="mySignalApiReviewBtn" class="btn-action" style="display:none;">⚡ API로 즉시 리뷰 받기</button>
+        </div>
+        <div id="mySignalApiReviewResult"></div>
+
+        <p class="chart-title" style="margin-top:20px;">🎯 트레이드 플랜 (초안)</p>
+        <p class="stat-sub">아래 값은 지표로 자동 계산한 초안입니다 — 실제 매매는 직접 검토 후 결정하세요(투자 조언 아님).</p>
+        <div class="stats" style="margin-top:8px;">
+          <div class="stat"><p class="stat-label">진입 구간</p><p class="stat-value" style="font-size:16px;">${fmtPrice(entryLow, full.currency)} ~ ${fmtPrice(cur, full.currency)}</p></div>
+          <div class="stat"><p class="stat-label">목표가</p><p class="stat-value" style="font-size:16px;">${fmtPrice(targetPrice, full.currency)}</p></div>
+          <div class="stat"><p class="stat-label">손절선</p><p class="stat-value" style="font-size:16px;">${fmtPrice(stopPrice, full.currency)}</p></div>
+          <div class="stat"><p class="stat-label">무효화(MA200)</p><p class="stat-value" style="font-size:16px;">${ma200 == null ? "―" : fmtPrice(ma200, full.currency)}</p></div>
+        </div>
+
+        <p class="chart-title" style="margin-top:20px;">⚖️ 리스크 게이트</p>
+        <div class="controls" style="margin:8px 0;">
+          <label style="font-size:12.5px; display:inline-flex; align-items:center; gap:4px;">1회 리스크 <input type="number" id="mySignalRiskPct" min="0.1" max="10" step="0.1" value="${riskPct}" style="width:60px;">%</label>
+        </div>
+        ${fxUnavailable
+          ? `<p class="stat-sub" style="color:var(--critical);">환율 정보를 불러오지 못해 원화 환산 리스크 계산을 생략했습니다.</p>`
+          : `<p class="stat-sub">총자산 ${fmtManwon(totalValue)} 기준 · 손절 거리 ${fmtPrice(stopDistanceNative, full.currency)} · 리스크 금액 ${fmtManwon(riskAmount)}</p>
+        <div class="stats" style="margin-top:8px;">
+          <div class="stat"><p class="stat-label">권장 수량</p><p class="stat-value" style="font-size:16px;">${sizedShares.toLocaleString()}주</p></div>
+          <div class="stat"><p class="stat-label">포지션 금액</p><p class="stat-value" style="font-size:16px;">${fmtManwon(positionValueKRW || 0)}</p></div>
+          <div class="stat"><p class="stat-label">총자산 대비</p><p class="stat-value" style="font-size:16px;">${positionPct.toFixed(1)}%</p></div>
+          <div class="stat"><p class="stat-label">판정</p><p class="stat-value" style="font-size:15px;">${concentrationWarn ? '<span class="sig-badge sig-alert">⚠️ 집중 경고</span>' : '<span class="sig-badge sig-watch">✅ Continue</span>'}</p></div>
+        </div>
+        ${concentrationWarn ? `<p class="stat-sub" style="color:var(--critical);">⚠️ 이 포지션이 총자산의 ${positionPct.toFixed(0)}%를 차지합니다(기준 20%) — 비중을 줄이거나 리스크%를 낮추는 것을 검토하세요.</p>` : ""}`
+        }
+
+        <p class="chart-title" style="margin-top:20px;">📝 결정 메모</p>
+        <div class="action-row" style="margin:8px 0;">
+          <button type="button" class="btn-action sig-decide-btn" data-decision="approved">✅ 승인</button>
+          <button type="button" class="btn-action sig-decide-btn" data-decision="hold">⏸ 보류</button>
+          <button type="button" class="btn-action sig-decide-btn" data-decision="rejected">❌ 거부</button>
+          <span id="mySignalDecideStatus" class="action-status"></span>
+        </div>
+        <div id="mySignalDecisionsBody">${buildDecisionsListHTML()}</div>
+
         <div id="mySignalChart"></div>
         <p class="chart-title" style="margin-top:20px;">📉 연간 MDD 분포 — ${name}</p>
         ${annHTML}`;
+
+      const aiReviewBtn = document.getElementById("mySignalAiReviewBtn");
+      if (aiReviewBtn) aiReviewBtn.addEventListener("click", async () => {
+        const text = buildSignalReviewText(sym, name, cur, full.currency, core);
+        try {
+          await navigator.clipboard.writeText(text);
+          flashStatus("mySignalDecideStatus", "AI 리뷰 요청 문구 복사됨 — AI 세션에 붙여넣으세요");
+        } catch (err) {
+          window.prompt("아래 내용을 복사하세요:", text);
+        }
+      });
+
+      // A15: 인앱 AI 리뷰(API 직접 호출) — capture-parse.js가 로드되고(앱/APK) 저장된 키가
+      // 있을 때만 노출(사이트에는 API 키 인프라가 없어 항상 숨김). 클릭 시에만 비용 발생.
+      const apiReviewBtn = document.getElementById("mySignalApiReviewBtn");
+      const apiReviewResult = document.getElementById("mySignalApiReviewResult");
+      if (apiReviewBtn && apiReviewResult) {
+        const claudeKey = localStorage.getItem("capture_claude_key");
+        const geminiKey = localStorage.getItem("capture_gemini_key");
+        if (typeof callClaudeVision === "function" && (claudeKey || geminiKey)) {
+          apiReviewBtn.style.display = "";
+          apiReviewBtn.addEventListener("click", async () => {
+            apiReviewBtn.disabled = true;
+            const prevLabel = apiReviewBtn.textContent;
+            apiReviewBtn.textContent = "요청 중…";
+            apiReviewResult.innerHTML = `<p class="compare-empty">AI 응답을 기다리는 중…</p>`;
+            try {
+              const prompt = buildSignalReviewText(sym, name, cur, full.currency, core) +
+                "\n\n한국어로 위 3개 항목(강세 시나리오/약세 시나리오/핵심 미지수)을 각각 2~3문장으로 답해줘.";
+              const provider = localStorage.getItem("capture_ai_provider") === "gemini" && geminiKey ? "gemini"
+                : claudeKey ? "claude" : "gemini";
+              const text = provider === "claude"
+                ? await callClaudeVision([], prompt, claudeKey)
+                : await callGeminiVision([], prompt, geminiKey);
+              apiReviewResult.innerHTML = `<div class="sig-summary"><p class="sig-summary-line" style="white-space:pre-wrap;">${text.replace(/</g, "&lt;")}</p></div>
+                <p class="stat-sub">${provider === "claude" ? "Claude" : "Gemini"} API 응답 · 참고용, 투자 조언 아님</p>`;
+            } catch (err) {
+              apiReviewResult.innerHTML = `<p class="compare-empty" style="color:var(--critical)">API 요청 실패: ${err.message}</p>`;
+            } finally {
+              apiReviewBtn.disabled = false;
+              apiReviewBtn.textContent = prevLabel;
+            }
+          });
+        }
+      }
+
+      const riskInput = document.getElementById("mySignalRiskPct");
+      if (riskInput) riskInput.addEventListener("change", () => {
+        const v = Number(riskInput.value);
+        state.mySignalRiskPct = v > 0 ? v : 1;
+        renderDetail();
+      });
+
+      document.querySelectorAll(".sig-decide-btn").forEach((btn) => btn.addEventListener("click", () => {
+        const decision = btn.dataset.decision;
+        const list = loadDecisions();
+        list.unshift({
+          ts: nowDateTimeStr(), symbol: sym, name, decision, grade,
+          entry: Math.round(cur), target: Math.round(targetPrice), stop: Math.round(stopPrice),
+        });
+        saveDecisions(list);
+        const body = document.getElementById("mySignalDecisionsBody");
+        if (body) body.innerHTML = buildDecisionsListHTML();
+        const label = decision === "approved" ? "승인" : decision === "hold" ? "보류" : "거부";
+        flashStatus("mySignalDecideStatus", `${label} 기록됨`);
+      }));
 
       const chartEl = document.getElementById("mySignalChart");
       if (chartEl && chartSeries.length) {
@@ -2212,6 +2430,56 @@ function setupSignalTab(perRow, liveKr) {
   symSel.addEventListener("change", renderDetail);
   sigmaWinSel.addEventListener("change", () => { renderSigma(); renderLev(); });
   levSel.addEventListener("change", renderLev);
+
+  // ⓪ A13: 전 종목 스캔 — 그룹 선택 후 버튼으로만 실행(다수 종목 로딩 고려, 자동 실행 없음)
+  const GRADE_ORDER = { "🟢 강매수": 0, "🟢 매수관심": 1, "⏸ 홀드": 2, "🔴 매도검토": 3, "🔴 강매도": 4 };
+  const runScan = async () => {
+    const group = scanGroupSel.value;
+    state.mySignalScanGroup = group;
+    let syms;
+    if (group === "mine") {
+      syms = [...new Set([...perRow.filter((p) => p.value > 0).map((p) => p.symbol), ...loadWatchlist()])];
+    } else if (group === "kr") {
+      syms = state.listedEtfs.filter((e) => e.market === "kr").map((e) => e.symbol);
+    } else if (group === "us") {
+      syms = state.listedEtfs.filter((e) => e.market === "us").map((e) => e.symbol);
+    } else {
+      syms = state.listedEtfs.map((e) => e.symbol);
+    }
+    scanBtn.disabled = true;
+    scanBtn.textContent = "스캔 중…";
+    scanBody.innerHTML = `<p class="compare-empty">스캔 중… (${syms.length}종목, 다소 시간이 걸릴 수 있습니다)</p>`;
+    const results = [];
+    for (const sym of syms) {
+      try {
+        const full = await loadSymbol(sym);
+        const cur = curPriceOf(sym, full);
+        const c = computeSignalGrade(full.closes, full.dates, cur);
+        results.push({ sym, cur, currency: full.currency, ...c });
+      } catch (err) { /* 개별 종목 오류는 건너뛰고 전체 스캔은 계속 진행 */ }
+    }
+    scanBtn.disabled = false;
+    scanBtn.textContent = "🔍 스캔 실행";
+    if (!results.length) {
+      scanBody.innerHTML = `<p class="compare-empty">스캔 결과가 없습니다.</p>`;
+      return;
+    }
+    results.sort((a, b) => (GRADE_ORDER[a.grade] ?? 9) - (GRADE_ORDER[b.grade] ?? 9));
+    const rows = results.map((r) => `<tr>
+      <td>${symbolDisplayName(r.sym)}</td>
+      <td style="text-align:right;">${fmtPrice(r.cur, r.currency)}</td>
+      <td><span class="sig-badge ${r.gradeCls}">${r.grade}</span></td>
+      <td style="text-align:right;">${r.pos == null ? "―" : Math.round(r.pos * 100) + "%"}</td>
+      <td>${r.crossMsgs.length ? r.crossMsgs[r.crossMsgs.length - 1] : ""}</td>
+    </tr>`).join("");
+    scanBody.innerHTML = `<div style="overflow-x:auto;"><table class="account-summary-table">
+      <thead><tr><th>종목</th><th>현재가</th><th>등급</th><th>20일 포지션</th><th>최근 크로스</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>
+      <p class="stat-sub">${results.length}종목 스캔 완료 · 등급순 정렬(강매수→강매도) · 참고용, 투자 조언 아님</p>`;
+  };
+  if (state.mySignalScanGroup) scanGroupSel.value = state.mySignalScanGroup;
+  scanBtn.addEventListener("click", runScan);
+
   renderWatch();
   renderDetail();
   renderSigma();
