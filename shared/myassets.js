@@ -2341,39 +2341,45 @@ function setupSignalTab(perRow, liveKr) {
         </div>
         <div id="mySignalApiReviewResult"></div>
 
-        <p class="chart-title" style="margin-top:20px;">🎯 트레이드 플랜 (초안)</p>
-        <p class="stat-sub">아래 값은 지표로 자동 계산한 초안입니다 — 실제 매매는 직접 검토 후 결정하세요(투자 조언 아님).</p>
-        <div class="stats" style="margin-top:8px;">
-          <div class="stat"><p class="stat-label">진입 구간</p><p class="stat-value" style="font-size:16px;">${fmtPrice(entryLow, full.currency)} ~ ${fmtPrice(cur, full.currency)}</p></div>
-          <div class="stat"><p class="stat-label">목표가</p><p class="stat-value" style="font-size:16px;">${fmtPrice(targetPrice, full.currency)}</p></div>
-          <div class="stat"><p class="stat-label">손절선</p><p class="stat-value" style="font-size:16px;">${fmtPrice(stopPrice, full.currency)}</p></div>
-          <div class="stat"><p class="stat-label">무효화(MA200)</p><p class="stat-value" style="font-size:16px;">${ma200 == null ? "―" : fmtPrice(ma200, full.currency)}</p></div>
+        <div class="apple-panel">
+          <p class="apple-panel-title">🎯 트레이드 플랜 (초안)</p>
+          <p class="apple-panel-note">아래 값은 지표로 자동 계산한 초안입니다 — 실제 매매는 직접 검토 후 결정하세요(투자 조언 아님).</p>
+          <div class="apple-tile-grid">
+            <div class="apple-tile accent-blue"><p class="apple-tile-label">진입 구간</p><p class="apple-tile-value">${fmtPrice(entryLow, full.currency)} ~ ${fmtPrice(cur, full.currency)}</p></div>
+            <div class="apple-tile accent-good"><p class="apple-tile-label">목표가</p><p class="apple-tile-value">${fmtPrice(targetPrice, full.currency)}</p></div>
+            <div class="apple-tile accent-critical"><p class="apple-tile-label">손절선</p><p class="apple-tile-value">${fmtPrice(stopPrice, full.currency)}</p></div>
+            <div class="apple-tile"><p class="apple-tile-label">무효화(MA200)</p><p class="apple-tile-value">${ma200 == null ? "―" : fmtPrice(ma200, full.currency)}</p></div>
+          </div>
         </div>
 
-        <p class="chart-title" style="margin-top:20px;">⚖️ 리스크 게이트</p>
-        <div class="controls" style="margin:8px 0;">
-          <label style="font-size:12.5px; display:inline-flex; align-items:center; gap:4px;">1회 리스크 <input type="number" id="mySignalRiskPct" min="0.1" max="10" step="0.1" value="${riskPct}" style="width:60px;">%</label>
+        <div class="apple-panel">
+          <p class="apple-panel-title">⚖️ 리스크 게이트</p>
+          <div class="controls" style="margin:0 0 10px;">
+            <label style="font-size:12.5px; display:inline-flex; align-items:center; gap:4px;">1회 리스크 <input type="number" id="mySignalRiskPct" min="0.1" max="10" step="0.1" value="${riskPct}" style="width:60px;">%</label>
+          </div>
+          ${fxUnavailable
+            ? `<p class="apple-panel-note" style="color:var(--critical);">환율 정보를 불러오지 못해 원화 환산 리스크 계산을 생략했습니다.</p>`
+            : `<p class="apple-panel-note">총자산 ${fmtManwon(totalValue)} 기준 · 손절 거리 ${fmtPrice(stopDistanceNative, full.currency)} · 리스크 금액 ${fmtManwon(riskAmount)}</p>
+          <div class="apple-tile-grid">
+            <div class="apple-tile accent-blue"><p class="apple-tile-label">권장 수량</p><p class="apple-tile-value">${sizedShares.toLocaleString()}주</p></div>
+            <div class="apple-tile accent-blue"><p class="apple-tile-label">포지션 금액</p><p class="apple-tile-value">${fmtManwon(positionValueKRW || 0)}</p></div>
+            <div class="apple-tile ${concentrationWarn ? "accent-warn" : ""}"><p class="apple-tile-label">총자산 대비</p><p class="apple-tile-value">${positionPct.toFixed(1)}%</p></div>
+            <div class="apple-tile ${concentrationWarn ? "accent-warn" : "accent-good"}"><p class="apple-tile-label">판정</p><p class="apple-tile-value" style="font-size:14px;">${concentrationWarn ? '<span class="apple-pill warn">⚠️ 집중 경고</span>' : '<span class="apple-pill good">✅ Continue</span>'}</p></div>
+          </div>
+          ${concentrationWarn ? `<p class="apple-panel-note" style="color:var(--critical); margin-top:10px;">⚠️ 이 포지션이 총자산의 ${positionPct.toFixed(0)}%를 차지합니다(기준 20%) — 비중을 줄이거나 리스크%를 낮추는 것을 검토하세요.</p>` : ""}`
+          }
         </div>
-        ${fxUnavailable
-          ? `<p class="stat-sub" style="color:var(--critical);">환율 정보를 불러오지 못해 원화 환산 리스크 계산을 생략했습니다.</p>`
-          : `<p class="stat-sub">총자산 ${fmtManwon(totalValue)} 기준 · 손절 거리 ${fmtPrice(stopDistanceNative, full.currency)} · 리스크 금액 ${fmtManwon(riskAmount)}</p>
-        <div class="stats" style="margin-top:8px;">
-          <div class="stat"><p class="stat-label">권장 수량</p><p class="stat-value" style="font-size:16px;">${sizedShares.toLocaleString()}주</p></div>
-          <div class="stat"><p class="stat-label">포지션 금액</p><p class="stat-value" style="font-size:16px;">${fmtManwon(positionValueKRW || 0)}</p></div>
-          <div class="stat"><p class="stat-label">총자산 대비</p><p class="stat-value" style="font-size:16px;">${positionPct.toFixed(1)}%</p></div>
-          <div class="stat"><p class="stat-label">판정</p><p class="stat-value" style="font-size:15px;">${concentrationWarn ? '<span class="sig-badge sig-alert">⚠️ 집중 경고</span>' : '<span class="sig-badge sig-watch">✅ Continue</span>'}</p></div>
-        </div>
-        ${concentrationWarn ? `<p class="stat-sub" style="color:var(--critical);">⚠️ 이 포지션이 총자산의 ${positionPct.toFixed(0)}%를 차지합니다(기준 20%) — 비중을 줄이거나 리스크%를 낮추는 것을 검토하세요.</p>` : ""}`
-        }
 
-        <p class="chart-title" style="margin-top:20px;">📝 결정 메모</p>
-        <div class="action-row" style="margin:8px 0;">
-          <button type="button" class="btn-action sig-decide-btn" data-decision="approved">✅ 승인</button>
-          <button type="button" class="btn-action sig-decide-btn" data-decision="hold">⏸ 보류</button>
-          <button type="button" class="btn-action sig-decide-btn" data-decision="rejected">❌ 거부</button>
-          <span id="mySignalDecideStatus" class="action-status"></span>
+        <div class="apple-panel">
+          <p class="apple-panel-title">📝 결정 메모</p>
+          <div class="apple-segmented">
+            <button type="button" class="sig-decide-btn seg-approve" data-decision="approved">✅ 승인</button>
+            <button type="button" class="sig-decide-btn seg-hold" data-decision="hold">⏸ 보류</button>
+            <button type="button" class="sig-decide-btn seg-reject" data-decision="rejected">❌ 거부</button>
+          </div>
+          <p class="action-status" id="mySignalDecideStatus" style="margin:6px 0 2px;"></p>
+          <div id="mySignalDecisionsBody">${buildDecisionsListHTML()}</div>
         </div>
-        <div id="mySignalDecisionsBody">${buildDecisionsListHTML()}</div>
 
         <div id="mySignalChart"></div>
         <p class="chart-title" style="margin-top:20px;">📉 연간 MDD 분포 — ${name}</p>
