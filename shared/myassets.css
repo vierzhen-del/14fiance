@@ -125,9 +125,11 @@
   :root[data-theme="dark"] .card { box-shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35); }
 
   /* ---- 통계 타일 ---- */
-  .stat-row { display: grid; grid-template-columns: 1.3fr 1fr 1fr 1fr; gap: 12px; margin-bottom: 16px; }
-  @media (max-width: 640px) { .stat-row { grid-template-columns: 1fr 1fr; grid-auto-rows: 1fr; } }
-  /* A9→A20(애플 스타일): 큰 반경·레이어드 섀도·최소 높이로 2x2 그리드가 고르게 보이도록 */
+  /* A21: 좁은 화면에서 2열로 강제하면 긴 설명 문구가 있는 카드(예상 월배당·목표 도달 등)의
+     글자가 심하게 밀려 보여 1열(1x4)로 전환 — 카드마다 전체 폭을 써서 줄바꿈 여유를 확보한다. */
+  .stat-row, .stats { display: grid; grid-template-columns: 1.3fr 1fr 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+  @media (max-width: 640px) { .stat-row, .stats { grid-template-columns: 1fr; } }
+  /* A9→A20(애플 스타일): 큰 반경·레이어드 섀도로 카드가 고르게 보이도록 */
   .stat {
     padding: 14px 16px; background: var(--surface-1); border: 1px solid var(--border);
     border-radius: 18px; box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 6px 18px rgba(0,0,0,.05);
@@ -258,6 +260,20 @@
   .mdd-hist-danger { background: #d64545; }
   .mdd-hist-label { font-size: 10px; color: var(--text-muted); margin-top: 3px; }
   .mdd-hist-cur .mdd-hist-bar { outline: 2px solid #eda100; outline-offset: 1px; }
+  /* A21: 길이가 긴 목록을 접어두는 공용 <details> 박스 — 상세종목·모델대조·자산배분 전종목 등 */
+  .collapse-box {
+    border: 1px solid var(--border); border-radius: 16px; padding: 4px 16px; margin: 8px 0 16px;
+    background: color-mix(in srgb, var(--text-primary) 2.5%, var(--surface-1));
+  }
+  .collapse-box summary {
+    cursor: pointer; list-style: none; padding: 12px 0; font-size: 13.5px; font-weight: 700;
+    color: var(--text-primary); display: flex; align-items: center; justify-content: space-between;
+  }
+  .collapse-box summary::-webkit-details-marker { display: none; }
+  .collapse-box summary::after { content: "▾"; color: var(--text-muted); font-weight: 400; transition: transform .15s; }
+  .collapse-box[open] summary::after { transform: rotate(180deg); }
+  .collapse-box .collapse-body { padding-bottom: 14px; }
+
   /* A11 시그널 상세 요약 카드 */
   .sig-summary { border-radius: 10px; padding: 12px 14px; margin: 10px 0; background: rgba(127,127,127,.06); border-left: 4px solid var(--text-muted); }
   .sig-summary-buy { border-left-color: #199e70; background: rgba(25,158,112,.08); }
@@ -413,6 +429,30 @@
   .tm-flat { background: #6b6f76; }
   .tm-up1 { background: #8a4a4a; } .tm-up2 { background: #a63d3d; } .tm-up3 { background: #c23030; } .tm-up4 { background: #de2121; }
   .tm-dn1 { background: #4a5a8a; } .tm-dn2 { background: #3d4fa6; } .tm-dn3 { background: #3042c2; } .tm-dn4 { background: #2134de; }
+  .tm-cell { cursor: pointer; }
+
+  /* A21: 트리맵 셀 확대 오버레이 */
+  .tm-zoom-overlay {
+    position: fixed; inset: 0; z-index: 100; display: none;
+    align-items: center; justify-content: center; padding: 24px;
+    background: rgba(0,0,0,.45); backdrop-filter: blur(2px);
+  }
+  .tm-zoom-overlay.open { display: flex; }
+  .tm-zoom-card {
+    position: relative; width: 100%; max-width: 340px; padding: 28px 24px 24px;
+    background: var(--surface-1); border-radius: 22px; text-align: center;
+    box-shadow: 0 20px 60px rgba(0,0,0,.35);
+  }
+  .tm-zoom-close {
+    position: absolute; top: 12px; right: 12px; width: 30px; height: 30px; border-radius: 50%;
+    border: none; background: color-mix(in srgb, var(--text-primary) 8%, var(--surface-1));
+    color: var(--text-secondary); font-size: 14px; cursor: pointer;
+  }
+  .tm-zoom-name { font-size: 17px; font-weight: 700; margin: 0 0 8px; color: var(--text-primary); }
+  .tm-zoom-chg { font-size: 32px; font-weight: 700; margin: 0 0 10px; color: var(--text-secondary); }
+  .tm-zoom-chg.tm-up1 { color: #de2121; background: none; }
+  .tm-zoom-chg.tm-dn1 { color: #3042c2; background: none; }
+  .tm-zoom-sub { font-size: 13px; color: var(--text-muted); margin: 0; }
 
   /* ---- 통합 탭: 도넛·월별 바·유형 스택바 ---- */
   .donut-wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; margin: 14px 0 8px; }
