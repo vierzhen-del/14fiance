@@ -1,2 +1,5 @@
 __pycache__/
 *.pyc
+
+# 시그널 알림 직전 등급 상태 — Actions 캐시 전용(저장소 커밋 금지)
+.alert_state.json
