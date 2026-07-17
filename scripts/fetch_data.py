@@ -260,6 +260,50 @@ def fetch_fx_usdkrw() -> dict | None:
     }
 
 
+CBOE_VOL_URL = "https://cdn.cboe.com/api/global/us_indices/daily_prices/{sym}_History.csv"
+VOL_DIR_NAME = "vol"
+
+
+def fetch_cboe_vol_index(sym: str) -> dict | None:
+    """Cboe 공개 일별 변동성 지수 CSV(VIX·VIXEQ) — 무키·무료. 실패해도 전체 수집은 계속한다.
+    CSV 형식: DATE,OPEN,HIGH,LOW,CLOSE (헤더 1행). A17 시그널 탭 변동성 체제 판독용."""
+    try:
+        text = http_get_text(CBOE_VOL_URL.format(sym=sym))
+    except RuntimeError as err:
+        print(f"  .. {sym} skipped: {err}")
+        return None
+    dates: list[str] = []
+    closes: list[float] = []
+    for line in text.splitlines()[1:]:
+        parts = line.strip().split(",")
+        if len(parts) < 5:
+            continue
+        day = parts[0].strip()
+        try:
+            close = float(parts[4])
+        except ValueError:
+            continue
+        # 날짜 형식이 MM/DD/YYYY 또는 YYYY-MM-DD 두 가지로 관측됨 — 둘 다 수용
+        if "/" in day:
+            mm, dd, yyyy = day.split("/")
+            day = f"{yyyy}-{int(mm):02d}-{int(dd):02d}"
+        if len(day) != 10:
+            continue
+        dates.append(day)
+        closes.append(round(close, 4))
+    if len(dates) < 100:
+        print(f"  .. {sym} skipped: too few rows ({len(dates)})")
+        return None
+    return {
+        "symbol": sym,
+        "count": len(dates),
+        "first": dates[0],
+        "last": dates[-1],
+        "dates": dates,
+        "closes": closes,
+    }
+
+
 def parse_naver_sise(text: str) -> tuple[list[str], list[float]]:
     """siseJson.naver 응답을 (dates, closes)로 파싱한다.
 
@@ -356,6 +400,19 @@ def main() -> int:
             encoding="utf-8",
         )
         print(f"  ok: {fx['count']} rows {fx['first']} ~ {fx['last']}")
+
+    # A17: Cboe 변동성 지수(VIX·VIXEQ) — 시그널 탭 변동성 체제 판독용. 실패해도 계속.
+    vol_dir = DATA_DIR / VOL_DIR_NAME
+    vol_dir.mkdir(exist_ok=True)
+    for vol_sym in ("VIX", "VIXEQ"):
+        print(f"fetching Cboe {vol_sym} ...")
+        vol = fetch_cboe_vol_index(vol_sym)
+        if vol is not None:
+            (vol_dir / f"{vol_sym}.json").write_text(
+                json.dumps(vol, ensure_ascii=False, separators=(",", ":")),
+                encoding="utf-8",
+            )
+            print(f"  ok: {vol['count']} rows {vol['first']} ~ {vol['last']}")
 
     fetchers = {"us": (fetch_symbol_us, REQUEST_INTERVAL_SEC), "kr": (fetch_symbol_kr, NAVER_INTERVAL_SEC)}
     for market in ("us", "kr"):
