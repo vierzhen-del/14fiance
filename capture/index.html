@@ -1051,7 +1051,7 @@ function runAccountParse(text, apiResult) {
     applyCrossCheck(validated, state.lastParsed.account.validated, state.lastParsed.account.source, "qty");
   }
   state.lastParsed.account = { validated, source };
-  renderCaptureAccountResult(validated);
+  renderCaptureAccountResult(validated, apiResult);
   pushCaptureHistory({
     type: "account",
     count: validated.holdings.length,
@@ -1072,13 +1072,27 @@ function runBuyPlanParse(text, apiResult) {
     applyCrossCheck(validated, state.lastParsed.buyplan.validated, state.lastParsed.buyplan.source, "buyQtyPerTime");
   }
   state.lastParsed.buyplan = { validated, source };
-  renderCaptureBuyPlanResult(validated);
+  renderCaptureBuyPlanResult(validated, apiResult);
   pushCaptureHistory({
     type: "buyplan",
     count: validated.holdings.length,
     issues: validated.holdings.filter((h) => h.issues.length).length,
     label: "",
   });
+}
+
+/* A20g: 배치 분할 파싱 진단 — "결과가 너무 적다"는 보고를 받아도 어느 배치가 몇 개를
+   반환했는지 알 방법이 없어 원인을 못 좁히던 문제를 없애기 위해, 배치별 추출 개수를
+   토스트가 아니라 결과 화면에 그대로(영구) 남긴다. 배치가 1개뿐(장수 ≤ 배치크기)이면
+   표시하지 않는다 — 진단할 배치 분할 자체가 없기 때문. */
+function batchStatsHTML(apiResult) {
+  if (!apiResult || !apiResult.batchCount || apiResult.batchCount <= 1 || !apiResult.batchStats) return "";
+  const totalImages = apiResult.batchStats.reduce((s, x) => s + x.imageCount, 0);
+  const totalHoldings = apiResult.batchStats.reduce((s, x) => s + (x.holdingCount || 0), 0);
+  const perBatch = apiResult.batchStats.map((s) => s.failed ? "실패" : `${s.holdingCount}`).join(", ");
+  const failedHTML = apiResult.failedBatches && apiResult.failedBatches.length
+    ? `<p class="stat-sub" style="color:var(--critical);">⚠️ ${apiResult.failedBatches.join(" · ")}</p>` : "";
+  return `<p class="stat-sub">🧩 배치 처리: 총 ${totalImages}장 → ${apiResult.batchCount}배치, 배치별 추출 종목수: [${perBatch}] (합계 ${totalHoldings}개)</p>${failedHTML}`;
 }
 
 function issueBadgeHTML(issues) {
@@ -1186,9 +1200,9 @@ function refreshCaptureComparison(el, validated) {
 
 /* 검토표는 확인용일 뿐 자동 반영은 하지 않는다 — 매칭된 종목만, 체크한 행만, 사람이
    계좌를 골라 "폼에 채우기"를 눌러야 실제 내 자산 폼에 행이 추가된다(자동 병합 금지 원칙). */
-function renderCaptureAccountResult(validated) {
+function renderCaptureAccountResult(validated, apiResult) {
   const el = document.getElementById("captureAccountResult");
-  if (!validated.holdings.length) { el.innerHTML = `<p class="stat-sub">파싱된 종목이 없습니다.</p>`; return; }
+  if (!validated.holdings.length) { el.innerHTML = `${batchStatsHTML(apiResult)}<p class="stat-sub">파싱된 종목이 없습니다.</p>`; return; }
   const totalRow = validated.totalCheck
     ? `<p class="stat-sub" style="margin:10px 0 0; color:${validated.totalCheck.ok ? "var(--positive)" : "var(--critical)"};">
         합계 대조: Σ평가액 ${Math.round(validated.totalCheck.sumEval).toLocaleString()} vs 화면합계 ${Math.round(validated.totalCheck.reported).toLocaleString()}
@@ -1218,6 +1232,7 @@ function renderCaptureAccountResult(validated) {
   const detectedAccounts = [...new Set(validated.holdings.map((h) => h.matchedAccount || h.rawAccountLabel).filter(Boolean))];
   el.innerHTML = `
     ${validated.accountLabel ? `<p class="stat-sub">화면 계좌명: ${validated.accountLabel}</p>` : ""}
+    ${batchStatsHTML(apiResult)}
     ${detectedAccounts.length > 1 ? `<p class="stat-sub">📁 폴더에서 ${detectedAccounts.length}개 계좌 자동 구분됨: ${detectedAccounts.join(", ")} — 각 행의 계좌가 자동으로 채워져 있으니 틀린 부분만 고쳐서 확인하세요.</p>` : ""}
     ${totalRow}
     ${hasCrossCheck ? `<p class="stat-sub">🔍 Claude+Gemini 교차검증 적용됨 — 두 AI의 결과가 다른 종목은 "채우기" 체크가 기본 해제되어 있습니다. 스크린샷을 직접 확인한 뒤에만 체크하세요.</p>` : ""}
@@ -1309,9 +1324,9 @@ function renderCaptureAccountResult(validated) {
   });
 }
 
-function renderCaptureBuyPlanResult(validated) {
+function renderCaptureBuyPlanResult(validated, apiResult) {
   const el = document.getElementById("captureBuyPlanResult");
-  if (!validated.holdings.length) { el.innerHTML = `<p class="stat-sub">파싱된 종목이 없습니다.</p>`; return; }
+  if (!validated.holdings.length) { el.innerHTML = `${batchStatsHTML(apiResult)}<p class="stat-sub">파싱된 종목이 없습니다.</p>`; return; }
   const hasCrossCheck = validated.holdings.some((h) => h.crossCheck);
   const rows = validated.holdings.map((h, i) => {
     const rowFillDefault = !(h.crossCheck && h.crossCheck.status !== "match");
@@ -1335,6 +1350,7 @@ function renderCaptureBuyPlanResult(validated) {
   const detectedBuyPlanAccounts = [...new Set(validated.holdings.map((h) => h.matchedAccount || h.rawAccountLabel).filter(Boolean))];
   el.innerHTML = `
     ${validated.reportedTotal != null ? `<p class="stat-sub">화면 월 총 매수금액: ${Math.round(validated.reportedTotal).toLocaleString()}원</p>` : ""}
+    ${batchStatsHTML(apiResult)}
     ${detectedBuyPlanAccounts.length > 1 ? `<p class="stat-sub">📁 폴더에서 ${detectedBuyPlanAccounts.length}개 계좌 자동 구분됨: ${detectedBuyPlanAccounts.join(", ")} — 각 행의 계좌가 자동으로 채워져 있으니 틀린 부분만 고쳐서 확인하세요.</p>` : ""}
     ${hasCrossCheck ? `<p class="stat-sub">🔍 Claude+Gemini 교차검증 적용됨 — 두 AI의 결과가 다른 종목은 "채우기" 체크가 기본 해제되어 있습니다. 스크린샷을 직접 확인한 뒤에만 체크하세요.</p>` : ""}
     ${thumbGalleryHTML(state.captureBuyPlanThumbs)}

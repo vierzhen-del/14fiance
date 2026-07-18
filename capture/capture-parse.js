@@ -18,7 +18,9 @@ const CAPTURE_USE_CLAUDE_CROSSCHECK_KEY = "capture_use_claude_api_v1";
 const CAPTURE_CLAUDE_API_DISABLED = true;
 // A20: 대량 이미지를 한 번에 보내면 뒷부분 이미지만 처리되는 멀티이미지 한계가 실측됨
 // (37행 계좌 전체 첨부 → 마지막 화면들의 7행만 반환) — 이 장수 단위로 나눠 순차 호출한다.
-const CAPTURE_PARSE_BATCH_SIZE = 5;
+// A20g(2026-07-18): 5장 배치로도 여전히 추출 부족 보고 — 배치 내에서도 같은 종류의 주의
+// 소실이 재현될 수 있다고 보고 3장으로 축소(호출 횟수는 늘지만 Gemini는 무과금이라 비용 문제 없음).
+const CAPTURE_PARSE_BATCH_SIZE = 3;
 
 /* ---------- 이미지 전처리 ---------- */
 function resizeImageFile(file, maxDim = 1600, quality = 0.8) {
@@ -212,6 +214,9 @@ async function callVisionAPIBatched(images, claudePromptText, geminiPromptText, 
   const merged = { account_label: null, page_count: images.length, holdings: [] };
   const totals = { reported_total: undefined, reported_total_monthly_amount: undefined };
   const failed = [];
+  // A20g: 배치별로 몇 장을 보내 몇 개 종목을 얻었는지 결과 화면에 그대로 노출하기 위한 진단
+  // 정보 — 이게 없으면 "결과가 적다"는 보고를 받아도 어느 배치가 문제인지 알 방법이 없었다.
+  const batchStats = [];
   let source = null;
   for (let b = 0; b < batches.length; b++) {
     if (onProgress) onProgress(b + 1, batches.length);
@@ -220,6 +225,8 @@ async function callVisionAPIBatched(images, claudePromptText, geminiPromptText, 
       const res = await callVisionAPI(batches[b], claudePromptText, geminiPromptText);
       source = res.source;
       const parsed = parseAIJsonResponse(res.primaryText);
+      const gotCount = (parsed.holdings || []).length;
+      batchStats.push({ imageCount: batches[b].length, holdingCount: gotCount });
       for (const h of parsed.holdings || []) {
         const rel = Number(h.page) >= 1 ? Math.min(Number(h.page), batches[b].length) : 1;
         merged.holdings.push({ ...h, page: offset + rel });
@@ -232,6 +239,7 @@ async function callVisionAPIBatched(images, claudePromptText, geminiPromptText, 
         else if (totals[key] !== v) totals[key] = null;
       }
     } catch (err) {
+      batchStats.push({ imageCount: batches[b].length, holdingCount: 0, failed: true });
       failed.push(`배치 ${b + 1}/${batches.length}(${offset + 1}~${offset + batches[b].length}장째) 실패: ${err.message}`);
     }
   }
@@ -246,6 +254,7 @@ async function callVisionAPIBatched(images, claudePromptText, geminiPromptText, 
     source,
     batchCount: batches.length,
     failedBatches: failed,
+    batchStats,
   };
 }
 
