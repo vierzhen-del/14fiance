@@ -1095,6 +1095,48 @@ function batchStatsHTML(apiResult) {
   return `<p class="stat-sub">🧩 배치 처리: 총 ${totalImages}장 → ${apiResult.batchCount}배치, 배치별 추출 종목수: [${perBatch}] (합계 ${totalHoldings}개)</p>${failedHTML}`;
 }
 
+/* A22: 계좌 일괄 지정 — 검토표 행마다 계좌 드롭다운을 반복 선택하는 불편(37행 실사례)을
+   없앤다. 일괄 select 변경 시 모든 행의 계좌 select에 같은 값을 넣고 change 이벤트를
+   재발송해 기존 행 리스너(반영 예상 미리보기·A3b 대조 카드 갱신)를 그대로 재사용한다.
+   마지막 선택은 localStorage에 기억해 다음 파싱에서 "↩ 지난번" 버튼 한 번으로 재적용
+   (자동 적용은 하지 않음 — 잘못된 계좌로 조용히 채워지는 더미데이터 오염 방지). */
+const CAPTURE_BULK_ACCOUNT_KEY = "capture_bulk_account_v1";
+function bulkAccountRowHTML(selId) {
+  const last = localStorage.getItem(CAPTURE_BULK_ACCOUNT_KEY);
+  // 목록 밖 계좌명이 기억돼 있어도 고를 수 있게 옵션으로 추가(선택은 "미지정" 유지)
+  const extraOpt = last && !ACCOUNT_TYPES.includes(last) ? `<option value="${last}">${last}</option>` : "";
+  return `<p class="stat-sub" style="margin:10px 0 0; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+    ⚡ 계좌 일괄 지정: <select id="${selId}">${accountOptionsHTML("")}${extraOpt}</select>
+    ${last ? `<button type="button" id="${selId}Last" class="btn-action" style="font-size:12px; padding:2px 8px;">↩ 지난번: ${last}</button>` : ""}
+    <span style="font-size:11.5px;">모든 행에 한 번에 적용됩니다(여러 계좌가 섞인 폴더 파싱이면 개별 선택을 유지하세요)</span></p>`;
+}
+function wireBulkAccountSelector(el, selId) {
+  const sel = document.getElementById(selId);
+  if (!sel) return;
+  const applyAll = (value) => {
+    el.querySelectorAll("tbody tr .capture-account-select").forEach((rowSel) => {
+      rowSel.value = value;
+      if (value && rowSel.value !== value) {
+        // 행 select 옵션에 없는 계좌명(목록 밖 보존 계좌)이면 옵션을 추가해서라도 적용
+        const opt = document.createElement("option");
+        opt.value = value; opt.textContent = value;
+        rowSel.appendChild(opt);
+        rowSel.value = value;
+      }
+      rowSel.dispatchEvent(new Event("change"));
+    });
+    if (value) localStorage.setItem(CAPTURE_BULK_ACCOUNT_KEY, value);
+  };
+  sel.addEventListener("change", () => applyAll(sel.value));
+  const lastBtn = document.getElementById(selId + "Last");
+  if (lastBtn) lastBtn.addEventListener("click", () => {
+    const last = localStorage.getItem(CAPTURE_BULK_ACCOUNT_KEY);
+    if (!last) return;
+    sel.value = last;
+    applyAll(last);
+  });
+}
+
 function issueBadgeHTML(issues) {
   if (!issues || !issues.length) return `<span style="color:var(--positive); font-size:12px;">✓ 이상 없음</span>`;
   return issues.map((msg) =>
@@ -1237,6 +1279,7 @@ function renderCaptureAccountResult(validated, apiResult) {
     ${totalRow}
     ${hasCrossCheck ? `<p class="stat-sub">🔍 Claude+Gemini 교차검증 적용됨 — 두 AI의 결과가 다른 종목은 "채우기" 체크가 기본 해제되어 있습니다. 스크린샷을 직접 확인한 뒤에만 체크하세요.</p>` : ""}
     ${thumbGalleryHTML(state.captureAccountThumbs)}
+    ${bulkAccountRowHTML("captureAccountBulkSel")}
     <div style="overflow-x:auto;"><table class="account-summary-table" style="margin-top:10px; width:100%;">
       <thead><tr><th>종목</th><th>원본</th><th>수량</th><th>평가액</th><th>검증</th>${hasCrossCheck ? "<th>교차검증</th>" : ""}<th>계좌</th><th>반영 예상</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
@@ -1260,6 +1303,7 @@ function renderCaptureAccountResult(validated, apiResult) {
       refreshCaptureComparison(el, validated);
     });
   });
+  wireBulkAccountSelector(el, "captureAccountBulkSel");
   document.getElementById("captureConfirmChanges").addEventListener("change", (e) => {
     document.getElementById("captureAccountFillBtn").disabled = !e.target.checked;
   });
@@ -1354,6 +1398,7 @@ function renderCaptureBuyPlanResult(validated, apiResult) {
     ${detectedBuyPlanAccounts.length > 1 ? `<p class="stat-sub">📁 폴더에서 ${detectedBuyPlanAccounts.length}개 계좌 자동 구분됨: ${detectedBuyPlanAccounts.join(", ")} — 각 행의 계좌가 자동으로 채워져 있으니 틀린 부분만 고쳐서 확인하세요.</p>` : ""}
     ${hasCrossCheck ? `<p class="stat-sub">🔍 Claude+Gemini 교차검증 적용됨 — 두 AI의 결과가 다른 종목은 "채우기" 체크가 기본 해제되어 있습니다. 스크린샷을 직접 확인한 뒤에만 체크하세요.</p>` : ""}
     ${thumbGalleryHTML(state.captureBuyPlanThumbs)}
+    ${bulkAccountRowHTML("captureBuyPlanBulkSel")}
     <div style="overflow-x:auto;"><table class="account-summary-table" style="margin-top:10px; width:100%;">
       <thead><tr><th>종목</th><th>1회수량</th><th>주기</th><th>다음매수일</th><th>검증</th>${hasCrossCheck ? "<th>교차검증</th>" : ""}<th>계좌</th><th>반영 예상</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
@@ -1371,6 +1416,7 @@ function renderCaptureBuyPlanResult(validated, apiResult) {
       tr.querySelector(".capture-preview-cell").innerHTML = buyPlanPreviewHTML(accSel.value, h);
     });
   });
+  wireBulkAccountSelector(el, "captureBuyPlanBulkSel");
   document.getElementById("captureBuyPlanFillBtn").addEventListener("click", () => {
     let added = 0, updated = 0;
     el.querySelectorAll("tbody tr").forEach((tr) => {
