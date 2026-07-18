@@ -348,8 +348,13 @@ function matchSymbolByName(name, symbolHint) {
   }
   const exact = state.listedEtfs.find((e) => norm(e.name) === targetName);
   if (exact) return exact;
+  // 느슨한 매칭은 "등록된 정식명이 AI가 읽은 이름을 포함"하는 방향만 허용한다(AI가 이름
+  // 앞뒤에 잡음을 붙여 읽은 경우 구제하려는 목적). 반대 방향(짧은 정식명이 AI가 읽은
+  // 이름의 일부인 경우)은 절대 매칭하지 않는다 — "KODEX 200"(069500.KS)이 전혀 다른
+  // 실제 상품인 "KODEX 200커버드콜액티브"(미수집)의 접두어라는 이유만으로 오매칭돼
+  // 서로 다른 펀드의 수량이 "채우기"로 잘못 기록될 뻔한 실사례가 있었다(2026-07-18).
   if (targetName) {
-    const loose = state.listedEtfs.find((e) => norm(e.name).includes(targetName) || targetName.includes(norm(e.name)));
+    const loose = state.listedEtfs.find((e) => norm(e.name).includes(targetName));
     if (loose) return loose;
   }
   return null;
