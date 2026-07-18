@@ -204,6 +204,17 @@ async function callVisionAPI(images, claudePromptText, geminiPromptText) {
    반환 형태는 callVisionAPI와 동일(primaryText=병합 JSON 문자열)이라 호출부 계약이 안 바뀐다.
    배치 모드에서는 Claude 교차검증(crossText)을 켜지 않는다(배치 간 대조 병합이 복잡해지는
    데 비해 효익이 없고, A20 현재는 Claude API 자체가 비활성화 상태). */
+// A23(2026-07-18 실측): 37장→13배치 실기기 파싱에서 1배치 성공 후 12배치가 전부
+// "Unable to resolve host"로 연쇄 실패 — 기기 네트워크 순단(모바일 DNS 순단·화면 꺼짐 등)
+// 한 번에 나머지 배치가 다 죽는 구조였다. 배치마다 아래 지연으로 최대 3회 재시도한다.
+const CAPTURE_BATCH_RETRY_DELAYS_MS = [2000, 5000];
+// 400/401/403은 키·요청 형식 등 영구 오류라 재시도해도 같은 결과(즉시 실패 처리).
+// 429(과다요청)·5xx·네트워크 오류·JSON 파싱 실패는 재시도 대상.
+function isPermanentApiError(err) {
+  return /API 오류 (400|401|403)\b/.test((err && err.message) || "");
+}
+const CAPTURE_NETWORK_ERR_RE = /resolve host|failed to fetch|network|ERR_NAME|ERR_INTERNET|ERR_CONNECTION/i;
+
 async function callVisionAPIBatched(images, claudePromptText, geminiPromptText, onProgress) {
   if (images.length <= CAPTURE_PARSE_BATCH_SIZE) {
     if (onProgress) onProgress(1, 1);
@@ -219,38 +230,54 @@ async function callVisionAPIBatched(images, claudePromptText, geminiPromptText, 
   const batchStats = [];
   let source = null;
   for (let b = 0; b < batches.length; b++) {
-    if (onProgress) onProgress(b + 1, batches.length);
     const offset = b * CAPTURE_PARSE_BATCH_SIZE;
-    try {
-      const res = await callVisionAPI(batches[b], claudePromptText, geminiPromptText);
-      source = res.source;
-      const parsed = parseAIJsonResponse(res.primaryText);
-      const gotCount = (parsed.holdings || []).length;
-      batchStats.push({ imageCount: batches[b].length, holdingCount: gotCount });
-      for (const h of parsed.holdings || []) {
-        const rel = Number(h.page) >= 1 ? Math.min(Number(h.page), batches[b].length) : 1;
-        merged.holdings.push({ ...h, page: offset + rel });
+    if (b > 0) await new Promise((r) => setTimeout(r, 300)); // 연속 호출 부담 완화
+    let parsed = null;
+    let lastErr = null;
+    for (let attempt = 0; attempt <= CAPTURE_BATCH_RETRY_DELAYS_MS.length; attempt++) {
+      if (onProgress) onProgress(b + 1, batches.length, attempt > 0 ? `재시도 ${attempt}/${CAPTURE_BATCH_RETRY_DELAYS_MS.length}` : "");
+      try {
+        if (attempt > 0) await new Promise((r) => setTimeout(r, CAPTURE_BATCH_RETRY_DELAYS_MS[attempt - 1]));
+        const res = await callVisionAPI(batches[b], claudePromptText, geminiPromptText);
+        source = res.source;
+        parsed = parseAIJsonResponse(res.primaryText);
+        lastErr = null;
+        break;
+      } catch (err) {
+        lastErr = err;
+        if (isPermanentApiError(err)) break;
       }
-      if (!merged.account_label && parsed.account_label) merged.account_label = parsed.account_label;
-      for (const key of Object.keys(totals)) {
-        const v = parsed[key];
-        if (v == null) continue;
-        if (totals[key] === undefined) totals[key] = v;
-        else if (totals[key] !== v) totals[key] = null;
-      }
-    } catch (err) {
+    }
+    if (lastErr) {
       batchStats.push({ imageCount: batches[b].length, holdingCount: 0, failed: true });
-      failed.push(`배치 ${b + 1}/${batches.length}(${offset + 1}~${offset + batches[b].length}장째) 실패: ${err.message}`);
+      failed.push(`배치 ${b + 1}/${batches.length}(${offset + 1}~${offset + batches[b].length}장째) 실패: ${lastErr.message}`);
+      continue;
+    }
+    batchStats.push({ imageCount: batches[b].length, holdingCount: (parsed.holdings || []).length });
+    for (const h of parsed.holdings || []) {
+      const rel = Number(h.page) >= 1 ? Math.min(Number(h.page), batches[b].length) : 1;
+      merged.holdings.push({ ...h, page: offset + rel });
+    }
+    if (!merged.account_label && parsed.account_label) merged.account_label = parsed.account_label;
+    for (const key of Object.keys(totals)) {
+      const v = parsed[key];
+      if (v == null) continue;
+      if (totals[key] === undefined) totals[key] = v;
+      else if (totals[key] !== v) totals[key] = null;
     }
   }
-  if (failed.length === batches.length) throw new Error(failed[0]);
+  // 실패 메시지가 네트워크 계열이면 원인·대처를 먼저 안내(재시도까지 전부 실패한 경우)
+  const netGuide = failed.some((f) => CAPTURE_NETWORK_ERR_RE.test(f))
+    ? "📶 파싱 중 기기 네트워크가 끊긴 것으로 보입니다 — 연결 확인 후 다시 시도하고, 파싱 중에는 화면을 끄거나 앱을 벗어나지 마세요. "
+    : "";
+  if (failed.length === batches.length) throw new Error(netGuide + failed[0]);
   merged.reported_total = totals.reported_total === undefined ? null : totals.reported_total;
   merged.reported_total_monthly_amount = totals.reported_total_monthly_amount === undefined ? null : totals.reported_total_monthly_amount;
   return {
     primaryText: JSON.stringify(merged),
     crossText: null,
     crossProvider: null,
-    crossError: failed.length ? `일부 이미지 누락 가능 — ${failed.join(" · ")}` : null,
+    crossError: failed.length ? `${netGuide}일부 이미지 누락 가능 — ${failed.join(" · ")}` : null,
     source,
     batchCount: batches.length,
     failedBatches: failed,

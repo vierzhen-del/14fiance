@@ -773,12 +773,15 @@ function initCapture() {
   document.getElementById("captureAccountParseBtn").addEventListener("click", async () => {
     const files = document.getElementById("captureAccountFiles").files;
     if (!files.length) { flashStatus("captureAccountStatus", "스크린샷을 먼저 선택하세요"); return; }
-    flashStatus("captureAccountStatus", "AI 파싱 중…", 30000);
+    // A23: 장수가 많으면 순차 호출이 수 분 걸림 — 화면 꺼짐/앱 이탈로 네트워크가 끊겨
+    // 배치가 연쇄 실패한 실사례가 있어 시작할 때 미리 안내한다.
+    flashStatus("captureAccountStatus", files.length > CAPTURE_PARSE_BATCH_SIZE
+      ? `AI 파싱 중… (${files.length}장 배치 처리 — 끝날 때까지 화면을 끄거나 앱을 벗어나지 마세요)` : "AI 파싱 중…", 30000);
     try {
       const images = await resizeFilesToImages(files);
-      // A20: 5장 초과 시 배치 분할 순차 호출(멀티이미지 주의 소실 방지) + 진행 상태 표시
+      // A20: 배치 분할 순차 호출(멀티이미지 주의 소실 방지) + 진행 상태 표시(A23 재시도 표기 포함)
       const apiResult = await callVisionAPIBatched(images, getEffectivePrompt("account"), getGeminiPrompt("account"),
-        (cur, total) => { if (total > 1) flashStatus("captureAccountStatus", `배치 ${cur}/${total} 파싱 중…`, 60000); });
+        (cur, total, note) => { if (total > 1) flashStatus("captureAccountStatus", `배치 ${cur}/${total} 파싱 중…${note ? ` (${note})` : ""}`, 60000); });
       runAccountParse(apiResult.primaryText, apiResult);
       flashStatus("captureAccountStatus",
         apiResult.crossError ? "AI 파싱 완료(경고: " + apiResult.crossError + ")"
@@ -790,11 +793,12 @@ function initCapture() {
   document.getElementById("captureBuyPlanParseBtn").addEventListener("click", async () => {
     const files = document.getElementById("captureBuyPlanFiles").files;
     if (!files.length) { flashStatus("captureBuyPlanStatus", "스크린샷을 먼저 선택하세요"); return; }
-    flashStatus("captureBuyPlanStatus", "AI 파싱 중…", 30000);
+    flashStatus("captureBuyPlanStatus", files.length > CAPTURE_PARSE_BATCH_SIZE
+      ? `AI 파싱 중… (${files.length}장 배치 처리 — 끝날 때까지 화면을 끄거나 앱을 벗어나지 마세요)` : "AI 파싱 중…", 30000);
     try {
       const images = await resizeFilesToImages(files);
       const apiResult = await callVisionAPIBatched(images, getEffectivePrompt("buyplan"), getGeminiPrompt("buyplan"),
-        (cur, total) => { if (total > 1) flashStatus("captureBuyPlanStatus", `배치 ${cur}/${total} 파싱 중…`, 60000); });
+        (cur, total, note) => { if (total > 1) flashStatus("captureBuyPlanStatus", `배치 ${cur}/${total} 파싱 중…${note ? ` (${note})` : ""}`, 60000); });
       runBuyPlanParse(apiResult.primaryText, apiResult);
       flashStatus("captureBuyPlanStatus",
         apiResult.crossError ? "AI 파싱 완료(경고: " + apiResult.crossError + ")"
@@ -1090,8 +1094,11 @@ function batchStatsHTML(apiResult) {
   const totalImages = apiResult.batchStats.reduce((s, x) => s + x.imageCount, 0);
   const totalHoldings = apiResult.batchStats.reduce((s, x) => s + (x.holdingCount || 0), 0);
   const perBatch = apiResult.batchStats.map((s) => s.failed ? "실패" : `${s.holdingCount}`).join(", ");
+  // A23: 네트워크 계열 실패면 원인·대처 안내를 토스트(사라짐)만이 아니라 여기(영구)에도 남긴다
+  const netGuide = (apiResult.failedBatches || []).some((f) => CAPTURE_NETWORK_ERR_RE.test(f))
+    ? "📶 파싱 중 기기 네트워크가 끊긴 것으로 보입니다 — 연결 확인 후 다시 시도하고, 파싱 중에는 화면을 끄거나 앱을 벗어나지 마세요. " : "";
   const failedHTML = apiResult.failedBatches && apiResult.failedBatches.length
-    ? `<p class="stat-sub" style="color:var(--critical);">⚠️ ${apiResult.failedBatches.join(" · ")}</p>` : "";
+    ? `<p class="stat-sub" style="color:var(--critical);">⚠️ ${netGuide}${apiResult.failedBatches.join(" · ")}</p>` : "";
   return `<p class="stat-sub">🧩 배치 처리: 총 ${totalImages}장 → ${apiResult.batchCount}배치, 배치별 추출 종목수: [${perBatch}] (합계 ${totalHoldings}개)</p>${failedHTML}`;
 }
 
