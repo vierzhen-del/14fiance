@@ -303,6 +303,12 @@
         <input type="password" id="captureClaudeKey" class="portfolio-weight" style="width:100%; max-width:420px; text-align:left;" placeholder="Claude API 키(sk-ant-...)" autocomplete="off">
       </div>
       <div class="controls" style="margin-bottom:8px;">
+        <select id="captureClaudeModel" aria-label="Claude 모델 선택">
+          <option value="claude-sonnet-5">Claude Sonnet 5 (기본, 정확도 우선)</option>
+          <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (빠름·저비용)</option>
+        </select>
+      </div>
+      <div class="controls" style="margin-bottom:8px;">
         <input type="password" id="captureGeminiKey" class="portfolio-weight" style="width:100%; max-width:420px; text-align:left;" placeholder="Gemini API 키" autocomplete="off">
       </div>
       <div class="action-row">
@@ -314,6 +320,7 @@
         <span id="captureKeysStatus" class="action-status"></span>
       </div>
       <p class="stat-sub">연결 테스트는 이미지 없이 최소 호출 1건으로 키·모델이 유효한지만 확인합니다(파싱 비용과 무관). Claude·Gemini 키를 둘 다 입력해두면, 실제 계좌·월매수 캡처 시 두 AI가 같은 스크린샷을 각각 읽어 결과를 자동으로 대조합니다(교차검증) — 종목별 수량이 서로 다르게 나오면 "채우기" 체크가 기본 해제되어 직접 확인 후에만 반영됩니다.</p>
+      <p class="stat-sub">Claude 모델: <b>Sonnet 5</b>가 정확도가 더 높습니다(2026-07-18 36장 실측 비교 — 계좌번호 자릿수 누락·회사명 추측·계좌 간 값 교차오염·달러 소수점 오류가 Haiku에서만 관찰됨). <b>Haiku 4.5</b>는 더 빠르고 저렴하지만 위 오류 가능성이 있어 결과를 특히 꼼꼼히 확인하세요.</p>
       <p class="stat-sub">"💾 키 저장"을 누르면 이 기기 저장(localStorage)과 별개로 설정 파일(<code>myassets-settings.json</code>)도 자동으로 다운로드됩니다 — 앱을 완전히 삭제 후 재설치하면 기기 저장 내용도 함께 지워지므로, 재설치 후엔 이 파일을 "📂 설정 불러오기"로 다시 불러와야 합니다. <b>이 파일에는 API 키 원문이 그대로 들어있으니 다른 사람과 공유하지 마세요.</b></p>
 
       <p class="section-lede" style="margin-top:16px;">"노션 SOP 요약 복사" 버튼으로 만든 요약을 어느 AI 세션에 붙여넣을 계획인지 선택하세요 — 앱이 그 AI를 대신 호출하지는 않고, 문구만 맞춰줍니다(예: "클로드 코드 세션에 붙여넣어…").</p>
@@ -572,6 +579,7 @@ initCapture();
 function initCapture() {
   document.getElementById("captureAiProvider").value = localStorage.getItem(CAPTURE_AI_PROVIDER_KEY) || "claude";
   document.getElementById("captureClaudeKey").value = localStorage.getItem(CAPTURE_CLAUDE_KEY) || "";
+  document.getElementById("captureClaudeModel").value = localStorage.getItem(CAPTURE_CLAUDE_MODEL_KEY) || CAPTURE_CLAUDE_MODEL_DEFAULT;
   document.getElementById("captureGeminiKey").value = localStorage.getItem(CAPTURE_GEMINI_KEY) || "";
 
   const sopAiTargetSel = document.getElementById("sopAiTarget");
@@ -583,12 +591,14 @@ function initCapture() {
   document.getElementById("captureSaveKeysBtn").addEventListener("click", () => {
     localStorage.setItem(CAPTURE_AI_PROVIDER_KEY, document.getElementById("captureAiProvider").value);
     localStorage.setItem(CAPTURE_CLAUDE_KEY, document.getElementById("captureClaudeKey").value.trim());
+    localStorage.setItem(CAPTURE_CLAUDE_MODEL_KEY, document.getElementById("captureClaudeModel").value);
     localStorage.setItem(CAPTURE_GEMINI_KEY, document.getElementById("captureGeminiKey").value.trim());
     // 기기 저장(localStorage)은 앱을 완전 삭제하면 함께 사라진다 — 재설치 후에도 복원할 수 있도록
     // 같은 시점에 설정 파일도 내려받는다("📂 설정 불러오기"로 되돌릴 수 있음).
     const settings = {
       captureAiProvider: document.getElementById("captureAiProvider").value,
       captureClaudeKey: document.getElementById("captureClaudeKey").value.trim(),
+      captureClaudeModel: document.getElementById("captureClaudeModel").value,
       captureGeminiKey: document.getElementById("captureGeminiKey").value.trim(),
       sopAiTarget: document.getElementById("sopAiTarget").value,
     };
@@ -605,6 +615,7 @@ function initCapture() {
         const settings = JSON.parse(reader.result);
         if (settings.captureAiProvider) { localStorage.setItem(CAPTURE_AI_PROVIDER_KEY, settings.captureAiProvider); document.getElementById("captureAiProvider").value = settings.captureAiProvider; }
         if (settings.captureClaudeKey) { localStorage.setItem(CAPTURE_CLAUDE_KEY, settings.captureClaudeKey); document.getElementById("captureClaudeKey").value = settings.captureClaudeKey; }
+        if (settings.captureClaudeModel) { localStorage.setItem(CAPTURE_CLAUDE_MODEL_KEY, settings.captureClaudeModel); document.getElementById("captureClaudeModel").value = settings.captureClaudeModel; }
         if (settings.captureGeminiKey) { localStorage.setItem(CAPTURE_GEMINI_KEY, settings.captureGeminiKey); document.getElementById("captureGeminiKey").value = settings.captureGeminiKey; }
         if (settings.sopAiTarget) { localStorage.setItem(CAPTURE_SOP_TARGET_KEY, settings.sopAiTarget); document.getElementById("sopAiTarget").value = settings.sopAiTarget; }
         flashStatus("captureKeysStatus", "설정 불러오기 완료 ✓");
@@ -639,10 +650,17 @@ function initCapture() {
     flashStatus("captureKeysStatus", results.join(" · "), 8000);
   });
 
-  document.getElementById("captureAccountCopyPromptBtn").addEventListener("click", () =>
-    copyToClipboard(ACCOUNT_CAPTURE_PROMPT, "captureAccountStatus", "프롬프트 복사됨 — AI 채팅에 스크린샷과 함께 붙여넣으세요"));
-  document.getElementById("captureBuyPlanCopyPromptBtn").addEventListener("click", () =>
-    copyToClipboard(BUY_PLAN_CAPTURE_PROMPT, "captureBuyPlanStatus", "프롬프트 복사됨 — AI 채팅에 스크린샷과 함께 붙여넣으세요"));
+  // 붙여넣기 모드용 복사는 설정탭에서 고른 provider에 맞는 문구를 준다(Gemini 선택 시 JSON-only 강조 변형)
+  document.getElementById("captureAccountCopyPromptBtn").addEventListener("click", () => {
+    const provider = localStorage.getItem(CAPTURE_AI_PROVIDER_KEY) || "claude";
+    const text = provider === "gemini" ? ACCOUNT_CAPTURE_PROMPT_GEMINI : ACCOUNT_CAPTURE_PROMPT;
+    copyToClipboard(text, "captureAccountStatus", "프롬프트 복사됨 — AI 채팅에 스크린샷과 함께 붙여넣으세요");
+  });
+  document.getElementById("captureBuyPlanCopyPromptBtn").addEventListener("click", () => {
+    const provider = localStorage.getItem(CAPTURE_AI_PROVIDER_KEY) || "claude";
+    const text = provider === "gemini" ? BUY_PLAN_CAPTURE_PROMPT_GEMINI : BUY_PLAN_CAPTURE_PROMPT;
+    copyToClipboard(text, "captureBuyPlanStatus", "프롬프트 복사됨 — AI 채팅에 스크린샷과 함께 붙여넣으세요");
+  });
 
   document.getElementById("captureAccountParsePasteBtn").addEventListener("click", () => {
     const text = document.getElementById("captureAccountPaste").value.trim();
@@ -663,7 +681,7 @@ function initCapture() {
     flashStatus("captureAccountStatus", "AI 파싱 중…", 30000);
     try {
       const images = await resizeFilesToImages(files);
-      const apiResult = await callVisionAPI(images, ACCOUNT_CAPTURE_PROMPT);
+      const apiResult = await callVisionAPI(images, { claude: ACCOUNT_CAPTURE_PROMPT, gemini: ACCOUNT_CAPTURE_PROMPT_GEMINI });
       runAccountParse(apiResult.primaryText, apiResult);
       flashStatus("captureAccountStatus", apiResult.crossText ? "AI 파싱 완료 ✓ (Claude+Gemini 교차검증 적용)" : "AI 파싱 완료 ✓");
     } catch (err) {
@@ -676,7 +694,7 @@ function initCapture() {
     flashStatus("captureBuyPlanStatus", "AI 파싱 중…", 30000);
     try {
       const images = await resizeFilesToImages(files);
-      const apiResult = await callVisionAPI(images, BUY_PLAN_CAPTURE_PROMPT);
+      const apiResult = await callVisionAPI(images, { claude: BUY_PLAN_CAPTURE_PROMPT, gemini: BUY_PLAN_CAPTURE_PROMPT_GEMINI });
       runBuyPlanParse(apiResult.primaryText, apiResult);
       flashStatus("captureBuyPlanStatus", apiResult.crossText ? "AI 파싱 완료 ✓ (Claude+Gemini 교차검증 적용)" : "AI 파싱 완료 ✓");
     } catch (err) {
