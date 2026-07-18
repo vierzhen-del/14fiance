@@ -10,6 +10,15 @@ const CAPTURE_GEMINI_MODEL_DEFAULT = "gemini-2.5-flash";
 // Claude API를 자동 파싱에 "추가로" 부를지(교차검증) 여부 — 기본 꺼짐. 크레딧을 쓰는
 // 유일한 자동 경로이므로 사용자가 명시적으로 켜야만 호출된다(3순위 원칙).
 const CAPTURE_USE_CLAUDE_CROSSCHECK_KEY = "capture_use_claude_api_v1";
+// A20(2026-07-18 사용자 확정): 앱 파싱은 제미나이 전용, 무과금 최선. Claude API 크레딧이
+// 없는 상태에서 구버전 localStorage에 provider="claude"가 잔존해 400 오류로 파싱 전체가
+// 실패한 실사례가 원인 — 이 플래그가 켜져 있으면 저장값과 무관하게 Claude API 호출 경로
+// (자동 파싱 primary·교차검증·연결 테스트·인앱 AI 리뷰)를 전부 차단한다. 크레딧 충전 후
+// 다시 쓰려면 false로 바꾸면 나머지 코드는 그대로 원복된다.
+const CAPTURE_CLAUDE_API_DISABLED = true;
+// A20: 대량 이미지를 한 번에 보내면 뒷부분 이미지만 처리되는 멀티이미지 한계가 실측됨
+// (37행 계좌 전체 첨부 → 마지막 화면들의 7행만 반환) — 이 장수 단위로 나눠 순차 호출한다.
+const CAPTURE_PARSE_BATCH_SIZE = 5;
 
 /* ---------- 이미지 전처리 ---------- */
 function resizeImageFile(file, maxDim = 1600, quality = 0.8) {
@@ -147,8 +156,10 @@ function friendlyPingErrorText(providerLabel, err) {
    claudePromptText/geminiPromptText는 별도 편집·저장 가능한 지침(capture-parse.js
    getEffectivePrompt/getGeminiPrompt)을 각 provider에 맞게 전달받는다. */
 async function callVisionAPI(images, claudePromptText, geminiPromptText) {
-  const provider = localStorage.getItem(CAPTURE_AI_PROVIDER_KEY) || "gemini";
-  const useClaudeCrossCheck = localStorage.getItem(CAPTURE_USE_CLAUDE_CROSSCHECK_KEY) === "1";
+  // A20: 비활성화 플래그가 켜져 있으면 저장된 provider가 "claude"여도 무시하고 Gemini로
+  // 강제 — 구버전 localStorage 잔존값 때문에 Claude API가 호출되는 사고를 원천 차단.
+  const provider = CAPTURE_CLAUDE_API_DISABLED ? "gemini" : (localStorage.getItem(CAPTURE_AI_PROVIDER_KEY) || "gemini");
+  const useClaudeCrossCheck = !CAPTURE_CLAUDE_API_DISABLED && localStorage.getItem(CAPTURE_USE_CLAUDE_CROSSCHECK_KEY) === "1";
   const claudeKey = localStorage.getItem(CAPTURE_CLAUDE_KEY);
   const geminiKey = localStorage.getItem(CAPTURE_GEMINI_KEY);
   const claudeModel = localStorage.getItem(CAPTURE_CLAUDE_MODEL_KEY) || CAPTURE_CLAUDE_MODEL_DEFAULT;
@@ -178,6 +189,63 @@ async function callVisionAPI(images, claudePromptText, geminiPromptText) {
     crossProvider: "claude-api",
     crossError: otherResult.status === "rejected" ? otherResult.reason.message : null,
     source,
+  };
+}
+
+/* A20: 배치 분할 파싱 — 이미지가 CAPTURE_PARSE_BATCH_SIZE보다 많으면 나눠서 순차 호출하고
+   결과를 병합한다. 실측(37행 계좌 전체를 한 번에 첨부 → 마지막 화면들의 7행만 반환)에서
+   확인된 멀티이미지 주의 소실을 구조적으로 회피하는 게 목적. 병합 규칙:
+   - holdings: 배치별 결과를 이어 붙이되 page를 전체 이미지 기준 순번으로 재매핑
+   - account_label: 첫 번째 non-null 값
+   - reported_total(·_monthly_amount): 모든 배치가 같은 값이면 채택, 불일치면 null(확정 불가)
+   - 일부 배치 실패: 나머지는 계속 진행하고 실패 내역을 crossError로 표시(전부 실패 시에만 throw)
+   반환 형태는 callVisionAPI와 동일(primaryText=병합 JSON 문자열)이라 호출부 계약이 안 바뀐다.
+   배치 모드에서는 Claude 교차검증(crossText)을 켜지 않는다(배치 간 대조 병합이 복잡해지는
+   데 비해 효익이 없고, A20 현재는 Claude API 자체가 비활성화 상태). */
+async function callVisionAPIBatched(images, claudePromptText, geminiPromptText, onProgress) {
+  if (images.length <= CAPTURE_PARSE_BATCH_SIZE) {
+    if (onProgress) onProgress(1, 1);
+    return await callVisionAPI(images, claudePromptText, geminiPromptText);
+  }
+  const batches = [];
+  for (let i = 0; i < images.length; i += CAPTURE_PARSE_BATCH_SIZE) batches.push(images.slice(i, i + CAPTURE_PARSE_BATCH_SIZE));
+  const merged = { account_label: null, page_count: images.length, holdings: [] };
+  const totals = { reported_total: undefined, reported_total_monthly_amount: undefined };
+  const failed = [];
+  let source = null;
+  for (let b = 0; b < batches.length; b++) {
+    if (onProgress) onProgress(b + 1, batches.length);
+    const offset = b * CAPTURE_PARSE_BATCH_SIZE;
+    try {
+      const res = await callVisionAPI(batches[b], claudePromptText, geminiPromptText);
+      source = res.source;
+      const parsed = parseAIJsonResponse(res.primaryText);
+      for (const h of parsed.holdings || []) {
+        const rel = Number(h.page) >= 1 ? Math.min(Number(h.page), batches[b].length) : 1;
+        merged.holdings.push({ ...h, page: offset + rel });
+      }
+      if (!merged.account_label && parsed.account_label) merged.account_label = parsed.account_label;
+      for (const key of Object.keys(totals)) {
+        const v = parsed[key];
+        if (v == null) continue;
+        if (totals[key] === undefined) totals[key] = v;
+        else if (totals[key] !== v) totals[key] = null;
+      }
+    } catch (err) {
+      failed.push(`배치 ${b + 1}/${batches.length}(${offset + 1}~${offset + batches[b].length}장째) 실패: ${err.message}`);
+    }
+  }
+  if (failed.length === batches.length) throw new Error(failed[0]);
+  merged.reported_total = totals.reported_total === undefined ? null : totals.reported_total;
+  merged.reported_total_monthly_amount = totals.reported_total_monthly_amount === undefined ? null : totals.reported_total_monthly_amount;
+  return {
+    primaryText: JSON.stringify(merged),
+    crossText: null,
+    crossProvider: null,
+    crossError: failed.length ? `일부 이미지 누락 가능 — ${failed.join(" · ")}` : null,
+    source,
+    batchCount: batches.length,
+    failedBatches: failed,
   };
 }
 

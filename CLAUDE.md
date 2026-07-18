@@ -1,5 +1,13 @@
 # 작업 방식 메모 (이 저장소 전용)
 
+## 세션 시작 시 브랜치 동기화 (2026-07-18)
+
+코드 작업을 시작하기 전에 반드시 배포 브랜치(`claude/us-etf-mdd-calculator-gdwui7`)를 fetch해 개발 브랜치(`claude/saved-items-7bnk7u`)에 병합부터 할 것 — 다른 세션이 배포 브랜치에서 직접 작업한 커밋(캡처 파싱 재설계, realtime-trading 등 실사례 있음)을 개발 브랜치가 놓친 채 같은 파일을 고치면 병합 충돌·기능 되돌림이 발생한다.
+
+## AI 캡처 파싱 — Claude API 비활성화 상태 (2026-07-18)
+
+앱의 자동 캡처 파싱은 **Gemini API 전용**이다(사용자 확정: 무과금 최선). `capture/capture-parse.js`의 `CAPTURE_CLAUDE_API_DISABLED = true` 플래그가 Claude API 호출 경로 4곳(자동 파싱 primary·교차검증·연결 테스트·인앱 AI 리뷰)을 전부 차단하고, 구버전 localStorage의 provider="claude" 잔존값도 init에서 gemini로 마이그레이션한다. Anthropic 크레딧을 충전해 다시 쓰려면 이 플래그만 false로 바꾸면 된다. 방식1(프롬프트 복사→claude.ai 대화창 붙여넣기)은 API가 아니므로 항상 사용 가능. 대량 이미지는 `callVisionAPIBatched`가 5장씩 나눠 순차 호출한다(한 번에 다 보내면 뒷부분 이미지만 읽히는 문제 실측됨).
+
 ## 주식 프로젝트 통합 — realtime-trading/ (2026-07-12)
 
 `realtime-trading/`은 원래 별도 레포(vierzhen-del/realtime-trading)였던 실시간 트레이딩 대시보드를 subtree 병합(이력 보존)으로 흡수한 서브디렉토리다. Node Express+WebSocket 서버 프로젝트로 **GitHub Pages 정적 사이트와 무관하게 로컬 PC에서 실행**하는 것이 기본이며(`cd realtime-trading && npm start`), 대시보드 클라이언트(`realtime-trading/public/`)는 3가지 모드를 자동 감지한다:

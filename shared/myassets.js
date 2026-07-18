@@ -2488,9 +2488,11 @@ function setupSignalTab(perRow, liveKr) {
       const apiReviewBtn = document.getElementById("mySignalApiReviewBtn");
       const apiReviewResult = document.getElementById("mySignalApiReviewResult");
       if (apiReviewBtn && apiReviewResult) {
-        const claudeKey = localStorage.getItem("capture_claude_key");
+        // A20: Claude API 비활성화 플래그(capture-parse.js) — 미로드 환경(사이트)에서는 안전하게 비활성 취급
+        const claudeApiDisabled = typeof CAPTURE_CLAUDE_API_DISABLED !== "undefined" ? CAPTURE_CLAUDE_API_DISABLED : true;
+        const claudeKey = claudeApiDisabled ? null : localStorage.getItem("capture_claude_key");
         const geminiKey = localStorage.getItem("capture_gemini_key");
-        if (typeof callClaudeVision === "function" && (claudeKey || geminiKey)) {
+        if (typeof callGeminiVision === "function" && (claudeKey || geminiKey)) {
           apiReviewBtn.style.display = "";
           apiReviewBtn.addEventListener("click", async () => {
             apiReviewBtn.disabled = true;
@@ -2500,8 +2502,7 @@ function setupSignalTab(perRow, liveKr) {
             try {
               const prompt = buildSignalReviewText(sym, name, cur, full.currency, core) +
                 "\n\n한국어로 위 3개 항목(강세 시나리오/약세 시나리오/핵심 미지수)을 각각 2~3문장으로 답해줘.";
-              const provider = localStorage.getItem("capture_ai_provider") === "gemini" && geminiKey ? "gemini"
-                : claudeKey ? "claude" : "gemini";
+              const provider = geminiKey ? "gemini" : claudeKey ? "claude" : "gemini";
               const text = provider === "claude"
                 ? await callClaudeVision([], prompt, claudeKey)
                 : await callGeminiVision([], prompt, geminiKey);

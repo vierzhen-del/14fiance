@@ -306,26 +306,28 @@
     </div>
     <div class="section-body">
       <p class="section-lede">계좌·월매수 스크린샷을 자동으로 읽어줄 AI를 선택하고 API 키를 입력하세요. <b>키는 이 기기(브라우저)에만 저장되며, 서버를 거치지 않고 선택한 AI사에 직접 전송됩니다.</b> 타인과 공유하지 마세요.</p>
-      <p class="stat-sub"><b>가장 비용이 안 드는 방법(방식1)</b>: 아래 "📋 프롬프트 복사"로 얻은 지침을 API 키 없이 외부 Claude 대화창(claude.ai 구독)에 스크린샷과 함께 붙여넣고, 응답 JSON을 붙여넣기 모드에 넣으세요 — API 크레딧을 전혀 쓰지 않습니다. 자동 파싱(아래)은 <b>방식2: Gemini API가 기본</b>이며, Claude API(방식3)는 크레딧이 소모되므로 명시적으로 선택하거나 교차검증 체크박스를 켰을 때만 호출됩니다.</p>
+      <p class="stat-sub"><b>가장 비용이 안 드는 방법(방식1)</b>: 아래 "📋 프롬프트 복사"로 얻은 지침을 API 키 없이 외부 Claude 대화창(claude.ai 구독)에 스크린샷과 함께 붙여넣고, 응답 JSON을 붙여넣기 모드에 넣으세요 — API 크레딧을 전혀 쓰지 않습니다. 자동 파싱(아래)은 <b>Gemini API 전용(방식2)</b>입니다.</p>
+      <p class="stat-sub" style="color:var(--critical);">⛔ <b>Claude API는 현재 비활성화 상태입니다</b>(크레딧 미충전 — 2026-07-18 사용자 결정, 무과금 최선 원칙). 아래에서 Claude 관련 항목을 선택하거나 키를 넣어도 자동 파싱·교차검증·연결 테스트 어디서도 Claude API가 호출되지 않습니다. 방식1(대화창 붙여넣기)은 API가 아니므로 계속 쓸 수 있습니다.</p>
+      <label style="font-size:12.5px; color:var(--text-muted); display:block; margin-bottom:2px;">🤖 자동 파싱 AI (API 직접 호출)</label>
       <div class="controls" style="margin-bottom:8px;">
         <select id="captureAiProvider" aria-label="AI 제공자 선택">
           <option value="gemini">Gemini API (방식2·기본 — 크레딧 소모 없음)</option>
-          <option value="claude">Claude API (방식3·마지막 수단 — 크레딧 소모)</option>
+          <option value="claude" disabled>Claude API (⛔ 비활성화 — 크레딧 없음)</option>
         </select>
       </div>
       <div class="controls" style="margin-bottom:8px;">
         <label style="font-size:12.5px; color:var(--text-secondary); display:flex; align-items:center; gap:6px;">
-          <input type="checkbox" id="captureUseClaudeCrossCheck">
-          Claude API도 교차검증에 추가로 사용 (방식3 — 크레딧 소모, 기본 꺼짐)
+          <input type="checkbox" id="captureUseClaudeCrossCheck" disabled>
+          Claude API도 교차검증에 추가로 사용 (⛔ 비활성화 — 크레딧 없음)
         </label>
       </div>
       <div class="controls" style="margin-bottom:8px;">
-        <input type="password" id="captureClaudeKey" class="portfolio-weight" style="width:100%; max-width:420px; text-align:left;" placeholder="Claude API 키(sk-ant-...)" autocomplete="off">
+        <input type="password" id="captureClaudeKey" class="portfolio-weight" style="width:100%; max-width:420px; text-align:left;" placeholder="Claude API 키(sk-ant-...) — 현재 비활성화, 넣어도 호출 안 됨" autocomplete="off">
       </div>
       <div class="controls" style="margin-bottom:8px;">
-        <select id="captureClaudeModel" aria-label="Claude 모델 선택">
-          <option value="claude-sonnet-5">Claude Sonnet 5 (기본, 정확도 우선)</option>
-          <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (빠름·저비용)</option>
+        <select id="captureClaudeModel" aria-label="Claude 모델 선택" disabled>
+          <option value="claude-sonnet-5">Claude Sonnet 5 (⛔ 비활성화)</option>
+          <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (⛔ 비활성화)</option>
         </select>
       </div>
       <div class="controls" style="margin-bottom:8px;">
@@ -339,8 +341,8 @@
         <input type="file" id="captureSettingsImportFile" accept="application/json" style="display:none;">
         <span id="captureKeysStatus" class="action-status"></span>
       </div>
-      <p class="stat-sub">연결 테스트는 이미지 없이 최소 호출 1건으로 키·모델이 유효한지만 확인합니다(파싱 비용과 무관). 기본 자동 파싱(🤖 자동 파싱 시도)은 Gemini API만 호출합니다 — Claude API는 위에서 provider로 직접 선택했거나 교차검증 체크박스를 켠 경우에만 추가로 호출되어 크레딧이 소모됩니다. 어느 경로로 얻은 결과든(붙여넣기 모드·자동 파싱 모두), 같은 종류의 직전 파싱 결과와 자동으로 대조되어 종목별 수량이 다르면 "채우기" 체크가 기본 해제됩니다.</p>
-      <p class="stat-sub">Claude 모델: <b>Sonnet 5</b>가 정확도가 더 높습니다(2026-07-18 36장 실측 비교 — 계좌번호 자릿수 누락·화면에 없는 증권사명 추측·계좌 간 값 교차오염·달러 소수점 오류가 Haiku에서만 관찰됨). <b>Haiku 4.5</b>는 더 빠르고 저렴하지만(Claude API를 실제로 호출하는 경우, 즉 provider=Claude 또는 교차검증 옵트인 시에만 해당) 위 오류 가능성이 있어 결과를 특히 꼼꼼히 확인하세요.</p>
+      <p class="stat-sub">연결 테스트는 이미지 없이 최소 호출 1건으로 키가 유효한지만 확인합니다(파싱 비용과 무관, 현재 Gemini만). 자동 파싱은 <b>이미지가 5장을 넘으면 5장씩 나눠 순차 호출</b>합니다 — 한 번에 많이 보내면 뒷부분 이미지만 읽히는 문제가 실측돼 배치 처리로 바꿨습니다(진행 상황이 "배치 2/3 파싱 중…"으로 표시됨). 어느 경로로 얻은 결과든(붙여넣기 모드·자동 파싱 모두), 같은 종류의 직전 파싱 결과와 자동으로 대조되어 종목별 수량이 다르면 "채우기" 체크가 기본 해제됩니다.</p>
+      <p class="stat-sub">참고(Claude 재활성화 시): 2026-07-18 36장 실측 비교에서 <b>Sonnet 5</b>가 Haiku 4.5보다 정확했습니다(계좌번호 자릿수 누락·증권사명 추측·계좌 간 값 교차오염·달러 소수점 오류가 Haiku에서만 관찰됨).</p>
       <p class="stat-sub">"💾 키 저장"을 누르면 이 기기 저장(localStorage)과 별개로 설정 파일(<code>myassets-settings.json</code>)도 자동으로 다운로드됩니다 — 앱을 완전히 삭제 후 재설치하면 기기 저장 내용도 함께 지워지므로, 재설치 후엔 이 파일을 "📂 설정 불러오기"로 다시 불러와야 합니다. <b>이 파일에는 API 키 원문이 그대로 들어있으니 다른 사람과 공유하지 마세요.</b></p>
 
       <details style="margin-top:12px;">
@@ -379,7 +381,7 @@
         </div>
       </details>
 
-      <p class="section-lede" style="margin-top:16px;">"노션 SOP 요약 복사" 버튼으로 만든 요약을 어느 AI 세션에 붙여넣을 계획인지 선택하세요 — 앱이 그 AI를 대신 호출하지는 않고, 문구만 맞춰줍니다(예: "클로드 코드 세션에 붙여넣어…").</p>
+      <p class="section-lede" style="margin-top:16px;">📋 <b>SOP 요약 붙여넣기 대상 (API 호출 아님)</b> — "노션 SOP 요약 복사" 버튼으로 만든 요약을 어느 AI 세션에 붙여넣을 계획인지 선택하세요. ⚠️ 이 선택은 <b>위 자동 파싱 AI와 무관</b>합니다: 앱이 그 AI를 대신 호출하지 않고 요약 문구만 맞춰줍니다(예: "클로드 코드 세션에 붙여넣어…").</p>
       <div class="controls">
         <select id="sopAiTarget" aria-label="노션 SOP 요약 대상 AI">
           <option value="claude">클로드 코드 세션</option>
@@ -401,11 +403,13 @@
         <div class="action-row">
           <input type="file" id="captureAccountFiles" accept="image/*" multiple>
           <button type="button" id="captureAccountFolderBtn" class="btn-action">📁 폴더에서 선택</button>
+          <button type="button" id="captureAccountDriveBtn" class="btn-action">☁️ 구글드라이브에서 선택</button>
           <input type="file" id="captureAccountFolderInput" accept="image/*" multiple webkitdirectory style="display:none;">
           <button type="button" id="captureAccountParseBtn" class="btn-action">🤖 자동 파싱 시도</button>
           <span id="captureAccountStatus" class="action-status"></span>
         </div>
         <p class="stat-sub">📁 폴더에서 선택하면 여러 계좌 스크린샷이 섞여 있어도 AI가 계좌명을 읽어 각 행에 자동으로 배정합니다(장수 제한 없음). 기기·브라우저에 따라 폴더 선택창이 안 뜰 수 있는데, 그럴 땐 왼쪽 "파일 선택"에서 폴더로 들어가 여러 장을 한 번에 선택해도 동일하게 동작합니다.</p>
+        <p class="stat-sub">☁️ 구글드라이브: 안드로이드에서는 파일 선택창이 뜬 뒤 <b>사이드 메뉴(☰)에서 "Drive"</b>를 고르면 구글드라이브의 사진을 그대로 여러 장 선택할 수 있습니다(별도 로그인·연동 불필요 — 기기에 Drive 앱이 설치돼 있으면 시스템 선택기가 자동으로 보여줍니다). 이미지가 5장을 넘으면 자동으로 5장씩 나눠 순차 파싱합니다.</p>
         <p class="stat-sub">자동 파싱이 안 되면(API 키 미입력·CORS 등) 붙여넣기 모드를 쓰세요: 프롬프트를 복사해 Claude/Gemini 채팅에 스크린샷과 함께 붙여넣고, 받은 JSON 응답을 아래 칸에 붙여넣으세요.</p>
         <div class="action-row">
           <button type="button" id="captureAccountCopyPromptBtn" class="btn-action">📋 프롬프트 복사</button>
@@ -429,6 +433,7 @@
         <div class="action-row">
           <input type="file" id="captureBuyPlanFiles" accept="image/*" multiple>
           <button type="button" id="captureBuyPlanFolderBtn" class="btn-action">📁 폴더에서 선택</button>
+          <button type="button" id="captureBuyPlanDriveBtn" class="btn-action">☁️ 구글드라이브에서 선택</button>
           <input type="file" id="captureBuyPlanFolderInput" accept="image/*" multiple webkitdirectory style="display:none;">
           <button type="button" id="captureBuyPlanParseBtn" class="btn-action">🤖 자동 파싱 시도</button>
           <span id="captureBuyPlanStatus" class="action-status"></span>
@@ -647,13 +652,20 @@ function wirePromptEditor(textareaId, saveBtnId, resetBtnId, storageKey, default
 }
 
 function initCapture() {
+  // A20: Claude 비활성화 상태에서는 구버전에 저장된 provider="claude"를 gemini로 마이그레이션
+  // (새 기본값은 저장값이 없을 때만 적용되므로, 기존 기기에서 Claude 400 오류가 재발하지 않도록
+  // 저장값 자체를 고쳐 둔다 — 실제 발생했던 사고의 재발 방지).
+  if (CAPTURE_CLAUDE_API_DISABLED && localStorage.getItem(CAPTURE_AI_PROVIDER_KEY) === "claude") {
+    localStorage.setItem(CAPTURE_AI_PROVIDER_KEY, "gemini");
+  }
   document.getElementById("captureAiProvider").value = localStorage.getItem(CAPTURE_AI_PROVIDER_KEY) || "gemini";
   document.getElementById("captureClaudeKey").value = localStorage.getItem(CAPTURE_CLAUDE_KEY) || "";
   document.getElementById("captureClaudeModel").value = localStorage.getItem(CAPTURE_CLAUDE_MODEL_KEY) || CAPTURE_CLAUDE_MODEL_DEFAULT;
   document.getElementById("captureGeminiKey").value = localStorage.getItem(CAPTURE_GEMINI_KEY) || "";
 
   const useClaudeCrossCheckEl = document.getElementById("captureUseClaudeCrossCheck");
-  useClaudeCrossCheckEl.checked = localStorage.getItem(CAPTURE_USE_CLAUDE_CROSSCHECK_KEY) === "1";
+  if (CAPTURE_CLAUDE_API_DISABLED) localStorage.setItem(CAPTURE_USE_CLAUDE_CROSSCHECK_KEY, "0");
+  useClaudeCrossCheckEl.checked = !CAPTURE_CLAUDE_API_DISABLED && localStorage.getItem(CAPTURE_USE_CLAUDE_CROSSCHECK_KEY) === "1";
   useClaudeCrossCheckEl.addEventListener("change", () => {
     localStorage.setItem(CAPTURE_USE_CLAUDE_CROSSCHECK_KEY, useClaudeCrossCheckEl.checked ? "1" : "0");
   });
@@ -726,8 +738,12 @@ function initCapture() {
     flashStatus("captureKeysStatus", "연결 테스트 중…", 15000);
     const results = [];
     if (claudeKey) {
-      try { await pingClaudeAPI(claudeKey); results.push("✅ Claude 연결 정상"); }
-      catch (err) { results.push(friendlyPingErrorText("Claude", err)); }
+      if (CAPTURE_CLAUDE_API_DISABLED) {
+        results.push("⛔ Claude API 비활성화됨(호출 안 함)");
+      } else {
+        try { await pingClaudeAPI(claudeKey); results.push("✅ Claude 연결 정상"); }
+        catch (err) { results.push(friendlyPingErrorText("Claude", err)); }
+      }
     }
     if (geminiKey) {
       try { await pingGeminiAPI(geminiKey); results.push("✅ Gemini 연결 정상"); }
@@ -760,9 +776,13 @@ function initCapture() {
     flashStatus("captureAccountStatus", "AI 파싱 중…", 30000);
     try {
       const images = await resizeFilesToImages(files);
-      const apiResult = await callVisionAPI(images, getEffectivePrompt("account"), getGeminiPrompt("account"));
+      // A20: 5장 초과 시 배치 분할 순차 호출(멀티이미지 주의 소실 방지) + 진행 상태 표시
+      const apiResult = await callVisionAPIBatched(images, getEffectivePrompt("account"), getGeminiPrompt("account"),
+        (cur, total) => { if (total > 1) flashStatus("captureAccountStatus", `배치 ${cur}/${total} 파싱 중…`, 60000); });
       runAccountParse(apiResult.primaryText, apiResult);
-      flashStatus("captureAccountStatus", apiResult.crossText ? "AI 파싱 완료 ✓ (Claude API 교차검증 적용)" : "AI 파싱 완료 ✓");
+      flashStatus("captureAccountStatus",
+        apiResult.crossError ? "AI 파싱 완료(경고: " + apiResult.crossError + ")"
+        : apiResult.crossText ? "AI 파싱 완료 ✓ (Claude API 교차검증 적용)" : "AI 파싱 완료 ✓", apiResult.crossError ? 10000 : 4000);
     } catch (err) {
       flashStatus("captureAccountStatus", "자동 파싱 실패(" + err.message + ") — 아래 붙여넣기 모드를 이용하세요", 6000);
     }
@@ -773,9 +793,12 @@ function initCapture() {
     flashStatus("captureBuyPlanStatus", "AI 파싱 중…", 30000);
     try {
       const images = await resizeFilesToImages(files);
-      const apiResult = await callVisionAPI(images, getEffectivePrompt("buyplan"), getGeminiPrompt("buyplan"));
+      const apiResult = await callVisionAPIBatched(images, getEffectivePrompt("buyplan"), getGeminiPrompt("buyplan"),
+        (cur, total) => { if (total > 1) flashStatus("captureBuyPlanStatus", `배치 ${cur}/${total} 파싱 중…`, 60000); });
       runBuyPlanParse(apiResult.primaryText, apiResult);
-      flashStatus("captureBuyPlanStatus", apiResult.crossText ? "AI 파싱 완료 ✓ (Claude API 교차검증 적용)" : "AI 파싱 완료 ✓");
+      flashStatus("captureBuyPlanStatus",
+        apiResult.crossError ? "AI 파싱 완료(경고: " + apiResult.crossError + ")"
+        : apiResult.crossText ? "AI 파싱 완료 ✓ (Claude API 교차검증 적용)" : "AI 파싱 완료 ✓", apiResult.crossError ? 10000 : 4000);
     } catch (err) {
       flashStatus("captureBuyPlanStatus", "자동 파싱 실패(" + err.message + ") — 아래 붙여넣기 모드를 이용하세요", 6000);
     }
@@ -795,6 +818,18 @@ function initCapture() {
     setInputFiles(document.getElementById("captureAccountFiles"), files);
     flashStatus("captureAccountStatus", `폴더에서 ${files.length}장 선택됨 — "🤖 자동 파싱 시도"를 눌러 계좌를 자동 구분하세요`);
   });
+  // A20e: 구글드라이브 버튼 — 별도 OAuth 없이 기존 file input을 트리거한다. 안드로이드(SAF)
+  // 파일선택기는 Drive 앱이 설치돼 있으면 사이드 메뉴에 "Drive" 항목을 자동으로 노출하므로,
+  // 사용자는 거기서 드라이브 사진을 그대로 다중 선택하면 된다(무과금 원칙 — Drive API 미사용).
+  document.getElementById("captureAccountDriveBtn").addEventListener("click", () => {
+    flashStatus("captureAccountStatus", "선택창의 사이드 메뉴(☰)에서 'Drive'를 고르면 구글드라이브 사진을 선택할 수 있습니다", 8000);
+    document.getElementById("captureAccountFiles").click();
+  });
+  document.getElementById("captureBuyPlanDriveBtn").addEventListener("click", () => {
+    flashStatus("captureBuyPlanStatus", "선택창의 사이드 메뉴(☰)에서 'Drive'를 고르면 구글드라이브 사진을 선택할 수 있습니다", 8000);
+    document.getElementById("captureBuyPlanFiles").click();
+  });
+
   document.getElementById("captureBuyPlanFolderBtn").addEventListener("click", () => document.getElementById("captureBuyPlanFolderInput").click());
   document.getElementById("captureBuyPlanFolderInput").addEventListener("change", (e) => {
     const files = [...e.target.files].filter((f) => f.type.startsWith("image/"));
