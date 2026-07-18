@@ -6,7 +6,7 @@
 ## 착수 전 확인 4건 (구현 시작 전에 결정)
 
 - [x] 동기화 대상 Notion DB 선정 (2026-07-13) → `39c5efd0e4628056a91ed6c5f16d6e85` ("n8n" 페이지 하위 신규 Database). Integration "n8n"을 Connections에 명시적으로 연결해야 조회됨 — 이름 다른 Integration("14fiance-sync")에만 연결하면 404
-- [x] vault 위치 확정 (2026-07-13) → `/storage/emulated/0/Documents/vierzhen_home/MyVault` — 기존 PARA 구조(00_Inbox·10_Notes·20_Projects·30_Resources·40_Archive·_templates) vault, proot Ubuntu에서 접근 확인됨(exit code 0). S26에서 열람하려면 Syncthing 또는 Obsidian Sync 별도 구성 필요(미해결)
+- [x] vault 위치 확정 (2026-07-13) → `/storage/emulated/0/Documents/vierzhen_home/MyVault` — 기존 PARA 구조(00_Inbox·10_Notes·20_Projects·30_Resources·40_Archive·_templates) vault, proot Ubuntu에서 접근 확인됨(exit code 0). S26 열람 동기화 → **Syncthing으로 결정** (2026-07-16, Obsidian Git은 Android에서 desktop-only 취급돼 검색 자체가 막히는 경우가 흔해 배제) — 설정 절차는 [`SYNCTHING-SETUP.md`](./SYNCTHING-SETUP.md) 참조, 기기 페어링·폴더 공유는 실기기 수동 작업 필요
 - [x] 폴더 매핑 규칙 (2026-07-13) → `_notion-sync/` (언더스코어 접두사 = 이 vault의 기존 시스템/유틸리티 폴더 규칙, `_templates`와 동일 패턴). PARA 번호 폴더와 섞이지 않도록 격리
 - [x] 동기화 주기 → 기본안 1시간 유지 (변경 요청 없음)
 
