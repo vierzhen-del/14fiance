@@ -392,6 +392,17 @@ function matchSymbolByName(name, symbolHint) {
   if (targetName) {
     const loose = state.listedEtfs.find((e) => norm(e.name).includes(targetName));
     if (loose) return loose;
+    // 증권사 앱이 좁은 목록 칸에서 종목명을 "…"/"..."로 잘라 보여주는 경우(실사례: KB증권
+    // 계좌 잔고 목록, 2026-07-18) AI는 화면에 보이는 그대로 말줄임까지 옮겨 적는다 — 이때는
+    // 위 includes 매칭도 실패한다(말줄임 문자가 정식명에 없으므로). 말줄임을 떼고 정식명이
+    // 그 앞부분으로 "시작"하는지 확인한다 — 여전히 "정식명이 AI가 읽은 문자열을 포함"하는
+    // 안전한 방향(위 주석 참조)이고, 후보가 정확히 1개일 때만 채택해 오매칭을 방지한다.
+    const ellipsisMatch = targetName.match(/^(.{4,}?)(\.{2,}|…)$/);
+    if (ellipsisMatch) {
+      const prefix = ellipsisMatch[1];
+      const candidates = state.listedEtfs.filter((e) => norm(e.name).startsWith(prefix));
+      if (candidates.length === 1) return candidates[0];
+    }
   }
   return null;
 }
