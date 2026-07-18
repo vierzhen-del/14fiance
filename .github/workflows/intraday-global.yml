@@ -1,0 +1,45 @@
+name: Intraday Global Prices
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 트레이딩 대시보드용 글로벌 시세(KOSPI 지수·나스닥선물·SOX·SOXX).
+    # 나스닥100 선물은 거의 24시간 거래라 평일 종일 30분 주기로 돌린다.
+    # intraday-kr.yml과 같은 이유로 정각·30분을 피하되, 그 워크플로(5분·35분)와도
+    # 겹치지 않게 7분·37분 offset을 쓴다. GitHub 무료 스케줄 큐 특성상
+    # 지연·드롭이 흔한 best-effort임(루트 CLAUDE.md 참조).
+    - cron: "7,37 * * * 1-5"
+
+permissions:
+  contents: write
+
+jobs:
+  intraday:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch intraday global prices
+        run: python scripts/fetch_intraday_global.py latest_global.json
+
+      # live 브랜치(latest_kr.json 전용)와 섞지 않도록 전용 live-trading 브랜치에
+      # 항상 단일 커밋으로 force-push 한다(대시보드 mobile 모드가 raw URL로 읽음).
+      - name: Publish to live-trading branch
+        run: |
+          mkdir /tmp/live-trading
+          cp latest_global.json /tmp/live-trading/
+          cd /tmp/live-trading
+          git init -b live-trading
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add latest_global.json
+          git commit -m "chore: intraday global prices"
+          git push --force "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" live-trading
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

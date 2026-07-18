@@ -1,12 +1,15 @@
 // capture/capture-parse.js — 캡처 이미지 → AI 비전 파싱 → 교차검증 (M2)
 // capture 앱 전용(index.html/shared에는 없음). state.listedEtfs/state.metaBySymbol에 의존(초기화 후 호출).
 
-const CAPTURE_AI_PROVIDER_KEY = "capture_ai_provider"; // "claude" | "gemini"
+const CAPTURE_AI_PROVIDER_KEY = "capture_ai_provider"; // "claude" | "gemini" — 기본 gemini(크레딧 소모 없음)
 const CAPTURE_CLAUDE_KEY = "capture_claude_key";
 const CAPTURE_GEMINI_KEY = "capture_gemini_key";
 const CAPTURE_CLAUDE_MODEL_KEY = "capture_claude_model"; // A19: 소넷/하이쿠 선택(2026-07-18 프롬프트 비교테스트 후속)
 const CAPTURE_CLAUDE_MODEL_DEFAULT = "claude-sonnet-5";
 const CAPTURE_GEMINI_MODEL_DEFAULT = "gemini-2.5-flash";
+// Claude API를 자동 파싱에 "추가로" 부를지(교차검증) 여부 — 기본 꺼짐. 크레딧을 쓰는
+// 유일한 자동 경로이므로 사용자가 명시적으로 켜야만 호출된다(3순위 원칙).
+const CAPTURE_USE_CLAUDE_CROSSCHECK_KEY = "capture_use_claude_api_v1";
 
 /* ---------- 이미지 전처리 ---------- */
 function resizeImageFile(file, maxDim = 1600, quality = 0.8) {
@@ -121,50 +124,64 @@ async function pingGeminiAPI(apiKey) {
    짐작만으로는 정확한 진단이 안 된다(실제로 이 문구 때문에 원인 파악이 늦어진 사례). */
 function friendlyPingErrorText(providerLabel, err) {
   const status = err && err.status;
+  const msg = (err && err.message) || "";
+  // Anthropic은 크레딧 부족도 HTTP 400 invalid_request_error로 응답한다 — 진짜 요청 형식
+  // 문제와 섞이면 원인 파악이 늦어지므로(과거 실제 발생 사례) 이 메시지만 따로 구분한다.
   const reason = status === 401 || status === 403 ? "키가 잘못됐거나 권한이 없습니다"
     : status === 429 ? "요청이 너무 많습니다(잠시 후 재시도)"
+    : status === 400 && /credit balance/i.test(msg) ? "크레딧 잔액 부족 — Anthropic Console(Plans & Billing)에서 충전 필요"
     : status === 400 ? "요청 형식 오류"
     : status ? `오류(HTTP ${status})`
     : "네트워크 오류(연결 확인 필요)";
-  const detail = err && err.message ? ` — ${err.message}` : "";
+  const detail = msg ? ` — ${msg}` : "";
   return `❌ ${providerLabel} ${reason}${detail}`;
 }
 
-/* 설정탭에서 선택한 provider(기본)로 파싱하되, 반대쪽 provider 키도 저장돼 있으면
-   같은 이미지를 동시에 보내 결과를 대조한다(A3d 듀얼 비전 교차검증) — 키가 하나뿐이면
-   기존과 동일하게 단일 호출(회귀 없음). 비용: 양쪽 키가 있을 때만 API 호출이 2배가 됨.
-   prompts는 {claude, gemini} 형태 — 두 AI사가 서로 다른 프롬프트 문구를 받을 수 있게
-   분리했다(2026-07-18 소넷/하이쿠 비교테스트 후속 — Gemini 전용 문구 도입 대비).
-   Claude 모델(소넷/하이쿠)은 설정탭에서 고른 값을 여기서 읽어 callClaudeVision에 전달한다. */
-async function callVisionAPI(images, prompts) {
-  const provider = localStorage.getItem(CAPTURE_AI_PROVIDER_KEY) || "claude";
+/* 자동 파싱 3단계 우선순위(크레딧 소모 없는 순서로):
+   1) 클로드 대화창(방식1) — 이 함수가 아니라 "📋 프롬프트 복사"+붙여넣기 모드로 처리(API 호출 없음)
+   2) Gemini API(방식2, 기본) — provider가 gemini면 이것만 단독 호출
+   3) Claude API(방식3, 옵트인) — provider를 명시적으로 claude로 선택했거나, 옵트인
+      체크박스(CAPTURE_USE_CLAUDE_CROSSCHECK_KEY)를 켰을 때만 호출된다. 옵트인일 때는
+      Gemini 호출에 "추가로" 동시 호출해 교차검증한다(A3d 패턴 유지) — 그 외에는
+      Claude API가 자동으로 불리는 경로가 전혀 없다(크레딧 과금 방지가 핵심 요구사항).
+   claudePromptText/geminiPromptText는 별도 편집·저장 가능한 지침(capture-parse.js
+   getEffectivePrompt/getGeminiPrompt)을 각 provider에 맞게 전달받는다. */
+async function callVisionAPI(images, claudePromptText, geminiPromptText) {
+  const provider = localStorage.getItem(CAPTURE_AI_PROVIDER_KEY) || "gemini";
+  const useClaudeCrossCheck = localStorage.getItem(CAPTURE_USE_CLAUDE_CROSSCHECK_KEY) === "1";
   const claudeKey = localStorage.getItem(CAPTURE_CLAUDE_KEY);
   const geminiKey = localStorage.getItem(CAPTURE_GEMINI_KEY);
   const claudeModel = localStorage.getItem(CAPTURE_CLAUDE_MODEL_KEY) || CAPTURE_CLAUDE_MODEL_DEFAULT;
-  const primaryKey = provider === "gemini" ? geminiKey : claudeKey;
-  if (!primaryKey) throw new Error(`${provider === "gemini" ? "Gemini" : "Claude"} API 키가 설정탭에 입력되어 있지 않습니다.`);
 
-  const callPrimary = () => (provider === "gemini" ? callGeminiVision(images, prompts.gemini, primaryKey) : callClaudeVision(images, prompts.claude, primaryKey, claudeModel));
-  const otherKey = provider === "gemini" ? claudeKey : geminiKey;
-  if (!otherKey) return { primaryText: await callPrimary(), crossText: null, crossProvider: null, crossError: null };
+  const primaryIsClaude = provider === "claude";
+  const primaryKey = primaryIsClaude ? claudeKey : geminiKey;
+  if (!primaryKey) throw new Error(`${primaryIsClaude ? "Claude" : "Gemini"} API 키가 설정탭에 입력되어 있지 않습니다.`);
+  const source = primaryIsClaude ? "claude-api" : "gemini";
+  const callPrimary = () =>
+    primaryIsClaude ? callClaudeVision(images, claudePromptText, claudeKey, claudeModel) : callGeminiVision(images, geminiPromptText, geminiKey);
 
-  const crossProvider = provider === "gemini" ? "claude" : "gemini";
-  const callOther = () => (crossProvider === "gemini" ? callGeminiVision(images, prompts.gemini, otherKey) : callClaudeVision(images, prompts.claude, otherKey, claudeModel));
-  const [primaryResult, otherResult] = await Promise.allSettled([callPrimary(), callOther()]);
+  // Claude API 동시 교차검증: primary가 이미 claude면 의미 없고, 옵트인이 꺼져 있거나
+  // Claude 키가 없으면 걸지 않는다 — 이 조건을 만족해야만 Claude API가 추가로 호출된다.
+  const wantClaudeCross = !primaryIsClaude && useClaudeCrossCheck && claudeKey;
+  if (!wantClaudeCross) {
+    return { primaryText: await callPrimary(), crossText: null, crossProvider: null, crossError: null, source };
+  }
+
+  const [primaryResult, otherResult] = await Promise.allSettled([
+    callPrimary(),
+    callClaudeVision(images, claudePromptText, claudeKey, claudeModel),
+  ]);
   if (primaryResult.status === "rejected") throw primaryResult.reason;
   return {
     primaryText: primaryResult.value,
     crossText: otherResult.status === "fulfilled" ? otherResult.value : null,
-    crossProvider,
+    crossProvider: "claude-api",
     crossError: otherResult.status === "rejected" ? otherResult.reason.message : null,
+    source,
   };
 }
 
-/* ---------- 프롬프트·스키마 (이번 세션 수동 전사 패턴을 그대로 명문화) ----------
-   2026-07-18 소넷/하이쿠 36장 비교테스트 결과 반영(A19): 하이쿠에서 실측된 4가지
-   오류 패턴 — ①계좌번호 자릿수 누락 ②화면에 없는 회사명 추측 ③다른 계좌·다른 장에서
-   본 값을 가져다 채우는 교차오염 ④달러 종목 소수점 자릿수 오류 — 을 막기 위한 문구를
-   추가했다. 기존 스키마·필드는 그대로, 지침 본문만 강화. */
+/* ---------- 프롬프트·스키마 (이번 세션 수동 전사 패턴을 그대로 명문화) ---------- */
 const ACCOUNT_CAPTURE_PROMPT = `역할: 한국 증권사 앱의 "계좌 잔고" 화면 스크린샷 여러 장을 순서대로 받는다.
 스크린샷은 한 계좌만 있을 수도 있고, 여러 계좌(예: 서로 다른 증권사 탭이나 계좌 전환 화면)가 섞여 있을 수도 있다.
 각 장에서 보이는 모든 보유 종목 행에 대해 다음을 추출:
@@ -184,25 +201,63 @@ const ACCOUNT_CAPTURE_PROMPT = `역할: 한국 증권사 앱의 "계좌 잔고" 
 출력은 아래 JSON만, 설명·마크다운 코드블록 없이 그대로:
 {"account_label":"화면에 보이는 대표 계좌명(없으면 null, 여러 계좌가 섞여 있으면 첫 계좌명)","page_count":이미지수,"holdings":[{"page":1,"account":"이 홀딩의 계좌명(섞여 있을 때만 채우고, 한 계좌뿐이면 null 가능)","name":"...","symbol":"...","qty":0,"avgPrice":null,"currentPrice":null,"evalAmount":0}],"reported_total":숫자 또는 null}`;
 
-/* Gemini 전용 변형 — 내용은 Claude용과 동일하되, Gemini가 설명 문장이나 마크다운 펜스를
-   덧붙이는 경향이 있어 "JSON만" 지시를 앞뒤로 한 번씩 더 반복해 강조한다(2026-07-18). */
-const ACCOUNT_CAPTURE_PROMPT_GEMINI = `중요: 아래 지시를 따르되, 응답은 순수 JSON 객체 하나만 출력한다. 설명 문장, 인사말, \`\`\`json 같은 코드펜스를 절대 붙이지 말 것 — 첫 글자부터 "{"로 시작해야 한다.
-
-${ACCOUNT_CAPTURE_PROMPT}
-
-다시 강조: 위 JSON 객체 외의 텍스트(설명, 코드펜스, 주석)를 응답에 포함하지 말 것.`;
-
 const BUY_PLAN_CAPTURE_PROMPT = `역할: 한국 ETF모으기(월자동매수) 현황 화면 스크린샷을 받는다. 여러 계좌의 화면이 섞여 있을 수 있다.
 각 행에서 계좌명(그 장 화면에 보이는 계좌명·탭명 그대로, 여러 계좌가 섞여 있으면 반드시 구분할 것), 종목명, 종목코드(있으면), 1회 매수수량, 매수주기(매월/매주/매일 중 화면 표기 그대로), 매수일(있으면), 다음 매수 예정일(있으면)을 추출.
-화면에 월 총 매수금액이 보이면 별도 필드로 추출. 없는 값은 null — 다른 장·다른 계좌에서 본 값을 가져다 채우지 말 것.
+화면에 월 총 매수금액이 보이면 별도 필드로 추출. 없는 값은 null — 다른 장·다른 계좌에서 본 값을 가져다 채우지 말 것. 계좌번호·증권사명은 화면에 보이는 글자 그대로(자릿수 정확히) 옮기고, 텍스트로 안 보이면 짐작하지 말 것.
 출력은 아래 JSON만, 설명·마크다운 코드블록 없이 그대로:
 {"holdings":[{"account":"이 행의 계좌명(섞여 있을 때만 채우고, 한 계좌뿐이면 null 가능)","name":"...","symbol":"...","buyQtyPerTime":0,"buyFreq":"매월","buyDay":null,"nextBuyDate":null}],"reported_total_monthly_amount":숫자 또는 null}`;
 
-const BUY_PLAN_CAPTURE_PROMPT_GEMINI = `중요: 아래 지시를 따르되, 응답은 순수 JSON 객체 하나만 출력한다. 설명 문장, 인사말, \`\`\`json 같은 코드펜스를 절대 붙이지 말 것 — 첫 글자부터 "{"로 시작해야 한다.
+/* Gemini 전용 지침(방식2) — 스키마는 위 Claude/대화창용과 동일하지만, Gemini가 종종
+   JSON 앞뒤에 설명·코드펜스를 붙이는 경향이 있어 "순수 JSON만 출력" 지시를 앞뒤로
+   반복 강조한 버전이다(parseAIJsonResponse가 코드펜스를 벗겨내긴 하지만 애초에
+   덜 섞여 나오게 하려는 목적). 설정탭에서 개별 편집·저장 가능. */
+const GEMINI_ACCOUNT_CAPTURE_PROMPT = `역할: 한국 증권사 앱의 "계좌 잔고" 화면 스크린샷 여러 장을 순서대로 받는다.
+스크린샷은 한 계좌만 있을 수도 있고, 여러 계좌(예: 서로 다른 증권사 탭이나 계좌 전환 화면)가 섞여 있을 수도 있다.
+각 장에서 보이는 모든 보유 종목 행에 대해 다음을 추출한다:
+- 계좌명(그 장 화면에 보이는 계좌명·탭명 그대로. 여러 계좌가 섞여 있으면 각 홀딩이 어느 계좌 소속인지 반드시 이 필드로 구분할 것. 전체가 한 계좌뿐이면 모든 홀딩에 같은 값을 넣거나 null로 둬도 됨)
+- 종목명(화면 표시 그대로, 축약 없이)
+- 종목코드(화면에 보이면, 없으면 null)
+- 보유수량(정수)
+- 평가금액(원, 정수)
+- 매입단가 또는 평균단가(있으면, 없으면 null)
+- 현재가(있으면, 없으면 null)
+장 하단/상단에 "총 평가금액", "자산" 등 계좌 합계가 보이면 별도 필드로 추출.
+스크린샷에 없는 값은 절대 추정하지 말고 null로 둘 것. 특히 보유수량(qty)은 평가금액÷현재가 등으로 역산해서 채우지 말 것 — 화면에 숫자가 안 보이면 반드시 null.
+각 필드 값은 반드시 그 장(page)에 실제로 보이는 값만 사용할 것. 같은 종목이 다른 계좌·다른 장에도 나온다고 해서 그 값을 가져다 쓰지 말 것 — 계좌마다 매입단가·수량·평가금액이 서로 다르다.
+계좌번호는 화면에 보이는 숫자를 한 자리도 빠짐없이 그대로 옮겨 적을 것(자릿수를 줄이거나 늘리지 말 것). 증권사명(회사명)은 로고·배지 이미지가 아니라 화면에 글자(텍스트)로 실제로 쓰여 있을 때만 적고, 글자가 안 보이면 계좌명 필드에 계좌번호만 쓰고 증권사명은 "미확인"으로 둘 것(다른 계좌의 증권사명을 보고 짐작하지 말 것).
+달러(USD)로 표시된 가격은 소수점 자리를 원본 그대로 유지할 것(예: 11.418을 11418로 쓰지 말 것 — 1000배 차이가 나는 오류다).
+같은 종목이 여러 장에 걸쳐 반복 표시되면(스크롤 캡처) 중복 제거하지 말고 각 장에서 본 그대로 보고할 것.
 
-${BUY_PLAN_CAPTURE_PROMPT}
+매우 중요: 응답은 아래 JSON 객체 단 하나여야 한다. 설명 문장, 인사말, 코드블록 표시(\`\`\`) 등 JSON이 아닌 텍스트를 앞뒤에 절대 붙이지 마라. 첫 글자부터 마지막 글자까지 순수 JSON만 출력하라.
 
-다시 강조: 위 JSON 객체 외의 텍스트(설명, 코드펜스, 주석)를 응답에 포함하지 말 것.`;
+{"account_label":"화면에 보이는 대표 계좌명(없으면 null, 여러 계좌가 섞여 있으면 첫 계좌명)","page_count":이미지수,"holdings":[{"page":1,"account":"이 홀딩의 계좌명(섞여 있을 때만 채우고, 한 계좌뿐이면 null 가능)","name":"...","symbol":"...","qty":0,"avgPrice":null,"currentPrice":null,"evalAmount":0}],"reported_total":숫자 또는 null}
+
+다시 한번: JSON 객체만 출력하고 다른 텍스트는 포함하지 마라.`;
+
+const GEMINI_BUY_PLAN_CAPTURE_PROMPT = `역할: 한국 ETF모으기(월자동매수) 현황 화면 스크린샷을 받는다. 여러 계좌의 화면이 섞여 있을 수 있다.
+각 행에서 계좌명(그 장 화면에 보이는 계좌명·탭명 그대로, 여러 계좌가 섞여 있으면 반드시 구분할 것), 종목명, 종목코드(있으면), 1회 매수수량, 매수주기(매월/매주/매일 중 화면 표기 그대로), 매수일(있으면), 다음 매수 예정일(있으면)을 추출한다.
+화면에 월 총 매수금액이 보이면 별도 필드로 추출. 없는 값은 null로 둔다 — 다른 장·다른 계좌에서 본 값을 가져다 채우지 말 것. 계좌번호·증권사명은 화면에 보이는 글자 그대로(자릿수 정확히) 옮기고, 텍스트로 안 보이면 짐작하지 말 것.
+
+매우 중요: 응답은 아래 JSON 객체 단 하나여야 한다. 설명 문장, 인사말, 코드블록 표시(\`\`\`) 등 JSON이 아닌 텍스트를 앞뒤에 절대 붙이지 마라. 첫 글자부터 마지막 글자까지 순수 JSON만 출력하라.
+
+{"holdings":[{"account":"이 행의 계좌명(섞여 있을 때만 채우고, 한 계좌뿐이면 null 가능)","name":"...","symbol":"...","buyQtyPerTime":0,"buyFreq":"매월","buyDay":null,"nextBuyDate":null}],"reported_total_monthly_amount":숫자 또는 null}
+
+다시 한번: JSON 객체만 출력하고 다른 텍스트는 포함하지 마라.`;
+
+/* 지침 편집·저장(설정탭) — 저장값이 있으면 그것을, 없으면 위 기본값을 쓴다.
+   kind는 "account" | "buyplan". Claude/대화창용은 "📋 프롬프트 복사"(방식1)와
+   provider=claude 자동 호출(방식3) 양쪽에 공통으로 쓰이고, Gemini용은 방식2 전용. */
+const CAPTURE_PROMPT_STORAGE_KEYS = { account: "capture_prompt_account_v1", buyplan: "capture_prompt_buyplan_v1" };
+const CAPTURE_GEMINI_PROMPT_STORAGE_KEYS = { account: "capture_gemini_prompt_account_v1", buyplan: "capture_gemini_prompt_buyplan_v1" };
+const CAPTURE_DEFAULT_PROMPTS = { account: ACCOUNT_CAPTURE_PROMPT, buyplan: BUY_PLAN_CAPTURE_PROMPT };
+const CAPTURE_DEFAULT_GEMINI_PROMPTS = { account: GEMINI_ACCOUNT_CAPTURE_PROMPT, buyplan: GEMINI_BUY_PLAN_CAPTURE_PROMPT };
+
+function getEffectivePrompt(kind) {
+  return localStorage.getItem(CAPTURE_PROMPT_STORAGE_KEYS[kind]) || CAPTURE_DEFAULT_PROMPTS[kind];
+}
+function getGeminiPrompt(kind) {
+  return localStorage.getItem(CAPTURE_GEMINI_PROMPT_STORAGE_KEYS[kind]) || CAPTURE_DEFAULT_GEMINI_PROMPTS[kind];
+}
 
 /* AI 응답에서 ```json 코드펜스가 섞여 와도 안전하게 JSON만 추출 */
 function parseAIJsonResponse(text) {
@@ -289,10 +344,12 @@ function validateBuyPlanCapture(parsed) {
   return { holdings, reportedTotal: parsed.reported_total_monthly_amount ?? null };
 }
 
-/* ---------- A3d: 듀얼 AI 교차검증 결과를 primary 파싱 결과에 덧붙인다 ----------
-   qtyField는 계좌캡처="qty", 월매수캡처="buyQtyPerTime". 상대 provider가 같은
-   종목을 다른 수량으로 읽었으면 "mismatch", 아예 못 찾았으면 "missing" — 두 경우
-   모두 h.crossCheck에 기록해 화면에서 채우기 체크박스를 기본 해제하는 근거로 쓴다. */
+/* ---------- 교차검증 결과를 primary 파싱 결과에 덧붙인다 ----------
+   두 가지 경로에서 호출된다: (a) A3d 듀얼 비전(Claude API 옵트인 시 Gemini와 동시 호출),
+   (b) 3단계 우선순위 비교 — 같은 종류(계좌/월매수)의 마지막 저장 결과(방식1 붙여넣기든
+   방식2 Gemini 자동이든)와 순차 대조. qtyField는 계좌캡처="qty", 월매수캡처="buyQtyPerTime".
+   상대가 같은 종목을 다른 수량으로 읽었으면 "mismatch", 아예 못 찾았으면 "missing" — 두
+   경우 모두 h.crossCheck에 기록해 화면에서 채우기 체크박스를 기본 해제하는 근거로 쓴다. */
 function applyCrossCheck(validated, crossValidated, crossProvider, qtyField) {
   const crossBySymbol = new Map();
   for (const h of crossValidated.holdings) {
@@ -307,7 +364,10 @@ function applyCrossCheck(validated, crossValidated, crossProvider, qtyField) {
   }
 }
 
-const CROSS_CHECK_PROVIDER_LABEL = { claude: "Claude", gemini: "Gemini" };
+const CROSS_CHECK_PROVIDER_LABEL = {
+  claude: "Claude", gemini: "Gemini",
+  "claude-chat": "Claude 대화창(방식1)", "claude-api": "Claude API(방식3)",
+};
 
 function crossCheckBadgeHTML(crossCheck) {
   if (!crossCheck) return "";

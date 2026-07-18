@@ -23,6 +23,22 @@ for (const f of ["myassets-utils.js", "price-data.js", "myassets.js", "calculato
 }
 // capture 파싱 엔진 그대로 복사
 cpSync(join(repoRoot, "capture", "capture-parse.js"), join(www, "capture-parse.js"));
+// 트레이딩 대시보드(realtime-trading/public) → 앱의 "📈 대시보드" 탭.
+// Capacitor 감지(mode.js)로 앱에서는 자동 native 모드(네이버·야후·KIS 직접 조회)가 된다.
+mkdirSync(join(www, "dashboard"), { recursive: true });
+for (const f of ["index.html", "style.css", "app.js", "symbols.js", "mode.js", "mobile-feeds.js", "native-feeds.js"]) {
+  cpSync(join(repoRoot, "realtime-trading", "public", f), join(www, "dashboard", f));
+}
+// 대시보드 탭바의 캡처 앱 링크를 www 내부 구조에 맞게 치환
+{
+  const dashHtmlPath = join(www, "dashboard", "index.html");
+  let dashHtml = readFileSync(dashHtmlPath, "utf-8");
+  const from = 'href="../../capture/index.html"';
+  if (!dashHtml.includes(from)) {
+    throw new Error(`build-www: 치환 대상 미발견 — realtime-trading/public/index.html이 바뀌었는지 확인 필요: ${from}`);
+  }
+  writeFileSync(dashHtmlPath, dashHtml.replaceAll(from, 'href="../index.html"'));
+}
 // APK 전용 네이티브 실시간 시세(CapacitorHttp로 네이버 직접 호출) — 앱에서만 동작, 웹에선 무시됨
 cpSync(join(appDir, "src", "native-quotes.js"), join(www, "native-quotes.js"));
 // APK 전용 네이티브 파일 백업/복원(@capacitor/filesystem) — 앱에서만 동작, 웹에선 무시됨
@@ -50,6 +66,8 @@ const replacements = [
    "/* APK: 서비스워커 미사용(웹 자산이 이미 로컬 번들) */"],
   // 사이트로 돌아가는 상대 링크는 절대 URL로
   ['<a href="../index.html">../index.html</a>', '<a href="https://vierzhen-del.github.io/14fiance/">웹 사이트</a>'],
+  // 하단 탭바의 대시보드 링크 → www 내부의 dashboard/
+  ['href="../realtime-trading/public/index.html"', 'href="dashboard/index.html"'],
 ];
 for (const [from, to] of replacements) {
   if (!html.includes(from)) throw new Error(`build-www: 치환 대상 미발견 — capture/index.html이 바뀌었는지 확인 필요: ${from}`);

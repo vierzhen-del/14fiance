@@ -1,5 +1,5 @@
 {
- "updated": "2026-07-17 14:05 UTC",
+ "updated": "2026-07-17 21:43 UTC",
  "us": [
   {
    "symbol": "SPY",
@@ -55,7 +55,7 @@
    "last": "2026-07-17",
    "count": 5000,
    "ttmDividend": 3.03434,
-   "dividendYield": 0.004363
+   "dividendYield": 0.004364
   },
   {
    "symbol": "DIA",
@@ -405,7 +405,7 @@
    "last": "2026-07-17",
    "count": 5000,
    "ttmDividend": 1.05,
-   "dividendYield": 0.00318
+   "dividendYield": 0.003146
   },
   {
    "symbol": "MSFT",

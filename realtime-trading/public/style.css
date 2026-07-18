@@ -1,0 +1,234 @@
+/* 팔레트: dataviz 레퍼런스 팔레트 (light/dark 각각 검증된 스텝) */
+:root {
+  --page: #f9f9f7;
+  --surface: #fcfcfb;
+  --ink: #0b0b0b;
+  --ink-2: #52514e;
+  --muted: #898781;
+  --grid-line: #e1e0d9;
+  --border: rgba(11, 11, 11, 0.1);
+  --up: #e34948;    /* 상승 = 빨강 (국내 관례) */
+  --down: #2a78d6;  /* 하락 = 파랑 */
+  --spark: #4a3aa7; /* 스파크라인 — 극성 색과 겹치지 않는 violet */
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --ink: #ffffff;
+    --ink-2: #c3c2b7;
+    --muted: #898781;
+    --grid-line: #2c2c2a;
+    --border: rgba(255, 255, 255, 0.1);
+    --up: #e66767;
+    --down: #3987e5;
+    --spark: #9085e9;
+  }
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 20px 24px 8px;
+}
+h1 { font-size: 18px; margin: 0; }
+.conn { font-size: 12px; color: var(--muted); }
+.conn[data-state="open"] { color: var(--ink-2); }
+
+.pf {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin: 4px 24px 0;
+  padding: 10px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+.pf-label { color: var(--muted); font-size: 12px; }
+.pf .delta { font-size: 13px; }
+.pf .delta.up { color: var(--up); }
+.pf .delta.down { color: var(--down); }
+.pf .delta.flat { color: var(--muted); }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  padding: 12px 24px 24px;
+}
+
+.tile {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px 10px;
+  min-height: 150px;
+}
+.tile .head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+.tile .name { font-size: 13px; color: var(--ink-2); font-weight: 600; }
+.tile .source { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.tile .order-btns { display: none; gap: 2px; }
+.grid.editing-order .tile .order-btns { display: inline-flex; }
+.tile .order-btn {
+  font-size: 11px;
+  line-height: 1;
+  padding: 3px 6px;
+  color: var(--ink-2);
+  background: var(--page);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  cursor: pointer;
+}
+.tile .order-btn:hover { border-color: var(--muted); }
+.tile .price {
+  font-size: 26px;
+  font-weight: 700;
+  margin: 6px 0 2px;
+  font-variant-numeric: tabular-nums;
+}
+.tile .delta {
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.tile .delta.up { color: var(--up); }
+.tile .delta.down { color: var(--down); }
+.tile .delta.flat { color: var(--muted); }
+.tile .position {
+  font-size: 12px;
+  color: var(--ink-2);
+  margin-top: 4px;
+  min-height: 15px;
+  font-variant-numeric: tabular-nums;
+}
+.tile .position .delta { font-size: 12px; }
+.tile canvas { display: block; width: 100%; height: 44px; margin-top: 8px; }
+.tile .waiting { color: var(--muted); font-size: 13px; }
+.tile.flash { animation: flash 0.5s ease-out; }
+@keyframes flash { from { border-color: var(--spark); } }
+
+.alerts {
+  margin: 0 24px 16px;
+  padding: 12px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.alerts h2 { font-size: 14px; margin: 0 0 8px; }
+.alerts ul { list-style: none; margin: 0; padding: 0; }
+.alerts li {
+  font-size: 13px;
+  padding: 4px 0;
+  border-top: 1px solid var(--grid-line);
+}
+.alerts li:first-child { border-top: none; }
+.alert-time { color: var(--muted); font-size: 12px; margin-right: 4px; font-variant-numeric: tabular-nums; }
+.alert-note { color: var(--muted); }
+
+footer {
+  padding: 0 24px 24px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.chip { font-weight: 600; }
+.chip.up { color: var(--up); }
+.chip.down { color: var(--down); }
+
+.tooltip {
+  position: fixed;
+  pointer-events: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--ink);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 10;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- 헤더 컨트롤(모드 전환·설정) ---- */
+.hctrl { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.hbtn {
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink-2);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.hbtn:hover { border-color: var(--muted); }
+
+/* ---- ⚙️ KIS 설정 패널 ---- */
+.settings {
+  margin: 4px 24px 8px;
+  padding: 12px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.settings h2 { font-size: 14px; margin: 0 0 6px; }
+.settings-note { font-size: 12px; color: var(--muted); margin: 4px 0; }
+.settings-note.warn { color: var(--up); }
+.settings-row {
+  display: block;
+  font-size: 12px;
+  color: var(--ink-2);
+  margin: 8px 0;
+}
+.settings-row input {
+  display: block;
+  width: 100%;
+  max-width: 420px;
+  margin-top: 4px;
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--page);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.settings-actions { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.settings-status { font-size: 12px; color: var(--ink-2); }
+
+/* ---- 하단 탭바(캡처·내자산 ↔ 대시보드) — 웹 모바일·APK에서만 표시 ---- */
+body.has-tabbar { padding-bottom: 60px; }
+.tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  z-index: 20;
+}
+.tabbar .tab {
+  flex: 1;
+  text-align: center;
+  padding: 14px 0;
+  font-size: 13px;
+  color: var(--muted);
+  text-decoration: none;
+}
+.tabbar .tab.active { color: var(--ink); font-weight: 600; }
+.tabbar[hidden] { display: none; } /* display:flex가 hidden 속성을 이기지 않도록 */
