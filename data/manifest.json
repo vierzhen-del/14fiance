@@ -1,5 +1,5 @@
 {
- "updated": "2026-07-18 04:31 UTC",
+ "updated": "2026-07-18 21:58 UTC",
  "us": [
   {
    "symbol": "SPY",
@@ -746,6 +746,20 @@
    "dividendYield": 0.1294
   },
   {
+   "symbol": "0219E0.KS",
+   "name": "KODEX 200커버드콜액티브",
+   "category": "커버드콜(국내)",
+   "region": "한국",
+   "style": "배당",
+   "assetType": "etf",
+   "currency": "KRW",
+   "first": "2026-07-14",
+   "last": "2026-07-16",
+   "count": 3,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
+  },
+  {
    "symbol": "0177R0.KS",
    "name": "TIGER 반도체TOP10커버드콜액티브",
    "category": "커버드콜(국내)",
@@ -1013,7 +1027,7 @@
   },
   {
    "symbol": "0025N0.KS",
-   "name": "TIGER TDF2045",
+   "name": "TIGER TDF2045 적격",
    "category": "TDF·자산배분",
    "region": "글로벌",
    "style": "안전",
