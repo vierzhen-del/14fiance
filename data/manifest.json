@@ -1,5 +1,5 @@
 {
- "updated": "2026-07-16 15:27 UTC",
+ "updated": "2026-07-19 12:58 UTC",
  "us": [
   {
    "symbol": "SPY",
@@ -9,8 +9,8 @@
    "style": "성장",
    "assetType": "etf",
    "currency": "USD",
-   "first": "2006-08-29",
-   "last": "2026-07-16",
+   "first": "2006-08-30",
+   "last": "2026-07-17",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -24,8 +24,8 @@
    "assetType": "etf",
    "currency": "USD",
    "first": "2010-09-09",
-   "last": "2026-07-16",
-   "count": 3986,
+   "last": "2026-07-17",
+   "count": 3987,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   },
@@ -37,8 +37,8 @@
    "style": "성장",
    "assetType": "etf",
    "currency": "USD",
-   "first": "2006-08-29",
-   "last": "2026-07-16",
+   "first": "2006-08-30",
+   "last": "2026-07-17",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -51,11 +51,11 @@
    "style": "성장",
    "assetType": "etf",
    "currency": "USD",
-   "first": "2006-08-29",
-   "last": "2026-07-16",
+   "first": "2006-08-30",
+   "last": "2026-07-17",
    "count": 5000,
    "ttmDividend": 3.03434,
-   "dividendYield": 0.004265
+   "dividendYield": 0.004364
   },
   {
    "symbol": "DIA",
@@ -65,8 +65,8 @@
    "style": "성장",
    "assetType": "etf",
    "currency": "USD",
-   "first": "2006-08-29",
-   "last": "2026-07-16",
+   "first": "2006-08-30",
+   "last": "2026-07-17",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -79,8 +79,8 @@
    "style": "성장",
    "assetType": "etf",
    "currency": "USD",
-   "first": "2006-08-29",
-   "last": "2026-07-16",
+   "first": "2006-08-30",
+   "last": "2026-07-17",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -94,8 +94,8 @@
    "assetType": "etf",
    "currency": "USD",
    "first": "2011-10-20",
-   "last": "2026-07-16",
-   "count": 3704,
+   "last": "2026-07-17",
+   "count": 3705,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   },
@@ -107,8 +107,8 @@
    "style": "배당",
    "assetType": "etf",
    "currency": "USD",
-   "first": "2006-08-29",
-   "last": "2026-07-16",
+   "first": "2006-08-30",
+   "last": "2026-07-17",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -122,8 +122,8 @@
    "assetType": "etf",
    "currency": "USD",
    "first": "2013-05-22",
-   "last": "2026-07-16",
-   "count": 3307,
+   "last": "2026-07-17",
+   "count": 3308,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   },
@@ -136,8 +136,8 @@
    "assetType": "etf",
    "currency": "USD",
    "first": "2014-06-12",
-   "last": "2026-07-16",
-   "count": 3041,
+   "last": "2026-07-17",
+   "count": 3042,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   },
@@ -150,8 +150,8 @@
    "assetType": "etf",
    "currency": "USD",
    "first": "2016-12-15",
-   "last": "2026-07-16",
-   "count": 2407,
+   "last": "2026-07-17",
+   "count": 2408,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   },
@@ -164,8 +164,8 @@
    "assetType": "etf",
    "currency": "USD",
    "first": "2010-01-04",
-   "last": "2026-07-16",
-   "count": 4158,
+   "last": "2026-07-17",
+   "count": 4159,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   },
@@ -178,8 +178,8 @@
    "assetType": "etf",
    "currency": "USD",
    "first": "2015-10-12",
-   "last": "2026-07-16",
-   "count": 2705,
+   "last": "2026-07-17",
+   "count": 2706,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   },
@@ -192,8 +192,8 @@
    "assetType": "etf",
    "currency": "USD",
    "first": "2012-04-25",
-   "last": "2026-07-16",
-   "count": 3576,
+   "last": "2026-07-17",
+   "count": 3577,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   },
@@ -206,8 +206,8 @@
    "assetType": "etf",
    "currency": "USD",
    "first": "2010-09-22",
-   "last": "2026-07-16",
-   "count": 3978,
+   "last": "2026-07-17",
+   "count": 3979,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   },
@@ -219,8 +219,8 @@
    "style": "성장",
    "assetType": "etf",
    "currency": "USD",
-   "first": "2006-08-29",
-   "last": "2026-07-16",
+   "first": "2006-08-30",
+   "last": "2026-07-17",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -233,8 +233,8 @@
    "style": "성장",
    "assetType": "etf",
    "currency": "USD",
-   "first": "2006-08-29",
-   "last": "2026-07-16",
+   "first": "2006-08-30",
+   "last": "2026-07-17",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -247,8 +247,8 @@
    "style": "성장",
    "assetType": "etf",
    "currency": "USD",
-   "first": "2006-08-29",
-   "last": "2026-07-16",
+   "first": "2006-08-30",
+   "last": "2026-07-17",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -262,8 +262,8 @@
    "assetType": "etf",
    "currency": "USD",
    "first": "2010-03-11",
-   "last": "2026-07-16",
-   "count": 4112,
+   "last": "2026-07-17",
+   "count": 4113,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   },
@@ -275,8 +275,8 @@
    "style": "성장",
    "assetType": "etf",
    "currency": "USD",
-   "first": "2006-08-29",
-   "last": "2026-07-16",
+   "first": "2006-08-30",
+   "last": "2026-07-17",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -289,8 +289,8 @@
    "style": "안전",
    "assetType": "etf",
    "currency": "USD",
-   "first": "2006-08-29",
-   "last": "2026-07-16",
+   "first": "2006-08-30",
+   "last": "2026-07-17",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -303,8 +303,8 @@
    "style": "안전",
    "assetType": "etf",
    "currency": "USD",
-   "first": "2006-08-29",
-   "last": "2026-07-16",
+   "first": "2006-08-30",
+   "last": "2026-07-17",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -317,8 +317,8 @@
    "style": "안전",
    "assetType": "etf",
    "currency": "USD",
-   "first": "2006-08-29",
-   "last": "2026-07-16",
+   "first": "2006-08-30",
+   "last": "2026-07-17",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -331,8 +331,8 @@
    "style": "개별주",
    "assetType": "stock",
    "currency": "USD",
-   "first": "2006-08-29",
-   "last": "2026-07-16",
+   "first": "2006-08-30",
+   "last": "2026-07-17",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -346,8 +346,8 @@
    "assetType": "etf",
    "currency": "USD",
    "first": "2026-04-02",
-   "last": "2026-07-16",
-   "count": 72,
+   "last": "2026-07-17",
+   "count": 73,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   },
@@ -360,8 +360,8 @@
    "assetType": "etf",
    "currency": "USD",
    "first": "2021-07-09",
-   "last": "2026-07-16",
-   "count": 456,
+   "last": "2026-07-17",
+   "count": 457,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   },
@@ -374,8 +374,8 @@
    "assetType": "etf",
    "currency": "USD",
    "first": "2017-01-25",
-   "last": "2026-07-16",
-   "count": 2381,
+   "last": "2026-07-17",
+   "count": 2382,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   },
@@ -388,8 +388,8 @@
    "assetType": "etf",
    "currency": "USD",
    "first": "2025-04-03",
-   "last": "2026-07-16",
-   "count": 322,
+   "last": "2026-07-17",
+   "count": 323,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   }
