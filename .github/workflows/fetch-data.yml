@@ -13,6 +13,13 @@ on:
 permissions:
   contents: write
 
+# push 트리거(scripts/** 변경)와 수동 dispatch가 겹치면 여러 run이 같은 브랜치에
+# 데이터 커밋을 경쟁해 push 단계가 non-fast-forward로 실패한다(2026-07-18 실측).
+# 같은 브랜치의 동시 실행을 직렬화한다(취소하지 않고 대기).
+concurrency:
+  group: fetch-data-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   fetch:
     runs-on: ubuntu-latest
@@ -40,5 +47,5 @@ jobs:
             echo "no data changes"
           else
             git commit -m "chore: update ETF price data"
-            git push
+            git push || (git pull --rebase && git push)
           fi
