@@ -1246,6 +1246,17 @@ async function renderMyAssets() {
   const totalProfit = totalCost > 0 ? costedValue - totalCost : null;
   const selfSuffRate = totalMonthlyBuy > 0 ? totalMonthlyDiv / totalMonthlyBuy : null;
 
+  // 계좌별로 묶어서 보이게 정렬(정식 계좌 순서 우선, 목록 밖 계좌명은 뒤로·이름순,
+  // 같은 계좌 안에서는 평가액 내림차순) — 정렬이 없으면 나중에 추가된 종목이 항상
+  // 배열 끝에 붙어 같은 계좌가 표에서 여러 구간으로 쪼개져 보이는 문제가 있었다.
+  perRow.sort((a, b) => {
+    const ai = ACCOUNT_TYPES.indexOf(a.account), bi = ACCOUNT_TYPES.indexOf(b.account);
+    const ar = ai === -1 ? ACCOUNT_TYPES.length : ai, br = bi === -1 ? ACCOUNT_TYPES.length : bi;
+    if (ar !== br) return ar - br;
+    if (a.account !== b.account) return (a.account || "").localeCompare(b.account || "");
+    return b.value - a.value;
+  });
+
   // "📄 시트 저장" 버튼용 — 화면과 동일한 계산 결과를 CSV로 내릴 수 있게 보관
   state.myAssetsCsvData = { perRow, accountMap, periodMap, totalValue, totalMonthlyDiv, totalProfit };
 
