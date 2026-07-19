@@ -1063,6 +1063,22 @@ function renderMyOverview() {
   `;
 }
 
+// 미수집 종목 감지 시 manifest를 1회 재조회해 자가치유한다 — 기기(WebView) 캐시가
+// 묵은 manifest를 물고 있으면 저장소에 이미 수집된 종목이 "수집 목록에 없음"으로
+// 계속 제외되는 실사례(0219E0.KS, 2026-07-19)가 있었다.
+async function refreshManifestAndRerender() {
+  const m = await fetchJSON(`${DATA_DIR}/manifest.json`);
+  state.manifest = m;
+  state.listedEtfs = [
+    ...m.us.map((e) => ({ ...e, market: "us" })),
+    ...m.kr.map((e) => ({ ...e, market: "kr" })),
+  ];
+  state.metaBySymbol = new Map(state.listedEtfs.map((e) => [e.symbol, e]));
+  const pageUpdated = document.getElementById("pageUpdated");
+  if (pageUpdated) pageUpdated.textContent = `데이터 업데이트: ${m.updated}`;
+  renderMyAssets();
+}
+
 async function renderMyAssets() {
   const result = document.getElementById("myAssetResult");
   state.myAssetsCsvData = null;
@@ -1109,6 +1125,13 @@ async function renderMyAssets() {
   const unknownRows = rows.filter((r) => !state.metaBySymbol.has(r.symbol));
   let knownRows = rows.filter((r) => state.metaBySymbol.has(r.symbol));
 
+  // 미수집 종목이 보이면 세션당 1회 manifest를 자동 재조회한다 — 앱 시작 시점에
+  // 캐시된 구본을 읽었더라도 사용자 조작 없이 스스로 회복되도록.
+  if (unknownRows.length && !state.manifestRefetched) {
+    state.manifestRefetched = true;
+    try { await refreshManifestAndRerender(); return; } catch (err) { /* 재조회 실패 시 기존 manifest로 계속 */ }
+  }
+
   // 일반종목(개별주) 반영/미반영 토글 — 꺼두면 ETF만으로 평가액·배당·목표계산을 함
   const includeStocks = localStorage.getItem(MY_INCLUDE_STOCKS_KEY) !== "0";
   const stockRows = knownRows.filter((r) => state.metaBySymbol.get(r.symbol).assetType === "stock");
@@ -1133,8 +1156,18 @@ async function renderMyAssets() {
     ? `<p class="stat-sub" style="margin-top:6px;">🏢 일반종목 ${stockRows.length}건(${stockRows.map((r) => (state.metaBySymbol.get(r.symbol) || {}).name || r.symbol).join(", ")})은 "일반종목: 제외" 상태라 계산에서 빠졌습니다.</p>`
     : "";
   const unknownHTML = unknownRows.length
-    ? `<p class="stat-sub" style="color:var(--critical); margin-top:10px;">⚠️ 아직 수집 목록에 없는 종목 ${unknownRows.length}건은 계산에서 제외했습니다: ${unknownRows.map((r) => r.symbol).join(", ")} — 클로드에게 "이 종목 추가해줘"라고 요청하면 다음 데이터 수집 때 반영됩니다.</p>`
+    ? `<p class="stat-sub" style="color:var(--critical); margin-top:10px;">⚠️ 아직 수집 목록에 없는 종목 ${unknownRows.length}건은 계산에서 제외했습니다: ${unknownRows.map((r) => r.symbol).join(", ")} — 클로드에게 "이 종목 추가해줘"라고 요청하면 다음 데이터 수집 때 반영됩니다. (데이터 기준: ${state.manifest.updated}) <button type="button" id="myManifestRefreshBtn">🔄 수집 목록 새로 확인</button></p>`
     : "";
+  if (result && !result.dataset.manifestBtnWired) {
+    result.dataset.manifestBtnWired = "1";
+    result.addEventListener("click", async (e) => {
+      const btn = e.target && e.target.id === "myManifestRefreshBtn" ? e.target : null;
+      if (!btn) return;
+      btn.disabled = true; btn.textContent = "확인 중…";
+      try { await refreshManifestAndRerender(); }
+      catch (err) { btn.disabled = false; btn.textContent = "🔄 수집 목록 새로 확인"; }
+    });
+  }
 
   if (!items.length) {
     result.innerHTML = `<p class="compare-empty">계산할 수 있는 종목이 없습니다.</p>${unknownHTML}`;
