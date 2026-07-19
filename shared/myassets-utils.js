@@ -587,6 +587,40 @@ function bollingerSeries(closes, n = 20, mult = 2) {
   return { mid, upper, lower };
 }
 
+/* 가격 vs RSI 다이버전스 감지(단순 터치·크로스 매매 금지 원칙 보완용) — 피벗 저점/고점(양옆 pivotK개 봉보다 낮은/높은 지점) 최근 2개 비교.
+   가격 저점 하락+RSI 저점 상승=강세(+1), 가격 고점 상승+RSI 고점 하락=약세(−1). 최신 피벗이 recentWithin 봉 이내일 때만 유효, 아니면 0 */
+function divergenceSignal(closes, rsiArr, opts = {}) {
+  const { lookback = 60, pivotK = 3, recentWithin = 12 } = opts;
+  const n = closes.length;
+  if (n < pivotK * 2 + 2) return { v: 0, label: "없음" };
+  const start = Math.max(pivotK, n - lookback);
+  const lows = [], highs = [];
+  for (let i = start; i < n - pivotK; i++) {
+    if (rsiArr[i] == null) continue;
+    let isLow = true, isHigh = true;
+    for (let k = 1; k <= pivotK; k++) {
+      if (closes[i - k] <= closes[i] || closes[i + k] <= closes[i]) isLow = false;
+      if (closes[i - k] >= closes[i] || closes[i + k] >= closes[i]) isHigh = false;
+    }
+    if (isLow) lows.push({ i, price: closes[i], rsi: rsiArr[i] });
+    if (isHigh) highs.push({ i, price: closes[i], rsi: rsiArr[i] });
+  }
+  const lastIdx = n - 1;
+  if (lows.length >= 2) {
+    const [a, b] = lows.slice(-2);
+    if (lastIdx - b.i <= recentWithin && b.price < a.price && b.rsi > a.rsi) {
+      return { v: 1, label: "강세(저점: 가격↓·RSI↑)" };
+    }
+  }
+  if (highs.length >= 2) {
+    const [a, b] = highs.slice(-2);
+    if (lastIdx - b.i <= recentWithin && b.price > a.price && b.rsi < a.rsi) {
+      return { v: -1, label: "약세(고점: 가격↑·RSI↓)" };
+    }
+  }
+  return { v: 0, label: "없음" };
+}
+
 /* 일간수익률 표준편차(%) — 최근 window 거래일, 표본 표준편차(n-1). 데이터 부족 시 null */
 function dailyReturnSigma(closes, window) {
   if (closes.length < window + 1) return null;
