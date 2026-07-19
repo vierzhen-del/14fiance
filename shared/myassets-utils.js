@@ -61,7 +61,8 @@ function fmtDate(d) { return d; }
 function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
 
 async function fetchJSON(path) {
-  const res = await fetch(path);
+  const sep = path.includes("?") ? "&" : "?";
+  const res = await fetch(`${path}${sep}_=${Date.now()}`, { cache: "no-store" });
   if (!res.ok) throw new Error(`${path} 불러오기 실패 (${res.status})`);
   return res.json();
 }
