@@ -524,7 +524,8 @@ function buildAccountCaptureSummaryText(validated, divStatus) {
     const label = h.matchedName || h.name;
     const symbolPart = h.matchedSymbol ? ` (${h.matchedSymbol})` : "";
     const issuePart = h.issues && h.issues.length ? ` [⚠️ ${h.issues.join("; ")}]` : " [정상]";
-    lines.push(`- ${label}${symbolPart}: ${h.qty ?? "?"}주, 평가액 ${h.evalAmount != null ? Math.round(h.evalAmount).toLocaleString() : "?"}원${issuePart}`);
+    const acctPart = ` [${h.matchedAccount || h.rawAccountLabel || "계좌 미지정"}]`;
+    lines.push(`-${acctPart} ${label}${symbolPart}: ${h.qty ?? "?"}주, 평가액 ${h.evalAmount != null ? Math.round(h.evalAmount).toLocaleString() : "?"}원${issuePart}`);
   }
   lines.push("");
   lines.push(`이 결과를 ${sopTargetLabel()}에 붙여넣어 노션 "계좌 종목 현황 SOP"에 반영해줘.`);
@@ -541,7 +542,8 @@ function buildBuyPlanCaptureSummaryText(validated) {
     const label = h.matchedName || h.name;
     const symbolPart = h.matchedSymbol ? ` (${h.matchedSymbol})` : "";
     const issuePart = h.issues && h.issues.length ? ` [⚠️ ${h.issues.join("; ")}]` : " [정상]";
-    lines.push(`- ${label}${symbolPart}: 1회 ${h.buyQtyPerTime ?? "?"}주 × ${h.buyFreq || "?"}${h.buyDay ? ` (${h.buyDay})` : ""}${issuePart}`);
+    const acctPart = ` [${h.matchedAccount || h.rawAccountLabel || "계좌 미지정"}]`;
+    lines.push(`-${acctPart} ${label}${symbolPart}: 1회 ${h.buyQtyPerTime ?? "?"}주 × ${h.buyFreq || "?"}${h.buyDay ? ` (${h.buyDay})` : ""}${issuePart}`);
   }
   lines.push("");
   lines.push(`이 결과를 ${sopTargetLabel()}에 붙여넣어 노션 "월자동매수 현황"에 반영해줘.`);
