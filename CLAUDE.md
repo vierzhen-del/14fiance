@@ -48,11 +48,14 @@ intraday-kr(가장 심각, 3/14회 측정)부터 먼저 적용 — intraday-glob
 안전망) — 둘이 겹쳐도 `concurrency: intraday-kr-${{ github.ref }}`(직렬화, 취소 안 함)로 안전.
 PAT는 기존 Contents:Read 전용(3tv/second-brain 동기화용)과 분리된 **별도 Fine-grained PAT**
 (`14fiance`만, `Actions: Read and write`)를 사용 — n8n 웹UI에만 입력, 대화/코드에 노출 금지.
-⚠️ **이 워크플로 YAML 변경(`.github/workflows/intraday-kr.yml`의 concurrency 추가)은
-개발 브랜치(`claude/syncthing-github-analysis-6m34ma`)에만 커밋됐다** — GitHub의 `schedule:`과
-`workflow_dispatch`는 **배포 브랜치(`claude/us-etf-mdd-calculator-gdwui7`)의 워크플로 파일**을
-실행하므로, 다음 세션 시작 시 이 브랜치를 배포 브랜치에 병합해야 concurrency 보호가 실제로
-적용된다(위 "세션 시작 시 브랜치 동기화" 절차와 반대 방향 — 이번엔 dev→deploy 병합 필요).
+**n8n 워크플로 설치·토큰 입력·활성화 완료(2026-07-20)** — intraday-kr 1단계만 우선 적용,
+동일 커밋(concurrency 추가 포함)을 배포 브랜치(`claude/us-etf-mdd-calculator-gdwui7`)에도
+fast-forward 병합해 실제로 반영 완료. intraday-global·signal-alert 2·3단계는 Tab S9에서
+JSON 초안까지 작성됐으나 **비활성 상태로 보류** — intraday-global 쪽 UTC(GitHub cron)↔
+KST(n8n 스케줄 타임존) 요일 경계 불일치 검토가 남아 있어(자정 전후 최대 9시간 구간에서
+평일 범위가 어긋남) 그대로 재사용하면 안 되고, signal-alert는 배포 브랜치에 워크플로 파일이
+이미 존재함(2026-07-20 확인 — Tab S9 세션이 "존재 안 함"으로 오판했던 부분, 실제로는 있음)을
+확인했으니 그 문제는 없다. intraday-kr 실사용 검증(실제 자동 발화 여부) 후 이어서 진행.
 
 ## 시그널 텔레그램 알림 파이프라인 (A12, 2026-07-17)
 
