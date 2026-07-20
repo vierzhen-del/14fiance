@@ -1,0 +1,35 @@
+{
+  "name": "14fiance signal-alert workflow_dispatch 트리거",
+  "settings": { "timezone": "Asia/Seoul", "executionOrder": "v1" },
+  "nodes": [
+    {
+      "id": "schedule", "name": "국내마감16:05·미국마감익일06:35 (UTC→KST 요일보정)",
+      "type": "n8n-nodes-base.scheduleTrigger", "typeVersion": 1.2, "position": [0, 0],
+      "parameters": { "rule": { "interval": [
+        { "field": "cronExpression", "expression": "5 16 * * 1-5" },
+        { "field": "cronExpression", "expression": "35 6 * * 2-6" }
+      ] } }
+    },
+    {
+      "id": "dispatch", "name": "GitHub workflow_dispatch 호출",
+      "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [200, 0],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.github.com/repos/vierzhen-del/14fiance/actions/workflows/signal-alert.yml/dispatches",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [
+          { "name": "Authorization", "value": "Bearer <GITHUB_PAT>" },
+          { "name": "Accept", "value": "application/vnd.github+json" },
+          { "name": "X-GitHub-Api-Version", "value": "2022-11-28" }
+        ] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"ref\":\"claude/us-etf-mdd-calculator-gdwui7\"}",
+        "options": { "response": { "response": { "neverError": false } } }
+      }
+    }
+  ],
+  "connections": {
+    "국내마감16:05·미국마감익일06:35 (UTC→KST 요일보정)": { "main": [[{ "node": "GitHub workflow_dispatch 호출", "type": "main", "index": 0 }]] }
+  }
+}

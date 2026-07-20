@@ -13,6 +13,12 @@ on:
 permissions:
   contents: write
 
+# intraday-kr.yml과 같은 이유(n8n workflow_dispatch 백업 이중화 대비, 2026-07-20) —
+# 겹쳐도 live-trading 브랜치 force-push가 경합하지 않도록 직렬화.
+concurrency:
+  group: intraday-global-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   intraday:
     runs-on: ubuntu-latest

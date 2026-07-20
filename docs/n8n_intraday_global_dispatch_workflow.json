@@ -1,0 +1,36 @@
+{
+  "name": "14fiance intraday-global workflow_dispatch 트리거",
+  "settings": { "timezone": "Asia/Seoul", "executionOrder": "v1" },
+  "nodes": [
+    {
+      "id": "schedule", "name": "월09-23시·화-금종일·토00-08시 (UTC 평일1-5를 KST로 환산)",
+      "type": "n8n-nodes-base.scheduleTrigger", "typeVersion": 1.2, "position": [0, 0],
+      "parameters": { "rule": { "interval": [
+        { "field": "cronExpression", "expression": "7,37 9-23 * * 1" },
+        { "field": "cronExpression", "expression": "7,37 * * * 2-5" },
+        { "field": "cronExpression", "expression": "7,37 0-8 * * 6" }
+      ] } }
+    },
+    {
+      "id": "dispatch", "name": "GitHub workflow_dispatch 호출",
+      "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [200, 0],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.github.com/repos/vierzhen-del/14fiance/actions/workflows/intraday-global.yml/dispatches",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [
+          { "name": "Authorization", "value": "Bearer <GITHUB_PAT>" },
+          { "name": "Accept", "value": "application/vnd.github+json" },
+          { "name": "X-GitHub-Api-Version", "value": "2022-11-28" }
+        ] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"ref\":\"claude/us-etf-mdd-calculator-gdwui7\"}",
+        "options": { "response": { "response": { "neverError": false } } }
+      }
+    }
+  ],
+  "connections": {
+    "월09-23시·화-금종일·토00-08시 (UTC 평일1-5를 KST로 환산)": { "main": [[{ "node": "GitHub workflow_dispatch 호출", "type": "main", "index": 0 }]] }
+  }
+}

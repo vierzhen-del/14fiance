@@ -50,12 +50,19 @@ PAT는 기존 Contents:Read 전용(3tv/second-brain 동기화용)과 분리된 *
 (`14fiance`만, `Actions: Read and write`)를 사용 — n8n 웹UI에만 입력, 대화/코드에 노출 금지.
 **n8n 워크플로 설치·토큰 입력·활성화 완료(2026-07-20)** — intraday-kr 1단계만 우선 적용,
 동일 커밋(concurrency 추가 포함)을 배포 브랜치(`claude/us-etf-mdd-calculator-gdwui7`)에도
-fast-forward 병합해 실제로 반영 완료. intraday-global·signal-alert 2·3단계는 Tab S9에서
-JSON 초안까지 작성됐으나 **비활성 상태로 보류** — intraday-global 쪽 UTC(GitHub cron)↔
-KST(n8n 스케줄 타임존) 요일 경계 불일치 검토가 남아 있어(자정 전후 최대 9시간 구간에서
-평일 범위가 어긋남) 그대로 재사용하면 안 되고, signal-alert는 배포 브랜치에 워크플로 파일이
-이미 존재함(2026-07-20 확인 — Tab S9 세션이 "존재 안 함"으로 오판했던 부분, 실제로는 있음)을
-확인했으니 그 문제는 없다. intraday-kr 실사용 검증(실제 자동 발화 여부) 후 이어서 진행.
+fast-forward 병합해 실제로 반영 완료.
+
+**2·3단계(intraday-global·signal-alert) — UTC↔KST 요일 경계 계산 완료, 활성화는 보류
+(2026-07-20)**: GitHub `schedule:`은 UTC로 요일을 판정하는데 n8n은 Asia/Seoul(KST) 타임존이라,
+자정을 넘나드는 구간에서 cron 문자열을 그대로 복사하면 "평일" 범위가 어긋난다(실측 계산·근거는
+`docs/n8n_intraday_global_dispatch.md`). intraday-global(거의 24시간 운영)은 월요일 09~23시·
+화~금 종일·토요일 00~08시 3규칙으로, signal-alert의 "익일 06:35" 알림은 요일도 화~토(2-6)로
+shift해야 함을 확인(코멘트의 "익일"이 시각뿐 아니라 요일 범위에도 적용된다는 게 놓치기 쉬운
+함정이었음). `intraday-global.yml`에 concurrency 블록도 추가(intraday-kr과 동일 패턴, 개발+배포
+브랜치 양쪽 반영 완료). JSON·가이드는 `docs/n8n_intraday_global_dispatch_workflow.json` +
+`docs/n8n_signal_alert_dispatch_workflow.json` + `docs/n8n_intraday_global_dispatch.md`에
+준비 완료 — **intraday-kr의 실사용 검증(다음 장중 자동 발화 확인) 후 Tab S9에서 생성·활성화**할
+것(사용자 확정 순차 확장 방침 유지, 아직 activate 안 함).
 
 ## 시그널 텔레그램 알림 파이프라인 (A12, 2026-07-17)
 
