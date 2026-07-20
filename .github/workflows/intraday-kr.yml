@@ -12,6 +12,13 @@ on:
 permissions:
   contents: write
 
+# n8n(Tab S9)이 workflow_dispatch로 30분마다 직접 호출하기 시작하면(2026-07-20,
+# schedule 드롭 대응) 기존 schedule: 트리거와 겹칠 수 있다 — 동시 실행이 live 브랜치
+# force-push를 경합하지 않도록 fetch-data.yml/signal-alert.yml과 같은 패턴으로 직렬화.
+concurrency:
+  group: intraday-kr-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   intraday:
     runs-on: ubuntu-latest

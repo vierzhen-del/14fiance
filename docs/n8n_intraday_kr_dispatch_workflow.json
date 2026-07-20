@@ -1,0 +1,34 @@
+{
+  "name": "14fiance intraday-kr workflow_dispatch 트리거",
+  "settings": { "timezone": "Asia/Seoul", "executionOrder": "v1" },
+  "nodes": [
+    {
+      "id": "schedule", "name": "국내 장중 5분·35분 (09:05~15:35 KST)",
+      "type": "n8n-nodes-base.scheduleTrigger", "typeVersion": 1.2, "position": [0, 0],
+      "parameters": { "rule": { "interval": [
+        { "field": "cronExpression", "expression": "5,35 9-15 * * 1-5" }
+      ] } }
+    },
+    {
+      "id": "dispatch", "name": "GitHub workflow_dispatch 호출",
+      "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [200, 0],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.github.com/repos/vierzhen-del/14fiance/actions/workflows/intraday-kr.yml/dispatches",
+        "sendHeaders": true,
+        "headerParameters": { "parameters": [
+          { "name": "Authorization", "value": "Bearer <GITHUB_PAT>" },
+          { "name": "Accept", "value": "application/vnd.github+json" },
+          { "name": "X-GitHub-Api-Version", "value": "2022-11-28" }
+        ] },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"ref\":\"claude/us-etf-mdd-calculator-gdwui7\"}",
+        "options": { "response": { "response": { "neverError": false } } }
+      }
+    }
+  ],
+  "connections": {
+    "국내 장중 5분·35분 (09:05~15:35 KST)": { "main": [[{ "node": "GitHub workflow_dispatch 호출", "type": "main", "index": 0 }]] }
+  }
+}

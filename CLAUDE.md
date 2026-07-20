@@ -40,6 +40,20 @@
 
 **⚠️ 스케줄 신뢰도 낮음(2026-07-06~10 실측 확인)**: GitHub 무료 스케줄 큐가 congestion 시 실행을 크게 지연시키거나(수 시간~반나절) 아예 드롭한다 — 하루 14회(30분×평일 6.5시간) 예정인데 실제로는 하루 2~4회만 실행된 사례가 확인됨. 정각 offset(5분·35분)으로 일부 완화를 시도했지만 근본 해결은 아니다. 사용자가 "시세가 안 갱신되는 것 같다"고 하면: (1) 먼저 `mcp__github__actions_list`로 `intraday-kr.yml`의 최근 실행 이력을 확인해 실제로 최근에 돌았는지 확인하고, (2) 안 돌았으면 `mcp__github__actions_run_trigger`(`run_workflow`)로 즉시 수동 실행해 당장의 데이터를 갱신해 줄 것 — 사이트 자체의 표시 로직 버그가 아니라 GitHub 스케줄 큐 문제일 가능성이 높다.
 
+**근본 대응 — n8n workflow_dispatch 트리거(2026-07-20 도입)**: Tab S9의 n8n이 정상 동작 중이므로,
+GitHub `schedule:` 큐를 우회하는 `workflow_dispatch` API 호출을 n8n이 30분마다 직접 실행한다
+(`docs/n8n_intraday_kr_dispatch.md` + `docs/n8n_intraday_kr_dispatch_workflow.json`). 사용자 확정:
+intraday-kr(가장 심각, 3/14회 측정)부터 먼저 적용 — intraday-global·signal-alert는 검증 후 동일
+패턴으로 확장 예정. 기존 GitHub `schedule:` 트리거는 백업으로 유지(n8n/Tab S9 다운 시 대비 이중
+안전망) — 둘이 겹쳐도 `concurrency: intraday-kr-${{ github.ref }}`(직렬화, 취소 안 함)로 안전.
+PAT는 기존 Contents:Read 전용(3tv/second-brain 동기화용)과 분리된 **별도 Fine-grained PAT**
+(`14fiance`만, `Actions: Read and write`)를 사용 — n8n 웹UI에만 입력, 대화/코드에 노출 금지.
+⚠️ **이 워크플로 YAML 변경(`.github/workflows/intraday-kr.yml`의 concurrency 추가)은
+개발 브랜치(`claude/syncthing-github-analysis-6m34ma`)에만 커밋됐다** — GitHub의 `schedule:`과
+`workflow_dispatch`는 **배포 브랜치(`claude/us-etf-mdd-calculator-gdwui7`)의 워크플로 파일**을
+실행하므로, 다음 세션 시작 시 이 브랜치를 배포 브랜치에 병합해야 concurrency 보호가 실제로
+적용된다(위 "세션 시작 시 브랜치 동기화" 절차와 반대 방향 — 이번엔 dev→deploy 병합 필요).
+
 ## 시그널 텔레그램 알림 파이프라인 (A12, 2026-07-17)
 
 `.github/workflows/signal-alert.yml`이 평일 2회(16:05 KST 국내 마감 후 · 06:35 KST 미국 마감 후) `scripts/signal_alert.py`를 실행해 워치리스트(저장소 변수 `ALERT_WATCHLIST`, 기본 삼성전자·하이닉스·SOXL) 종목의 종합등급(📡 시그널 탭과 동일한 5투표: RSI14·다이버전스·볼린저·MACD·MA200이격)을 계산, **매일 요약 + 시그널 종목 🚨 강조** 메시지를 텔레그램으로 발송한다. 시크릿 `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` 미설정 시 안내 로그만 남기고 무해 종료. 직전 등급은 Actions 캐시(.alert_state.json — 저장소 커밋 안 함)로 보관해 등급 변화 시 🆕 표시. ⚠️ GitHub 무료 스케줄 지연/드롭 한계는 intraday와 동일 — 안 온다는 문의가 오면 `actions_list`로 실행 이력 확인 후 수동 실행. 지표 공식은 shared/myassets-utils.js와 교차검증된 동일 구현이므로 한쪽 수정 시 양쪽 동기화할 것.
