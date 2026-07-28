@@ -721,6 +721,146 @@
       "category": "채권·커버드콜",
       "region": "미국",
       "style": "배당"
+    },
+    {
+      "symbol": "0103T0.KS",
+      "name": "1Q K소버린AI",
+      "category": "국내 테마·섹터 (3protv 등락 상하위)",
+      "region": "한국",
+      "style": "성장"
+    },
+    {
+      "symbol": "412560.KS",
+      "name": "TIGER BBIG레버리지",
+      "category": "국내 테마·섹터 (3protv 등락 상하위)",
+      "region": "한국",
+      "style": "성장"
+    },
+    {
+      "symbol": "315270.KS",
+      "name": "TIGER 200커뮤니케이션서비스",
+      "category": "국내 테마·섹터 (3protv 등락 상하위)",
+      "region": "한국",
+      "style": "성장"
+    },
+    {
+      "symbol": "0105D0.KS",
+      "name": "SOL 한국AI소프트웨어",
+      "category": "국내 테마·섹터 (3protv 등락 상하위)",
+      "region": "한국",
+      "style": "성장"
+    },
+    {
+      "symbol": "157490.KS",
+      "name": "TIGER 소프트웨어",
+      "category": "국내 테마·섹터 (3protv 등락 상하위)",
+      "region": "한국",
+      "style": "성장"
+    },
+    {
+      "symbol": "266360.KS",
+      "name": "KODEX 미디어&엔터테인먼트",
+      "category": "국내 테마·섹터 (3protv 등락 상하위)",
+      "region": "한국",
+      "style": "성장"
+    },
+    {
+      "symbol": "117700.KS",
+      "name": "KODEX 건설",
+      "category": "국내 테마·섹터 (3protv 등락 상하위)",
+      "region": "한국",
+      "style": "성장"
+    },
+    {
+      "symbol": "427120.KS",
+      "name": "RISE AI플랫폼",
+      "category": "국내 테마·섹터 (3protv 등락 상하위)",
+      "region": "한국",
+      "style": "성장"
+    },
+    {
+      "symbol": "365000.KS",
+      "name": "TIGER 인터넷TOP10",
+      "category": "국내 테마·섹터 (3protv 등락 상하위)",
+      "region": "한국",
+      "style": "성장"
+    },
+    {
+      "symbol": "496770.KS",
+      "name": "PLUS 글로벌방산",
+      "category": "국내 테마·섹터 (3protv 등락 상하위)",
+      "region": "한국",
+      "style": "성장"
+    },
+    {
+      "symbol": "475300.KS",
+      "name": "SOL 반도체전공정",
+      "category": "국내 테마·섹터 (3protv 등락 상하위)",
+      "region": "한국",
+      "style": "성장"
+    },
+    {
+      "symbol": "476260.KS",
+      "name": "HANARO 반도체핵심공정주도주",
+      "category": "국내 테마·섹터 (3protv 등락 상하위)",
+      "region": "한국",
+      "style": "성장"
+    },
+    {
+      "symbol": "0220B0.KS",
+      "name": "DS 코스닥액티브",
+      "category": "국내 테마·섹터 (3protv 등락 상하위)",
+      "region": "한국",
+      "style": "성장"
+    },
+    {
+      "symbol": "455850.KS",
+      "name": "SOL AI반도체소부장",
+      "category": "국내 테마·섹터 (3protv 등락 상하위)",
+      "region": "한국",
+      "style": "성장"
+    },
+    {
+      "symbol": "471990.KS",
+      "name": "KODEX AI반도체핵심장비",
+      "category": "국내 테마·섹터 (3protv 등락 상하위)",
+      "region": "한국",
+      "style": "성장"
+    },
+    {
+      "symbol": "0191B0.KS",
+      "name": "MIDAS 코스닥액티브",
+      "category": "국내 테마·섹터 (3protv 등락 상하위)",
+      "region": "한국",
+      "style": "성장"
+    },
+    {
+      "symbol": "0100K0.KS",
+      "name": "KODEX 방산TOP10레버리지",
+      "category": "국내 테마·섹터 (3protv 등락 상하위)",
+      "region": "한국",
+      "style": "성장"
+    },
+    {
+      "symbol": "494310.KS",
+      "name": "KODEX 반도체레버리지",
+      "category": "국내 테마·섹터 (3protv 등락 상하위)",
+      "region": "한국",
+      "style": "성장"
+    },
+    {
+      "symbol": "488080.KS",
+      "name": "TIGER 반도체TOP10레버리지",
+      "category": "국내 테마·섹터 (3protv 등락 상하위)",
+      "region": "한국",
+      "style": "성장"
+    },
+    {
+      "symbol": "0204S0.KS",
+      "name": "TIGER 코스닥액티브",
+      "category": "국내 테마·섹터 (3protv 등락 상하위)",
+      "region": "한국",
+      "style": "성장"
     }
   ]
 }
