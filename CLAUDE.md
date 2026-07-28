@@ -56,3 +56,13 @@ force-push 구조다. 다른 파일을 넣지 말 것.
 수동 dispatch를 병행하면 동시 실행이 데이터 커밋을 경쟁한다. 상세는 `시세파이프라인` 스킬.
 
 **개인 자산 데이터는 저장소에 커밋하지 않는다** — import JSON 등 보유 데이터는 SendUserFile로만 전달한다.
+
+**3tv(삼프로TV) 연동 종목은 여기 등재해야 조회가 된다** — `scripts/etf_list.json`은 정적 큐레이션
+목록이라, 3tv 리포트(삼프로TV 방송 캡처)나 노션의 "ETF 등락 상위/하위" 리포트에 새 종목코드가
+나와도 이 파일에 없으면 14fiance는 그 종목을 전혀 모른다(가격도, 이름도 조회 불가 — 자동 이름
+조회 API가 없다, `fetch_data.py`는 이미 이름이 정해진 종목의 **가격만** 받아온다). 2026-07-28 실측:
+3protv 노션 리포트의 등락 상/하위 20종이 전부 이 목록에 없었다. **3tv 쪽에서 ETF를 조회했는데
+14fiance에 없으면(=이름을 모르면) `scripts/etf_list.json`의 `kr`(국내) 또는 `us`(미국) 배열에
+`{symbol(.KS 포함), name, category, region, style}`을 추가하고 배포 브랜치
+(`claude/us-etf-mdd-calculator-gdwui7`)에 커밋·푸시한다** — 이러면 다음 `fetch-data.yml` 실행부터
+가격 이력도 쌓이기 시작한다.
