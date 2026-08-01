@@ -72,6 +72,10 @@ function pushAssetChangelog(source, beforeHoldings, beforeSnap, afterHoldings, a
     beforeByAccount: beforeSnap.byAccount, afterByAccount: afterSnap.byAccount,
   });
   localStorage.setItem(MY_ASSETS_CHANGELOG_KEY, JSON.stringify(log.slice(0, 300)));
+  // MY_ASSETS_KEY 안에도 이력이 사본으로 박제돼 있어(applyMyAssets가 앱 재시작 시 그 사본으로
+  // 각 이력 키를 되씌운다) 방금 쓴 값을 saveMyAssets()로 즉시 동기화해두지 않으면, 앱을
+  // 재실행했을 때 이 changelog 항목이 사라진다(2026-08-01 실사례: 스냅샷 항목 소실과 동일 원인).
+  if (typeof saveMyAssets === "function") saveMyAssets();
   // 이 시점에는 이미 renderMyAssets()가 끝나 "변동이력" 탭 DOM이 새로 그려진 뒤라(그때는 아직
   // localStorage에 안 쓴 상태) 탭 내용만 다시 채워준다 — 안 보이는 탭이면 그냥 조용히 무시.
   const body = document.getElementById("myChangelogBody");
@@ -1837,7 +1841,9 @@ async function renderMyAssets() {
     if (idx >= 0) hist[idx] = entry; else hist.push(entry);
     hist.sort((a, b) => a.month.localeCompare(b.month));
     localStorage.setItem(MY_ASSETS_HISTORY_KEY, JSON.stringify(hist));
-    if (typeof window.autoBackupMyAssets === "function") window.autoBackupMyAssets();
+    // saveMyAssets()가 MY_ASSETS_KEY 안의 박제 사본까지 동기화해야, 앱 재실행 시
+    // applyMyAssets()가 그 오래된 사본으로 방금 쓴 값을 되씌우지 않는다.
+    saveMyAssets();
     flashStatus("mySnapshotStatus", `${month} 스냅샷 저장 ✓ (이 브라우저에만 보관)`);
     renderMyAssets();
   });
@@ -1870,7 +1876,9 @@ async function renderMyAssets() {
     if (idx >= 0) hist[idx] = entry; else hist.push(entry);
     hist.sort((a, b) => a.date.localeCompare(b.date));
     localStorage.setItem(MY_ASSETS_DAILY_HISTORY_KEY, JSON.stringify(hist));
-    if (typeof window.autoBackupMyAssets === "function") window.autoBackupMyAssets();
+    // saveMyAssets()가 MY_ASSETS_KEY 안의 박제 사본까지 동기화해야, 앱 재실행 시
+    // applyMyAssets()가 그 오래된 사본으로 방금 쓴 값을 되씌우지 않는다.
+    saveMyAssets();
     flashStatus("myDailySnapshotStatus", `${date} 일별 스냅샷 저장 ✓ (이 브라우저에만 보관)`);
     renderMyAssets();
   });
