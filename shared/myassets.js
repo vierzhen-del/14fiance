@@ -60,6 +60,35 @@ function snapshotAccountValues() {
   return { totalValue: csv.totalValue, byAccount };
 }
 
+/* ---------- A25a: 월별 스냅샷 자동 기록(계좌별·카테고리별 비중 포함) ----------
+   종전에는 "📸 이번 달 스냅샷 저장" 버튼을 눌러야만 쌓여서 이력이 거의 남지 않았고, 비중
+   정보도 없었다. 계좌를 갱신(캡처 반영·가져오기)하면 그 달 스냅샷이 자동으로 갱신되게 한다.
+   비중(%)이 아니라 **평가액**을 저장한다 — 나중에 그룹이 늘어도 합이 깨지지 않고, 화면에서
+   나눠 쓰면 되기 때문. 같은 달이면 덮어쓴다(수동 버튼과 동일 규칙). */
+function upsertMonthlySnapshot() {
+  const csv = state.myAssetsCsvData;
+  if (!csv) return; // 아직 렌더 전이면 기록할 값이 없음
+  const month = todayStr().slice(0, 7);
+  const byAccount = {};
+  for (const [acc, g] of csv.accountMap) byAccount[acc] = g.value;
+  const byCategory = {};
+  for (const p of csv.perRow) {
+    if (!(p.value > 0)) continue;
+    const k = (p.meta && p.meta.category) || "미분류";
+    byCategory[k] = (byCategory[k] || 0) + p.value;
+  }
+  const dpsBySymbol = {};
+  for (const p of csv.perRow) if (p.confirmedDps > 0) dpsBySymbol[p.symbol] = p.confirmedDps;
+
+  let hist = [];
+  try { hist = JSON.parse(localStorage.getItem(MY_ASSETS_HISTORY_KEY) || "[]"); } catch (e) { hist = []; }
+  const entry = { month, value: csv.totalValue, monthlyDiv: csv.totalMonthlyDiv, dpsBySymbol, byAccount, byCategory };
+  const idx = hist.findIndex((h) => h.month === month);
+  if (idx >= 0) hist[idx] = entry; else hist.push(entry);
+  hist.sort((a, b) => a.month.localeCompare(b.month));
+  localStorage.setItem(MY_ASSETS_HISTORY_KEY, JSON.stringify(hist));
+}
+
 /* beforeHoldings/afterHoldings는 snapshotHoldingsMap(), beforeSnap/afterSnap은 snapshotAccountValues()
    호출 결과를 그대로 넘긴다. 실제 종목변동이 없으면(예: 매수계획만 바뀐 경우) 기록하지 않는다. */
 function pushAssetChangelog(source, beforeHoldings, beforeSnap, afterHoldings, afterSnap) {
@@ -72,6 +101,9 @@ function pushAssetChangelog(source, beforeHoldings, beforeSnap, afterHoldings, a
     beforeByAccount: beforeSnap.byAccount, afterByAccount: afterSnap.byAccount,
   });
   localStorage.setItem(MY_ASSETS_CHANGELOG_KEY, JSON.stringify(log.slice(0, 300)));
+  // A25a: 계좌가 실제로 바뀐 시점이므로 이번 달 스냅샷(비중 포함)도 함께 갱신한다 —
+  // 수동 버튼을 누르지 않아도 월별 이력이 쌓이게 하는 것이 이 호출의 목적.
+  upsertMonthlySnapshot();
   // MY_ASSETS_KEY 안에도 이력이 사본으로 박제돼 있어(applyMyAssets가 앱 재시작 시 그 사본으로
   // 각 이력 키를 되씌운다) 방금 쓴 값을 saveMyAssets()로 즉시 동기화해두지 않으면, 앱을
   // 재실행했을 때 이 changelog 항목이 사라진다(2026-08-01 실사례: 스냅샷 항목 소실과 동일 원인).
@@ -137,12 +169,7 @@ function addMyAssetRow(a = {}) {
     <div class="portfolio-weight-wrap">
       <input type="number" class="my-div-rate portfolio-weight" style="width:104px" min="0" step="0.01" value="${a.divRate ?? ""}" placeholder="분배율(%,선택)" title="월 분배율(%). 입력하면 월배당을 '현재가×분배율'로 계산해 주가 등락이 바로 반영됩니다(노션 배당기준 마스터의 배당률)."> %
     </div>
-    <select class="my-period" aria-label="지급시기">
-      <option value="" ${!a.payPeriod ? "selected" : ""}>지급시기</option>
-      <option value="월초" ${a.payPeriod === "월초" ? "selected" : ""}>월초</option>
-      <option value="월중" ${a.payPeriod === "월중" ? "selected" : ""}>월중</option>
-      <option value="월말" ${a.payPeriod === "월말" ? "selected" : ""}>월말</option>
-    </select>
+    <select class="my-period" aria-label="지급시기">${payPeriodOptionsHTML(a.payPeriod)}</select>
     <button type="button" class="portfolio-remove" aria-label="종목 제거">×</button>
   `;
   // 배당 유형(실확/특별/고정)·특별배당 만료일 — 노션 SOP 메타데이터라 입력칸 없이 행에 보존만
@@ -167,7 +194,7 @@ function serializeMyAssets() {
       buyDay: el.querySelector(".my-buy-day").value.trim(),
       confirmedDps: parseFloat(el.querySelector(".my-confirmed").value) || 0,
       divRate: parseFloat(el.querySelector(".my-div-rate").value) || 0,
-      payPeriod: el.querySelector(".my-period").value,
+      payPeriod: normalizePayPeriod(el.querySelector(".my-period").value),
       divType: el.dataset.divType || "",
       divExpiry: el.dataset.divExpiry || "",
     })),
@@ -661,7 +688,7 @@ function buildBuyPlanHTML(perRow) {
 }
 
 /* 연도별 배당추이 — divHistory("YYYY-MM": 원) 확정치를 연도×12개월 표로 */
-function buildYearlyDivHTML(divHistory) {
+function buildYearlyDivHTML(divHistory, expectedMonthly, snapshotHistory) {
   const keys = Object.keys(divHistory || {}).filter((k) => /^\d{4}-\d{2}$/.test(k) && divHistory[k] > 0);
   if (!keys.length) return "";
   const fmtW = (v) => fmtPrice(v, "KRW");
@@ -693,7 +720,48 @@ function buildYearlyDivHTML(divHistory) {
       <thead><tr><th>연도</th><th>1월</th><th>2월</th><th>3월</th><th>4월</th><th>5월</th><th>6월</th><th>7월</th><th>8월</th><th>9월</th><th>10월</th><th>11월</th><th>12월</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
-    </div>${momHTML}`;
+    </div>${momHTML}${buildDivGapHTML(divHistory, expectedMonthly, snapshotHistory)}`;
+}
+
+/* ---------- A25c: 확정 배당 vs 실시간 예상 배당 + 괴리율 ----------
+   확정(divHistory = 실제 지급된 금액)과 예상(A24c/A25c의 "기준일 종가 × 분배율" 합계)을
+   나란히 놓고 괴리율을 보여준다. 월별 스냅샷의 monthlyDiv는 그 달 스냅샷을 찍은 시점의
+   예상액이라, 확정치가 함께 있는 달은 "그때 예상이 얼마나 맞았는지"를 사후 검증할 수 있다. */
+function buildDivGapHTML(divHistory, expectedMonthly, snapshotHistory) {
+  const fmtW = (v) => fmtPrice(v, "KRW");
+  const gapText = (exp, act) => {
+    const g = (exp - act) / act;
+    return `<span style="color:${Math.abs(g) < 0.05 ? "var(--good)" : "var(--critical)"}">${g >= 0 ? "+" : ""}${(g * 100).toFixed(1)}%</span>`;
+  };
+  const month = todayStr().slice(0, 7);
+  const confirmed = (divHistory || {})[month];
+  let card = "";
+  if (expectedMonthly > 0) {
+    card = `<p class="stat-sub" style="margin-top:10px;">이번 달(${month}) 실시간 예상 배당: <b>${fmtW(expectedMonthly)}</b>`
+      + (confirmed > 0
+        ? ` · 확정 <b>${fmtW(confirmed)}</b> · 괴리율 ${gapText(expectedMonthly, confirmed)}`
+        : ` · 확정 <b>미확정</b>(지급 후 이력에 반영됨)`)
+      + `</p>`;
+  }
+  // 과거 달: 스냅샷 예상액 vs 확정액 — 어느 달에 예상이 과대/과소였는지
+  const rows = (snapshotHistory || [])
+    .filter((h) => h.monthlyDiv > 0 && (divHistory || {})[h.month] > 0)
+    .slice(-12)
+    .reverse()
+    .map((h) => {
+      const act = divHistory[h.month];
+      return `<tr><td>${h.month}</td><td>${fmtW(h.monthlyDiv)}</td><td>${fmtW(act)}</td><td>${gapText(h.monthlyDiv, act)}</td></tr>`;
+    }).join("");
+  const table = rows
+    ? `<div style="overflow-x:auto; margin-top:8px;">
+        <table class="account-summary-table">
+          <thead><tr><th>월</th><th>그때 예상</th><th>확정</th><th>괴리율</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        </div>`
+    : "";
+  if (!card && !table) return "";
+  return `${card}${table}<p class="stat-sub" style="margin-top:6px;">예상 &gt; 확정이면 주가 기준 분배율이 실제 지급보다 높게 잡힌 것입니다. 예상액은 각 종목의 배당기준일 종가(기준일 미도래 시 현재가) × 분배율로 계산합니다.</p>`;
 }
 
 /* 일별 자산변동 캡처 이력 테이블 — "오늘 자산 스냅샷" 버튼으로 쌓은 이력을 최근순으로 표시 */
@@ -834,10 +902,22 @@ function changelogPeriodKey(ts, granularity) {
 /* A24c: 월배당 산출 근거 배지 — 같은 숫자라도 어떤 기준으로 나온 값인지 한눈에 보이게 한다.
    rate=노션 등록 분배율, derived=확정DPS÷현재가 역산, confirmed=확정DPS 고정(폴백), ttm=TTM추정 */
 function DIV_BASIS_LABEL(p) {
-  if (p.divBasis === "rate") return `분배율 ${(p.effRate * 100).toFixed(2)}%×현재가`;
-  if (p.divBasis === "derived") return `역산 ${(p.effRate * 100).toFixed(2)}%×현재가`;
-  if (p.divBasis === "confirmed") return "확정";
-  return "추정(TTM)";
+  // A25c: 어느 날 주가로 계산했는지까지 배지에 넣는다 — 기준일 종가면 그 날짜를, 기준일이
+  // 아직 안 왔으면 현재가를 썼다는 사실을 밝혀야 사용자가 숫자를 검산할 수 있다.
+  const priceRef = p.divPriceDate ? `기준일 ${p.divPriceDate} 종가` : "현재가";
+  if (p.divBasis === "rate") return `분배율 ${(p.effRate * 100).toFixed(2)}%×${priceRef}`;
+  if (p.divBasis === "derived") return `역산 ${(p.effRate * 100).toFixed(2)}%×${priceRef}`;
+  return `추정(TTM)×${priceRef}`;
+}
+
+/* A25c: 배당기준일·매수마감일(T+2) 안내 — 지급시기가 등록된 종목에만 표시 */
+function divRecordNoteHTML(p) {
+  if (!p.recordDate) return "";
+  if (p.recordFuture) {
+    return `<br><span style="color:var(--text-muted); font-size:11px;">기준일 ${p.recordDate} 미도래(현재가로 예상)</span>`;
+  }
+  const buy = p.buyDeadline ? ` · 매수마감 ${p.buyDeadline}(T+2)` : "";
+  return `<br><span style="color:var(--text-muted); font-size:11px;">기준일 ${p.recordDate}${buy}</span>`;
 }
 
 const CHANGE_TYPE_LABEL = { added: "🆕 신규", removed: "🗑️ 삭제", "qty-changed": "🔁 수량변경" };
@@ -917,6 +997,149 @@ function buildChangelogHTML(granularity) {
     </div>`;
   }).join("");
   return `${rows}<p class="stat-sub" style="margin-top:6px;">총 ${log.length}건의 변경 이벤트가 기록되어 있습니다(최대 300건, 이 브라우저에만 보관).</p>`;
+}
+
+/* ---------- A25b: 월별 포트폴리오 비중 변화 (계좌별·카테고리별) ----------
+   A25a가 월별 스냅샷에 byAccount·byCategory(평가액)를 남기므로, 여기서 각 달의 합으로
+   나눠 비중(%)을 만들고 전월 대비 %p 증감을 보여준다. 비중을 저장하지 않고 평가액에서
+   매번 계산하는 이유는 그룹 구성이 달라져도 합이 100%로 유지되게 하기 위함이다.
+   byAccount가 없는 구버전 스냅샷은 값을 지어내지 않고 그 달을 건너뛴다. */
+function buildWeightHistoryHTML(history, groupBy) {
+  const field = groupBy === "category" ? "byCategory" : "byAccount";
+  const months = (history || []).filter((h) => h[field] && Object.keys(h[field]).length);
+  if (months.length < 2) {
+    const only = months.length === 1 ? " (현재 1개월치만 기록됨)" : "";
+    return `<p class="compare-empty">월별 비중 변화는 서로 다른 달의 스냅샷이 2개 이상 쌓여야 표시됩니다${only} — 계좌를 갱신(캡처 반영·가져오기)하면 그 달 스냅샷이 자동으로 기록됩니다.</p>`;
+  }
+  const recent = months.slice(-12);
+  // 열(그룹)은 가장 최근 달의 비중이 큰 순 — 표가 매달 흔들리지 않게 한 기준으로 고정
+  const lastMap = recent[recent.length - 1][field];
+  const lastTotal = Object.values(lastMap).reduce((a, b) => a + b, 0) || 1;
+  const groups = Object.keys(lastMap).sort((a, b) => (lastMap[b] || 0) - (lastMap[a] || 0));
+  const pctOf = (map, g) => {
+    const tot = Object.values(map).reduce((a, b) => a + b, 0);
+    return tot > 0 ? ((map[g] || 0) / tot) * 100 : 0;
+  };
+  const rows = recent.slice().reverse().map((h, ri, arr) => {
+    const prev = arr[ri + 1]; // reverse 상태라 다음 원소가 전월
+    const cells = groups.map((g) => {
+      const cur = pctOf(h[field], g);
+      const d = prev ? cur - pctOf(prev[field], g) : null;
+      const dHTML = d == null || Math.abs(d) < 0.05 ? ""
+        : `<br><span style="font-size:11px; color:${d >= 0 ? "var(--good)" : "var(--critical)"}">${d >= 0 ? "+" : ""}${d.toFixed(1)}%p</span>`;
+      return `<td>${cur.toFixed(1)}%${dHTML}</td>`;
+    }).join("");
+    return `<tr><td>${h.month}</td>${cells}</tr>`;
+  }).join("");
+  // 계좌 미지정 비중이 크면 캡처 시 계좌 지정을 놓친 것이므로 눈에 띄게 알린다(A25e)
+  const unassigned = groupBy === "category" ? 0 : pctOf(lastMap, "계좌 미지정") || pctOf(lastMap, "미지정");
+  const warn = unassigned >= 1
+    ? `<p class="stat-sub" style="color:var(--critical); margin-top:6px;">⚠️ 최근 달에 계좌 미지정이 ${unassigned.toFixed(1)}% 있습니다 — 캡처 파싱 때 계좌를 지정하지 않으면 이렇게 남습니다. 캡처 검토표의 "⚡ 계좌 일괄 지정"으로 한 번에 지정한 뒤 다시 반영하세요.</p>`
+    : "";
+  return `<div style="overflow-x:auto;">
+    <table class="account-summary-table">
+      <thead><tr><th>월</th>${groups.map((g) => `<th>${g}</th>`).join("")}</tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    </div>${warn}
+    <p class="stat-sub" style="margin-top:6px;">각 달 스냅샷의 평가액을 그 달 합계로 나눈 비중입니다. 아래 숫자는 전월 대비 증감(%p).</p>`;
+}
+
+/* ---------- A25d: 옵시디안 볼트 백업용 노트 생성 ----------
+   노션(온라인) 외에 폰에도 주요 기록을 남긴다. 여기서는 **문자열만 만들고**(순수 함수라
+   웹에서도 검증 가능) 실제 파일 기록은 APK 전용 app/src/native-files.js가 담당한다.
+   md는 옵시디안에서 바로 읽는 표, json은 재가공·복원용으로 쌍으로 남긴다. */
+const OBSIDIAN_PATH_KEY = "my_assets_obsidian_path_v1";
+function obsidianVaultPath() { return (localStorage.getItem(OBSIDIAN_PATH_KEY) || "").trim(); }
+
+function buildObsidianNotes() {
+  const csv = state.myAssetsCsvData;
+  const now = nowDateTimeStr();
+  const won = (v) => Math.round(v || 0).toLocaleString();
+  const read = (k) => { try { return JSON.parse(localStorage.getItem(k) || "[]"); } catch (e) { return []; } };
+  const monthly = read(MY_ASSETS_HISTORY_KEY);
+  const daily = read(MY_ASSETS_DAILY_HISTORY_KEY);
+  const changelog = read(MY_ASSETS_CHANGELOG_KEY);
+  const divHistory = state.myAssetsDivHistory || {};
+  const notes = [];
+
+  // ── 1) 배당 이력 ──
+  const divRows = Object.keys(divHistory).filter((k) => /^\d{4}-\d{2}$/.test(k)).sort().reverse();
+  const expected = csv ? csv.totalMonthlyDiv : 0;
+  const thisMonth = todayStr().slice(0, 7);
+  const perSym = csv ? csv.perRow.filter((p) => p.monthlyDiv > 0)
+    .sort((a, b) => b.monthlyDiv - a.monthlyDiv)
+    .map((p) => `| ${p.meta ? p.meta.name : p.symbol} | ${p.account || "미지정"} | ${p.qty.toLocaleString()} | ${p.effRate ? (p.effRate * 100).toFixed(2) + "%" : "—"} | ${p.divPriceDate || "현재가"} | ${won(p.monthlyDiv)} |`)
+    .join("\n") : "";
+  notes.push({ name: "배당-이력.md", text:
+`# 배당 이력 (14fiance)
+> 자동 생성 ${now} · 예상액은 "배당기준일 종가 × 분배율"(기준일 미도래 시 현재가)
+
+## 이번 달(${thisMonth})
+- 실시간 예상 배당: **₩${won(expected)}**
+- 확정: ${divHistory[thisMonth] > 0 ? `**₩${won(divHistory[thisMonth])}** · 괴리율 ${(((expected - divHistory[thisMonth]) / divHistory[thisMonth]) * 100).toFixed(1)}%` : "미확정(지급 후 반영)"}
+
+## 확정 월배당 이력
+| 월 | 확정 배당금 |
+| --- | --- |
+${divRows.map((m) => `| ${m} | ₩${won(divHistory[m])} |`).join("\n") || "| — | 기록 없음 |"}
+
+## 종목별 예상 배당(현재)
+| 종목 | 계좌 | 수량 | 분배율 | 기준주가일 | 월배당 |
+| --- | --- | --- | --- | --- | --- |
+${perSym || "| — | | | | | 보유 없음 |"}
+` });
+  notes.push({ name: "배당-이력.json", text: JSON.stringify({ generatedAt: now, expectedThisMonth: expected, divHistory }, null, 2) });
+
+  // ── 2) 종목변동 이력 ──
+  const clRows = changelog.slice(0, 60).map((e) => {
+    const items = e.changes.map((c) => `${c.account || "미지정"} ${c.symbol} ${CHANGE_TYPE_LABEL[c.type] || c.type}(${c.oldQty}→${c.newQty})`).join(", ");
+    return `### ${e.ts} · ${CHANGE_SOURCE_LABEL[e.source] || e.source}\n- 자산: ₩${won(e.beforeValue)} → ₩${won(e.afterValue)}\n- 변동 ${e.changes.length}건: ${items}`;
+  }).join("\n\n");
+  notes.push({ name: "종목변동-이력.md", text:
+`# 종목변동 이력 (14fiance)
+> 자동 생성 ${now} · 최근 ${Math.min(changelog.length, 60)}건 / 전체 ${changelog.length}건
+
+${clRows || "기록 없음 — 캡처 반영·가져오기를 하면 여기 쌓입니다."}
+` });
+  notes.push({ name: "종목변동-이력.json", text: JSON.stringify({ generatedAt: now, changelog }, null, 2) });
+
+  // ── 3) 일별 종합결과 ──
+  const dailyRows = daily.slice().reverse().slice(0, 90)
+    .map((h) => `| ${h.date} | ₩${won(h.value)} | ₩${won(h.monthlyDiv)} |`).join("\n");
+  const lastSnap = monthly[monthly.length - 1];
+  const accRows = lastSnap && lastSnap.byAccount
+    ? Object.entries(lastSnap.byAccount).sort((a, b) => b[1] - a[1])
+        .map(([k, v]) => `| ${k} | ₩${won(v)} | ${((v / (lastSnap.value || 1)) * 100).toFixed(1)}% |`).join("\n")
+    : "";
+  notes.push({ name: "일별-종합결과.md", text:
+`# 일별 종합결과 (14fiance)
+> 자동 생성 ${now}
+
+## 현재 요약
+- 총 평가액: **₩${won(csv ? csv.totalValue : 0)}**
+- 예상 월배당: **₩${won(expected)}**
+- 보유 종목: ${csv ? csv.perRow.length : 0}건
+
+## 계좌별 비중(최근 월 스냅샷${lastSnap ? ` ${lastSnap.month}` : ""})
+| 계좌 | 평가액 | 비중 |
+| --- | --- | --- |
+${accRows || "| — | | 스냅샷 없음 |"}
+
+## 일별 자산 스냅샷
+| 날짜 | 평가액 | 월배당 |
+| --- | --- | --- |
+${dailyRows || "| — | | 기록 없음 |"}
+` });
+  notes.push({ name: "일별-종합결과.json", text: JSON.stringify({
+    generatedAt: now,
+    totalValue: csv ? csv.totalValue : 0,
+    expectedMonthlyDiv: expected,
+    dailyHistory: daily,
+    monthlySnapshots: monthly,
+  }, null, 2) });
+
+  return notes;
 }
 
 /* ---------- A6: 📊 지수비교 탭 — 내 수익률 vs 벤치마크 ----------
@@ -1290,9 +1513,21 @@ async function renderMyAssets() {
     // divBasis: 화면에 산출 근거를 표시하기 위한 구분 — rate(등록 분배율)/derived(확정DPS 역산)/ttm(TTM 역산)
     const divBasis = registeredRate ? "rate" : derivedRate ? "derived" : "ttm";
     const usedConfirmed = it.confirmedDps > 0;
-    const monthlyDiv = effRate > 0 ? toKrw(close * effRate) * it.qty : 0;
+    /* A25c: 분배금은 "배당기준일 종가 × 분배율"로 계산한다. 기준일은 지급시기(월초/월중/월말/
+       분기)로 정해지는 정형 패턴이라 종목별 조회가 필요 없고, 휴일 보정은 실제 거래일 시리즈로
+       처리한다(dividendRecordDate 주석 참조). 기준일이 아직 안 온 달은 그 날 종가가 없으므로
+       현재가로 대신 계산하고 화면에 "미도래·현재가 기준"으로 구분 표시한다. */
+    const recordInfo = dividendRecordDate(it.payPeriod, todayStr().slice(0, 7), it.full.dates);
+    const recordClose = recordInfo && !recordInfo.future ? closeOnDate(it.full, recordInfo.date) : null;
+    // 배당 계산에 실제로 쓴 주가와 그 날짜 — 화면에 "어느 날 주가로 계산했는지" 밝히기 위해 보관
+    const divPrice = recordClose != null ? recordClose : close;
+    const divPriceDate = recordClose != null ? recordInfo.date : null; // null이면 현재가 사용
+    const recordDate = recordInfo ? recordInfo.date : null;
+    const recordFuture = recordInfo ? recordInfo.future : false;
+    const buyDeadline = recordInfo && !recordInfo.future ? buyDeadlineDate(recordInfo.date, it.full.dates) : null;
+    const monthlyDiv = effRate > 0 ? toKrw(divPrice * effRate) * it.qty : 0;
     // 확정 DPS 대비 괴리(분배율 기준으로 계산했을 때 실제 등록 확정값과 얼마나 차이나는지)
-    const dpsFromRate = effRate > 0 ? close * effRate : null;
+    const dpsFromRate = effRate > 0 ? divPrice * effRate : null;
     const dpsGapPct = dpsFromRate != null && it.confirmedDps > 0 ? (dpsFromRate - it.confirmedDps) / it.confirmedDps : null;
     // 다음달 기대월배당: 등록된 연 배당률(divYield) × 현재가 기준 — TTM 평균과 별개로 "지금 주가라면 다음달 얼마"를 보여주는 참고치
     const nextMonthDiv = divYield > 0 ? toKrw((close * divYield) / 12) * it.qty : 0;
@@ -1322,7 +1557,7 @@ async function renderMyAssets() {
     if (cost != null) { totalCost += cost; costedValue += value; }
     totalMonthlyDiv += monthlyDiv;
     totalMonthlyBuy += monthlyBuy;
-    perRow.push({ ...it, meta, close, isUsd, value, cost, profit, monthlyDiv, nextMonthDiv, monthlyBuy, erosion, usedConfirmed, trailReturn, effRate, divBasis, dpsFromRate, dpsGapPct });
+    perRow.push({ ...it, meta, close, isUsd, value, cost, profit, monthlyDiv, nextMonthDiv, monthlyBuy, erosion, usedConfirmed, trailReturn, effRate, divBasis, dpsFromRate, dpsGapPct, divPrice, divPriceDate, recordDate, recordFuture, buyDeadline });
 
     const accKey = it.account || "계좌 미지정";
     if (!accountMap.has(accKey)) accountMap.set(accKey, { value: 0, cost: 0, monthlyDiv: 0, monthlyBuy: 0, n: 0 });
@@ -1401,7 +1636,7 @@ async function renderMyAssets() {
     const distLabel = perShareMonthly > 0
       ? `${p.isUsd ? "$" + perShareMonthly.toFixed(4) : fmtW(perShareMonthly)} <span style="color:${basisColor}; font-size:11px;">${basisText}</span>${
           p.dpsGapPct != null && Math.abs(p.dpsGapPct) >= 0.02
-            ? `<br><span style="color:var(--critical); font-size:11px;">확정 ${fmtW(p.confirmedDps)} 대비 ${p.dpsGapPct >= 0 ? "+" : ""}${(p.dpsGapPct * 100).toFixed(0)}%</span>` : ""}`
+            ? `<br><span style="color:var(--critical); font-size:11px;">확정 ${fmtW(p.confirmedDps)} 대비 ${p.dpsGapPct >= 0 ? "+" : ""}${(p.dpsGapPct * 100).toFixed(0)}%</span>` : ""}${divRecordNoteHTML(p)}`
       : "—";
     const divLabel = p.monthlyDiv > 0
       ? `${fmtW(p.monthlyDiv)} <span style="color:${basisColor}; font-size:11px;">${basisText}</span>`
@@ -1541,15 +1776,16 @@ async function renderMyAssets() {
     </div>`;
   }).join("");
 
-  // 매수계획 상세(ETF모으기) + 연도별 확정 배당 이력
+  // 매수계획 상세(ETF모으기)
   const buyPlanHTML = buildBuyPlanHTML(perRow);
-  const yearlyHTML = buildYearlyDivHTML(state.myAssetsDivHistory || {});
 
   // 계좌 히트맵 탭은 A7에서 트리맵으로 대체 — 패널 컨테이너에 renderMyAssets 끝의
   // 와이어링(renderTreemap)이 buildTreemapHTML 결과를 채운다.
 
-  // 월별 스냅샷 추이 — "이번 달 스냅샷 저장" 버튼으로 기기에 누적(로그인 없이도 이력 확인 가능)
+  // 월별 스냅샷 추이 — 계좌 갱신 시 자동 기록(A25a) + "이번 달 스냅샷 저장" 수동 버튼
   const history = JSON.parse(localStorage.getItem(MY_ASSETS_HISTORY_KEY) || "[]");
+  // 연도별 확정 배당 이력 + 예상 대비 괴리율(A25c) — history를 쓰므로 반드시 그 뒤에서 호출
+  const yearlyHTML = buildYearlyDivHTML(state.myAssetsDivHistory || {}, totalMonthlyDiv, history);
   const trendHTML = history.length >= 2
     ? `<div id="myAssetTrendChart"></div>`
     : `<p class="compare-empty">"이번 달 스냅샷 저장"을 매달 눌러두면 평가액·월배당 추이 그래프가 여기 쌓입니다(현재 ${history.length}개월 기록).</p>`;
@@ -1664,6 +1900,15 @@ async function renderMyAssets() {
       <p class="stat-sub" style="margin-top:8px;">시장 전망(드러켄밀러 OS·매크로 스코어)은 외부 시장데이터가 필요해 이 사이트 범위 밖입니다 — 클로드 세션(금융비서)에서 제공됩니다.</p>
 
       ${returnAnalysisHTML}
+
+      <p class="chart-title" style="margin-top:24px;">📅 월별 비중 변화</p>
+      <div class="controls" style="margin-bottom:8px;">
+        <select id="myWeightHistGroup" aria-label="비중 이력 그룹 기준">
+          <option value="account">계좌별</option>
+          <option value="category">카테고리별</option>
+        </select>
+      </div>
+      <div id="myWeightHistBody"></div>
 
       <details class="collapse-box" style="margin-top:20px;">
         <summary>📊 자산배분 비중 — 전종목 (${bySymbolValue.length}건)</summary>
@@ -1880,6 +2125,17 @@ async function renderMyAssets() {
       <p class="chart-title" style="margin-top:20px;">🏢 일반종목(개별주) 반영 상태</p>
       <p class="stat-sub">현재: <b>${includeStocks ? "포함" : "제외"}</b> — 위쪽 "일반종목: 포함/제외" 버튼으로 전환할 수 있습니다.</p>
 
+      <p class="chart-title" style="margin-top:20px;">🗂️ 옵시디안 폰 백업 (앱 전용)</p>
+      <p class="stat-sub">노션(온라인) 말고 <b>폰 안에도</b> 배당·종목변동·일별 종합결과를 남깁니다. 아래에 옵시디안 볼트 경로를 넣으면 데이터가 바뀔 때마다 그 폴더에 <b>마크다운(.md)과 JSON</b>이 함께 저장돼, 옵시디안에서 바로 열어 보거나 검색할 수 있습니다.</p>
+      <div class="action-row" style="margin:8px 0;">
+        <input type="text" id="myObsidianPath" placeholder="예: Obsidian/14rae" style="min-width:200px;" value="${obsidianVaultPath().replace(/"/g, "&quot;")}">
+        <button type="button" id="myObsidianSaveBtn" class="btn-action">저장</button>
+        <button type="button" id="myObsidianBackupBtn" class="btn-action" style="display:none;">📥 지금 백업</button>
+        <span id="myObsidianStatus" class="action-status"></span>
+      </div>
+      <p class="stat-sub">경로는 <b>문서 폴더 기준 상대경로</b>로 적으세요(안드로이드 저장소 정책상 임의 절대경로는 앱이 쓸 수 없습니다). 예를 들어 <code>Obsidian/14rae</code>를 넣으면 <b>문서/Obsidian/14rae/14fiance/</b> 아래에 파일이 생깁니다. 옵시디안에서 "폴더를 볼트로 열기"로 그 폴더(또는 상위 <code>문서/Obsidian</code>)를 지정하면 됩니다.</p>
+      <p class="stat-sub"><b>노션을 안 쓰는 경우</b>에도 이 경로만 지정해두면 기록이 전부 폰에 남습니다 — 노션 연동은 필수가 아니며, 이 백업만으로 배당 이력·종목변동·일별 결과를 계속 추적할 수 있습니다. (웹 브라우저에서는 파일 저장 권한이 없어 이 기능은 앱에서만 동작합니다.)</p>
+
       <p class="chart-title" style="margin-top:20px;">💾 백업·복원</p>
       <p class="stat-sub">📤 내보내기 파일에는 보유 종목·목표 설정과 함께 <b>스냅샷·변동이력·워치리스트가 모두 포함</b>되어, 재설치 후 📂 가져오기 한 번으로 전체 복원됩니다. 앱(APK)에서는 데이터가 바뀔 때마다 <b>문서/14fiance/ 폴더에 백업 파일이 자동 저장</b>되고, 재설치 후 "📂 백업 폴더에서 복원" 버튼으로 파일 선택 없이 복원할 수 있습니다(안드로이드 저장소 정책에 따라 폴더가 삭제될 수 있으니 중요한 시점엔 📤 내보내기도 함께 보관 권장).</p>
     </div>
@@ -1927,14 +2183,8 @@ async function renderMyAssets() {
   }
   document.getElementById("mySnapshotBtn").addEventListener("click", () => {
     const month = todayStr().slice(0, 7);
-    const hist = JSON.parse(localStorage.getItem(MY_ASSETS_HISTORY_KEY) || "[]");
-    const idx = hist.findIndex((h) => h.month === month);
-    const dpsBySymbol = {};
-    for (const p of perRow) if (p.usedConfirmed) dpsBySymbol[p.symbol] = p.confirmedDps;
-    const entry = { month, value: totalValue, monthlyDiv: totalMonthlyDiv, dpsBySymbol };
-    if (idx >= 0) hist[idx] = entry; else hist.push(entry);
-    hist.sort((a, b) => a.month.localeCompare(b.month));
-    localStorage.setItem(MY_ASSETS_HISTORY_KEY, JSON.stringify(hist));
+    // A25a: 수동 버튼도 자동 경로와 같은 헬퍼를 써서 저장 형식(비중 포함)을 하나로 통일한다.
+    upsertMonthlySnapshot();
     // saveMyAssets()가 MY_ASSETS_KEY 안의 박제 사본까지 동기화해야, 앱 재실행 시
     // applyMyAssets()가 그 오래된 사본으로 방금 쓴 값을 되씌우지 않는다.
     saveMyAssets();
@@ -1989,6 +2239,40 @@ async function renderMyAssets() {
   if (state.myAssetChangeGranularity) changeSel.value = state.myAssetChangeGranularity;
   changeSel.addEventListener("change", () => { state.myAssetChangeGranularity = changeSel.value; renderAssetChange(); });
   renderAssetChange();
+
+  // A25d: 옵시디안 볼트 경로 저장 + 수동 백업(네이티브에서만 버튼 노출)
+  const obsInput = document.getElementById("myObsidianPath");
+  const obsSaveBtn = document.getElementById("myObsidianSaveBtn");
+  if (obsInput && obsSaveBtn) {
+    obsSaveBtn.addEventListener("click", () => {
+      const v = obsInput.value.trim().replace(/^\/+|\/+$/g, "");
+      localStorage.setItem(OBSIDIAN_PATH_KEY, v);
+      flashStatus("myObsidianStatus", v ? `저장됨 — 문서/${v}/14fiance/` : "경로를 비웠습니다(백업 안 함)");
+      if (v && typeof window.exportObsidianNotes === "function") window.exportObsidianNotes();
+    });
+    const obsBackupBtn = document.getElementById("myObsidianBackupBtn");
+    if (obsBackupBtn && typeof window.exportObsidianNotes === "function") {
+      obsBackupBtn.style.display = ""; // 네이티브(APK)에서만 함수가 정의됨
+      obsBackupBtn.addEventListener("click", async () => {
+        if (!obsidianVaultPath()) { flashStatus("myObsidianStatus", "먼저 볼트 경로를 저장하세요"); return; }
+        flashStatus("myObsidianStatus", "백업 중…");
+        const ok = await window.exportObsidianNotes();
+        flashStatus("myObsidianStatus", ok ? "백업 완료 ✓" : "백업 실패 — 경로·권한을 확인하세요");
+      });
+    }
+  }
+
+  // A25b: 비중분석 탭의 월별 비중 변화 — 그룹 기준 전환(계좌별/카테고리별), 선택은 state에 보존
+  const weightSel = document.getElementById("myWeightHistGroup");
+  if (weightSel) {
+    const renderWeightHist = () => {
+      const body = document.getElementById("myWeightHistBody");
+      if (body) body.innerHTML = buildWeightHistoryHTML(history, weightSel.value);
+    };
+    if (state.myWeightHistGroup) weightSel.value = state.myWeightHistGroup;
+    weightSel.addEventListener("change", () => { state.myWeightHistGroup = weightSel.value; renderWeightHist(); });
+    renderWeightHist();
+  }
 
   const changelogSel = document.getElementById("myChangelogGranularity");
   const renderChangelog = () => {

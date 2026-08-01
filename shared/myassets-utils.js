@@ -391,6 +391,87 @@ function accountOptionsHTML(selected) {
   return html;
 }
 
+/* ---------- A25f: 지급시기(payPeriod) 정규화 ----------
+   가져오기 JSON은 "월중15일"처럼 상세 표기를 쓰는데 화면 select 옵션은 "월중"만 갖고 있어
+   어느 것도 매칭되지 않았고, 그 상태로 저장하면 지급시기가 통째로 빈 값이 됐다(2026-08-01
+   실측 버그 — 배당기준일 계산이 이 값에 의존하므로 치명적). 접두만 보고 정식 값으로 승격한다. */
+const PAY_PERIOD_TYPES = ["월초5일", "월중15일", "월말30일", "분기말", "확인안됨"];
+
+function normalizePayPeriod(v) {
+  const s = (v || "").trim();
+  if (!s || PAY_PERIOD_TYPES.includes(s)) return s;
+  if (s.startsWith("월초")) return "월초5일";
+  if (s.startsWith("월중")) return "월중15일";
+  if (s.startsWith("월말")) return "월말30일";
+  if (s.startsWith("분기")) return "분기말";
+  return s; // 알 수 없는 표기는 지우지 않고 보존(accountOptionsHTML의 목록 밖 계좌명 처리와 동일)
+}
+
+function payPeriodOptionsHTML(selected) {
+  const cur = normalizePayPeriod(selected);
+  let html = `<option value="" ${!cur ? "selected" : ""}>지급시기</option>`;
+  if (cur && !PAY_PERIOD_TYPES.includes(cur)) {
+    html += `<option value="${cur}" selected>${cur}</option>`;
+  }
+  for (const p of PAY_PERIOD_TYPES) {
+    html += `<option value="${p}" ${p === cur ? "selected" : ""}>${p}</option>`;
+  }
+  return html;
+}
+
+/* ---------- A25c: 배당기준일(record date) 산출 ----------
+   국내 ETF 기준일은 종목별 API 조회가 필요 없는 정형 패턴이다(사용자 제공 가이드):
+     월중 → 매월 15일 / 월말 → 매월 마지막 영업일 / 월초 → 매월 첫 영업일 /
+     분기 → 1·4·7·10월 마지막 영업일(12월은 결산).
+   "휴일이면 직전 영업일" 규칙은 **별도 휴일 달력 없이** 실제 거래일 시리즈(tradingDates =
+   data/{symbol}.json의 dates)에서 목표일 이하의 마지막 날짜를 찾아 처리한다 — 수집 데이터
+   자체가 개장일만 담고 있어 달력을 따로 두는 것보다 정확하고 유지보수가 필요 없다. */
+const QUARTER_RECORD_MONTHS = [1, 4, 7, 10, 12]; // 12월은 결산 기준일
+
+function lastTradingDayOnOrBefore(tradingDates, target) {
+  for (let i = tradingDates.length - 1; i >= 0; i--) if (tradingDates[i] <= target) return tradingDates[i];
+  return null;
+}
+function firstTradingDayOnOrAfter(tradingDates, target) {
+  for (let i = 0; i < tradingDates.length; i++) if (tradingDates[i] >= target) return tradingDates[i];
+  return null;
+}
+
+/* ym="YYYY-MM". 반환 {date, future} — future면 date는 아직 오지 않은 달력상 예정일이라
+   그 날 종가가 없으므로 호출부가 현재가로 대체하고 "미도래"로 표시해야 한다. */
+function dividendRecordDate(payPeriod, ym, tradingDates) {
+  const p = normalizePayPeriod(payPeriod);
+  if (!p || p === "확인안됨" || !ym || !tradingDates || !tradingDates.length) return null;
+  const [y, m] = ym.split("-").map(Number);
+  if (!y || !m) return null;
+  if (p === "분기말" && !QUARTER_RECORD_MONTHS.includes(m)) return null; // 분기 기준월이 아닌 달은 지급 없음
+  const pad = (n) => String(n).padStart(2, "0");
+  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const target = p === "월초5일" ? `${y}-${pad(m)}-01`
+    : p === "월중15일" ? `${y}-${pad(m)}-15`
+    : `${y}-${pad(m)}-${pad(lastDay)}`; // 월말30일·분기말
+  const lastAvail = tradingDates[tradingDates.length - 1];
+  if (target > lastAvail) return { date: target, future: true };
+  const actual = p === "월초5일"
+    ? firstTradingDayOnOrAfter(tradingDates, target)
+    : lastTradingDayOnOrBefore(tradingDates, target);
+  return actual ? { date: actual, future: false } : null;
+}
+
+/* T+2 결제 — 배당을 받으려면 기준일 2영업일 전까지 매수를 마쳐야 한다. */
+function buyDeadlineDate(recordDate, tradingDates) {
+  if (!recordDate || !tradingDates) return null;
+  const i = tradingDates.indexOf(recordDate);
+  return i >= 2 ? tradingDates[i - 2] : null;
+}
+
+/* 기준일 종가 조회 — 없으면 null(호출부가 현재가로 폴백) */
+function closeOnDate(full, date) {
+  if (!full || !date) return null;
+  const i = full.dates.indexOf(date);
+  return i >= 0 ? full.closes[i] : null;
+}
+
 function etfOptionsHTML(selectedSymbol) {
   const byCategory = new Map();
   for (const etf of state.listedEtfs) {

@@ -17,20 +17,26 @@
   const BACKUP_NAME = "latest-backup.json";
   const DISPLAY_PATH = "문서/14fiance"; // 사용자에게 보여줄 사람이 읽는 경로
 
-  async function writeJsonTo(dir, name, jsonStr) {
+  // path는 폴더를 포함한 상대경로(예: "14fiance/latest-backup.json") — 옵시디안 볼트처럼
+  // 사용자 지정 하위 경로에도 쓸 수 있도록 파일명이 아니라 경로를 그대로 받는다.
+  async function writeTextTo(dir, path, text) {
     await Filesystem.writeFile({
-      path: `${FOLDER}/${name}`,
-      data: jsonStr,
+      path,
+      data: text,
       directory: dir,
       encoding: "utf8",
       recursive: true,
     });
     try {
-      const { uri } = await Filesystem.getUri({ path: `${FOLDER}/${name}`, directory: dir });
+      const { uri } = await Filesystem.getUri({ path, directory: dir });
       return uri;
     } catch (e) {
-      return `${DISPLAY_PATH}/${name}`;
+      return path;
     }
+  }
+
+  async function writeJsonTo(dir, name, jsonStr) {
+    return writeTextTo(dir, `${FOLDER}/${name}`, jsonStr);
   }
 
   // 공용 문서 폴더 우선 시도(권한 거부·스코프드 스토리지 제한 등으로 실패하면) 앱 전용 외부
@@ -79,10 +85,42 @@
       try {
         if (typeof serializeMyAssets !== "function") return;
         await writeJson(BACKUP_NAME, JSON.stringify(serializeMyAssets(), null, 2));
+        // A25d: 옵시디안 경로가 설정돼 있으면 노트도 같은 주기로 갱신(미설정이면 즉시 반환)
+        await window.exportObsidianNotes();
       } catch (err) {
         console.warn("autoBackup 실패:", err.message);
       }
     }, 800);
+  };
+
+  /* A25d: 옵시디안 볼트 백업 — 설정 탭에 저장된 상대경로(예: "Obsidian/14rae") 아래
+     "<볼트>/14fiance/"에 md+json 쌍을 기록한다. 본문 생성은 shared/myassets.js의
+     buildObsidianNotes()(순수 함수)가 맡고 여기서는 파일 기록만 담당한다.
+     경로 미설정이면 조용히 건너뛴다 — 백업을 안 쓰는 사용자에게 오류를 띄우지 않기 위함. */
+  window.exportObsidianNotes = async function () {
+    try {
+      if (typeof obsidianVaultPath !== "function" || typeof buildObsidianNotes !== "function") return false;
+      const vault = obsidianVaultPath();
+      if (!vault) return false;
+      const notes = buildObsidianNotes();
+      let dir = lastWorkingDir || DIR_PRIMARY;
+      for (const note of notes) {
+        const path = `${vault}/${FOLDER}/${note.name}`;
+        try {
+          await writeTextTo(dir, path, note.text);
+        } catch (primaryErr) {
+          // 문서 폴더 권한이 없으면 앱 전용 외부 저장소로 폴백(기존 writeJson과 같은 정책)
+          dir = dir === DIR_PRIMARY ? DIR_FALLBACK : DIR_PRIMARY;
+          await writeTextTo(dir, path, note.text);
+        }
+      }
+      lastWorkingDir = dir;
+      console.log(`obsidian notes saved: ${vault}/${FOLDER}/ (${notes.length} files)`);
+      return true;
+    } catch (err) {
+      console.warn("옵시디안 백업 실패:", err.message);
+      return false;
+    }
   };
 
   async function readBackupJson() {
