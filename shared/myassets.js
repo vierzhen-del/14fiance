@@ -1302,6 +1302,211 @@ async function renderMonthlyPnlChart(accountKey) {
   buildMonthlyBarChart(container, months, { emptyMsg: "아직 월이 하나뿐이라 손익을 비교할 전월이 없습니다." });
 }
 
+/* ---------- A30: 계좌별·종합 계획 달성현황 ----------
+   참고 화면(다른 브로커 앱의 "○○펀드 계획 달성현황")을 재현한다: 지금까지의 적립액+가정
+   수익률로 "계획대로면 지금 얼마여야 하는지"를 실제 자산과 대조한다.
+   비교 수익률 2개(rate1/rate2)는 사용자 확정 규칙 —
+     · 기대수익률(#myExpectedReturn) 입력값이 있으면 rate1 = 그 값, 없으면 rate1 = S&P500
+       추세수익률(SPY 트레일링 연환산, sp500ExpectedReturn()).
+     · rate2 = rate1 × 2 (참고 화면의 7%→14%와 같은 비율).
+   원금(성장 없이 적립만 했을 때)도 같은 lump0·monthly로 rate=0을 fvProjectionSeries에
+   넣어 뽑는다 — 계획선·원금선이 전부 같은 공식이라 서로 비교 가능하다(다른 산식을 섞지
+   않음). 시작점(t0)은 월별 스냅샷 이력의 첫 기록 — 그 이전 이력은 이 앱이 갖고 있지
+   않으므로 "계좌 개설 이후 전체"가 아니라 "이 앱으로 추적하기 시작한 이후"의 계획 대조임을
+   화면에 명시한다. */
+
+let __sp500RateCache = null;
+async function sp500ExpectedReturn() {
+  if (__sp500RateCache != null) return __sp500RateCache;
+  try {
+    const spy = await loadSymbol("SPY");
+    const months = Math.min(120, spy.dates.length - 1); // 최근 10년(부족하면 있는 만큼)
+    const r = trailingReturnAnnualized(spy.dates, spy.closes, months);
+    __sp500RateCache = r != null ? r : 0.07; // 계산 불가 시 보수적 기본값으로 폴백(값을 지어내지 않되 UI가 멈추지 않게)
+  } catch (err) {
+    __sp500RateCache = 0.07;
+  }
+  return __sp500RateCache;
+}
+
+/* scope: "__all__" 또는 계좌명. sp500Rate는 매번 다시 구하지 않도록 호출부가 미리 구해 넘긴다.
+   반환 null = 월별 스냅샷 이력이 부족해 계산할 수 없음(값을 지어내지 않음). */
+function computeGoalPlanData(scope, sp500Rate) {
+  const csv = state.myAssetsCsvData;
+  if (!csv) return null;
+  let hist = [];
+  try { hist = JSON.parse(localStorage.getItem(MY_ASSETS_HISTORY_KEY) || "[]"); } catch (e) { hist = []; }
+  hist = hist.slice().sort((a, b) => a.month.localeCompare(b.month));
+
+  const isAll = scope === "__all__";
+  const withScope = isAll ? hist : hist.filter((h) => h.byAccount && h.byAccount[scope] != null);
+  if (withScope.length < 1) return null;
+  const t0 = withScope[0];
+  const lump0 = isAll ? t0.value : t0.byAccount[scope];
+  const nowYm = todayStr().slice(0, 7);
+  const elapsed = monthDiffYM(t0.month, nowYm);
+  if (elapsed < 1) return null; // 이번 달에 이력이 시작됐으면 아직 "지금까지"를 비교할 수 없음
+
+  const rows = isAll ? csv.perRow : csv.perRow.filter((p) => (p.account || "계좌 미지정") === scope);
+  const monthlyBuy = rows.reduce((a, p) => a + (p.monthlyBuy || 0), 0);
+  const contributions = serializeMyContributions();
+  const monthlyContrib = isAll
+    ? Object.values(contributions).reduce((a, b) => a + b, 0)
+    : (contributions[scope] || 0);
+  const monthly = monthlyBuy + monthlyContrib;
+
+  const expReturnInput = document.getElementById("myExpectedReturn").value;
+  const rate1 = expReturnInput !== "" ? Number(expReturnInput) / 100 : sp500Rate;
+  const rate2 = rate1 * 2;
+  const rate1IsDefault = expReturnInput === "";
+
+  const actualNow = isAll ? csv.totalValue : rows.reduce((a, p) => a + p.value, 0);
+  const plan1Now = fvProjectionSeries(lump0, monthly, rate1, elapsed)[elapsed];
+  const plan2Now = fvProjectionSeries(lump0, monthly, rate2, elapsed)[elapsed];
+  const principalNow = fvProjectionSeries(lump0, monthly, 0, elapsed)[elapsed];
+
+  // 차트용 — 실제는 스냅샷이 있는 달까지만, 계획선은 추세를 보여주기 위해 미래로 더 뻗는다.
+  const FUTURE_MONTHS = 24;
+  const totalMonths = elapsed + FUTURE_MONTHS;
+  const [t0y, t0m] = t0.month.split("-").map(Number);
+  const planDates = [];
+  for (let m = 0; m <= totalMonths; m++) {
+    planDates.push(new Date(Date.UTC(t0y, t0m - 1 + m, 1)).toISOString().slice(0, 10));
+  }
+  const actualSeries = {
+    dates: withScope.map((h) => h.month + "-01"),
+    values: withScope.map((h) => (isAll ? h.value : h.byAccount[scope])),
+  };
+
+  return {
+    scope, t0Month: t0.month, lump0, monthly, elapsed, rate1, rate2, rate1IsDefault,
+    actualNow, plan1Now, plan2Now, principalNow,
+    actualSeries,
+    plan1Series: { dates: planDates, values: fvProjectionSeries(lump0, monthly, rate1, totalMonths) },
+    plan2Series: { dates: planDates, values: fvProjectionSeries(lump0, monthly, rate2, totalMonths) },
+    principalSeries: { dates: planDates, values: fvProjectionSeries(lump0, monthly, 0, totalMonths) },
+  };
+}
+
+/* 요약 표(구분|금액|GAP|달성률) — 금액기준·수익률기준 공통 골격, cell()만 바꿔 끼운다.
+   달성률(실제÷계획×100%)은 두 기준 모두 같은 정의라 basis와 무관하게 항상 같은 값이다. */
+function buildGoalPlanTableHTML(d, basis) {
+  const fmtW = (v) => fmtPrice(v, "KRW");
+  const pctOfPrincipal = (v) => d.principalNow > 0 ? ((v / d.principalNow - 1) * 100) : null;
+  const cell = (v) => {
+    if (basis === "return") {
+      const p = pctOfPrincipal(v);
+      return p == null ? "—" : `${p >= 0 ? "+" : ""}${p.toFixed(1)}%`;
+    }
+    return fmtW(v);
+  };
+  const gapCell = (actual, plan) => {
+    if (basis === "return") {
+      const pa = pctOfPrincipal(actual), pp = pctOfPrincipal(plan);
+      if (pa == null || pp == null) return "—";
+      const d2 = pa - pp;
+      return `${d2 >= 0 ? "+" : ""}${d2.toFixed(1)}%p`;
+    }
+    return `${actual - plan >= 0 ? "+" : ""}${fmtW(actual - plan)}`;
+  };
+  const achieveCell = (plan) => plan > 0 ? `${((d.actualNow / plan) * 100).toFixed(0)}%` : "—";
+  const rows = [
+    ["총자산", d.actualNow, null],
+    [`계획(${(d.rate1 * 100).toFixed(1)}%)${d.rate1IsDefault ? " · S&P500" : ""}`, d.plan1Now, d.plan1Now],
+    [`계획(${(d.rate2 * 100).toFixed(1)}%)`, d.plan2Now, d.plan2Now],
+    ["원금(적립만)", d.principalNow, d.principalNow],
+  ];
+  const headRow = rows.map(([label]) => `<th>${label}</th>`).join("");
+  const amtRow = rows.map(([, v]) => `<td>${cell(v)}</td>`).join("");
+  const gapRow = rows.map(([, v, plan]) => `<td>${plan == null ? "—" : gapCell(d.actualNow, plan)}</td>`).join("");
+  const achRow = rows.map(([, v, plan]) => `<td>${plan == null ? "—" : achieveCell(plan)}</td>`).join("");
+  return `<div style="overflow-x:auto;"><table class="account-summary-table">
+    <thead><tr><th>구분</th>${headRow}</tr></thead>
+    <tbody>
+      <tr><td>${basis === "return" ? "수익률" : "금액"}</td>${amtRow}</tr>
+      <tr><td>GAP</td>${gapRow}</tr>
+      <tr><td>달성률</td>${achRow}</tr>
+    </tbody>
+  </table></div>
+  <p class="stat-sub" style="margin-top:6px;">${d.t0Month}(이 앱으로 추적을 시작한 첫 달)부터 지금까지 ${d.elapsed}개월, 월 재투자액 ${fmtW(d.monthly)} 가정. 달성률 = 총자산 ÷ 계획금액.</p>`;
+}
+
+/* 실제총자산·계획A·계획B·원금 네 선을 buildCompareChart로 겹쳐 그린다(원래 %전용이던
+   차트를 opts.fmtAxis/fmtTip·anchorZero=false로 원화·수익률 양쪽에 재사용). */
+function buildGoalPlanChartHTML(container, d, basis) {
+  const good = cssVar("--good") || "#2e7d32", accent1 = "#2563eb", accent2 = "#f59e0b", muted = cssVar("--text-muted") || "#888";
+  let seriesList;
+  if (basis === "return") {
+    // 원금(t)은 시간에 따라 변하므로 각 시점의 principalSeries 값으로 나눠야 한다 — 날짜 그리드가
+    // 다른 actualSeries는 principalSeries를 같은 날짜로 다시 계산(fvProjectionSeries는 폐형식이라
+    // 임의 시점 재계산이 싸다)해 정확히 맞춘다.
+    const principalAt = (dateStr) => {
+      const m = monthDiffYM(d.t0Month, dateStr.slice(0, 7));
+      return d.lump0 + d.monthly * m;
+    };
+    const toPct = (series) => ({
+      dates: series.dates,
+      values: series.values.map((v, i) => {
+        const p = principalAt(series.dates[i]);
+        return p > 0 ? (v / p - 1) : 0;
+      }),
+    });
+    seriesList = [
+      { ...toPct(d.actualSeries), color: good, label: "실제 총자산" },
+      { ...toPct(d.plan1Series), color: accent1, label: `계획(${(d.rate1 * 100).toFixed(1)}%)` },
+      { ...toPct(d.plan2Series), color: accent2, label: `계획(${(d.rate2 * 100).toFixed(1)}%)` },
+      { dates: d.principalSeries.dates, values: d.principalSeries.values.map(() => 0), color: muted, label: "원금(기준선)" },
+    ];
+    buildCompareChart(container, seriesList, {
+      fmtAxis: (v) => (v * 100).toFixed(0) + "%", fmtTip: (v) => (v * 100).toFixed(1) + "%", anchorZero: false,
+    });
+  } else {
+    seriesList = [
+      { ...d.actualSeries, color: good, label: "실제 총자산" },
+      { ...d.plan1Series, color: accent1, label: `계획(${(d.rate1 * 100).toFixed(1)}%)` },
+      { ...d.plan2Series, color: accent2, label: `계획(${(d.rate2 * 100).toFixed(1)}%)` },
+      { ...d.principalSeries, color: muted, label: "원금(적립만)" },
+    ];
+    buildCompareChart(container, seriesList, {
+      fmtAxis: (v) => fmtPrice(v, "KRW"), fmtTip: (v) => fmtPrice(v, "KRW"), anchorZero: false,
+    });
+  }
+}
+
+/* 통합 탭 상단(항상 보이는 헤더)의 간략 카드 — 표만, 차트 없음. */
+async function renderGoalPlanCompact() {
+  const wrap = document.getElementById("myGoalPlanCompactWrap");
+  if (!wrap) return;
+  const sp500Rate = await sp500ExpectedReturn();
+  const d = computeGoalPlanData("__all__", sp500Rate);
+  if (!d) {
+    wrap.innerHTML = `<p class="stat-label">📐 계획 달성현황</p><p class="stat-sub">"추이" 탭에서 월별 스냅샷을 2개월 이상 쌓으면 계획 대비 현황이 표시됩니다.</p>`;
+    return;
+  }
+  const fmtW = (v) => fmtPrice(v, "KRW");
+  const ach1 = d.plan1Now > 0 ? (d.actualNow / d.plan1Now) * 100 : null;
+  wrap.innerHTML = `<p class="stat-label">📐 계획 달성현황 (계획 ${(d.rate1 * 100).toFixed(1)}%${d.rate1IsDefault ? " · S&P500" : ""} 대비)</p>
+    <p class="stat-value" style="font-size:16px; color:${ach1 != null && ach1 >= 100 ? "var(--good)" : "var(--critical)"}">${ach1 != null ? ach1.toFixed(0) + "%" : "—"}</p>
+    <p class="stat-sub">실제 ${fmtW(d.actualNow)} vs 계획 ${fmtW(d.plan1Now)} — 「추이」 탭에서 전체 표·차트 확인</p>`;
+}
+
+/* 추이 탭의 전체 섹션 — 종합/계좌 select + 금액/수익률 토글, 바뀔 때마다 다시 그린다. */
+async function renderGoalPlanSection(scope, basis) {
+  const tableEl = document.getElementById("myGoalPlanTable");
+  const chartEl = document.getElementById("myGoalPlanChart");
+  if (!tableEl || !chartEl) return;
+  tableEl.innerHTML = `<p class="compare-empty">불러오는 중…</p>`;
+  chartEl.innerHTML = "";
+  const sp500Rate = await sp500ExpectedReturn();
+  const d = computeGoalPlanData(scope, sp500Rate);
+  if (!d) {
+    tableEl.innerHTML = `<p class="compare-empty">"추이" 탭에서 월별 스냅샷을 2개월 이상 쌓으면(계좌별 보기는 그 계좌 데이터가 포함된 스냅샷이 2개월 이상 있어야) 계획 대비 현황이 표시됩니다.</p>`;
+    return;
+  }
+  tableEl.innerHTML = buildGoalPlanTableHTML(d, basis);
+  buildGoalPlanChartHTML(chartEl, d, basis);
+}
+
 /* ---------- A28: 설정탭 API 키 (텔레그램) ----------
    capture/index.html의 CAPTURE_CLAUDE_KEY/CAPTURE_GEMINI_KEY와 같은 신뢰 모델 — localStorage
    에만 저장하고 저장소·서버에는 절대 커밋/전송하지 않는다(CLAUDE.md 원칙). 텔레그램 Bot API는
@@ -2242,6 +2447,7 @@ async function renderMyAssets() {
         <p class="stat-sub">월 재투자액 ${fmtW(totalMonthlyInvest)}${totalContributions > 0 ? ` (월매수 ${fmtW(totalMonthlyBuy)} + 월적립 ${fmtW(totalContributions)})` : ""} 반영${livingExpenseUsed > 0 ? ` · 배당은 재투자분(${fmtW(reinvestedDiv)}/월)만 복리 반영, 생활비 사용분 제외` : ""}</p>
         ${realGoalLabel ? `<p class="stat-sub" style="color:var(--text-muted);">물가상승률 ${(inflationRate * 100).toFixed(1)}%/년 반영(오늘 구매력 기준): <b>${realGoalLabel}</b></p>` : ""}
       </div>` : ""}
+      <div class="stat" id="myGoalPlanCompactWrap"><p class="stat-label">📐 계획 달성현황</p><p class="stat-sub">불러오는 중…</p></div>
     </div>
     <p class="stat-sub">최신 수집: ${state.manifest.updated} 기준(주간 자동 수집 — 실시간 시세 아님)${
       liveKr ? ` · <b style="color:var(--good)">🔄 최신시세 ${liveKr.updated} 적용(국내 ${liveApplied}종목, GitHub 사정에 따라 수 시간 지연 가능)</b>`
@@ -2332,6 +2538,20 @@ async function renderMyAssets() {
         <select id="myMonthlyPnlAccount" aria-label="월별 손익 계좌 선택"></select>
       </div>
       <div id="myMonthlyPnlChart"><p class="compare-empty">계좌를 선택하면 표시됩니다.</p></div>
+
+      <p class="chart-title" style="margin-top:24px;">📐 계획 달성현황</p>
+      <p class="stat-sub">월별 스냅샷을 쌓기 시작한 첫 달부터 지금까지, "그 수익률로 꾸준히 불었다면"과 실제 자산을 대조합니다. 기대수익률(위 목표 입력칸)을 넣으면 그 값을, 비워두면 S&P500 추세수익률을 계획①로 쓰고 계획②는 그 2배입니다.</p>
+      <div class="controls" style="margin-bottom:8px; flex-wrap:wrap; gap:8px 16px;">
+        <select id="myGoalPlanScope" aria-label="계획 달성현황 범위 선택">
+          <option value="__all__">종합(전체 계좌)</option>
+        </select>
+        <div style="display:inline-flex; border-radius:999px; overflow:hidden; border:1px solid var(--border);">
+          <button type="button" class="btn-action my-goalplan-basis" data-basis="amount" style="border-radius:0; border:none;">금액기준</button>
+          <button type="button" class="btn-action my-goalplan-basis" data-basis="return" style="border-radius:0; border:none;">수익률기준</button>
+        </div>
+      </div>
+      <div id="myGoalPlanTable"></div>
+      <div id="myGoalPlanChart" style="margin-top:10px;"></div>
     </div>
 
     <div class="dash-panel" data-tab="summary" hidden>
@@ -2897,6 +3117,34 @@ async function renderMyAssets() {
     });
     renderMonthlyPnlChart(savedPnlAcc);
   }
+
+  // A30: 계획 달성현황 — 범위(종합/계좌) select + 금액·수익률 토글, 선택은 state에 보존.
+  const goalPlanSel = document.getElementById("myGoalPlanScope");
+  if (goalPlanSel) {
+    goalPlanSel.innerHTML = `<option value="__all__">종합(전체 계좌)</option>` +
+      [...accountMap.keys()].map((a) => `<option value="${a}">${a}</option>`).join("");
+    const savedScope = state.myGoalPlanScope && [...accountMap.keys(), "__all__"].includes(state.myGoalPlanScope)
+      ? state.myGoalPlanScope : "__all__";
+    goalPlanSel.value = savedScope;
+    const savedBasis = state.myGoalPlanBasis === "return" ? "return" : "amount";
+    const basisBtns = [...document.querySelectorAll(".my-goalplan-basis")];
+    const setBasisActive = (basis) => basisBtns.forEach((b) => {
+      b.style.background = b.dataset.basis === basis ? "var(--accent, #2563eb)" : "";
+      b.style.color = b.dataset.basis === basis ? "#fff" : "";
+    });
+    setBasisActive(savedBasis);
+    basisBtns.forEach((b) => b.addEventListener("click", () => {
+      state.myGoalPlanBasis = b.dataset.basis;
+      setBasisActive(b.dataset.basis);
+      renderGoalPlanSection(goalPlanSel.value, b.dataset.basis);
+    }));
+    goalPlanSel.addEventListener("change", () => {
+      state.myGoalPlanScope = goalPlanSel.value;
+      renderGoalPlanSection(goalPlanSel.value, state.myGoalPlanBasis === "return" ? "return" : "amount");
+    });
+    renderGoalPlanSection(savedScope, savedBasis);
+  }
+  renderGoalPlanCompact(); // 통합 탭 상단 헤더 카드 — 탭과 무관하게 항상 갱신
 
   // A25b: 월별 비중 변화 — 그룹 기준 전환(계좌별/카테고리별), 선택은 state에 보존.
   // A26c: 같은 표가 비중분석 탭과 추이 탭 두 곳에 붙는다. state.myWeightHistGroup 하나를

@@ -707,6 +707,26 @@ function monthsToGoal(goal, lump, monthly, annualRate) {
   return { months: null, contributed: null };
 }
 
+/* A30: 계획 달성현황 — monthsToGoal과 같은 복리적립 공식을, "목표까지 몇 개월"이 아니라
+   "0개월째부터 매달 얼마씩 불어나는지" 시계열로 뽑아낸다(계획 라인 차트·특정 시점 금액
+   조회 양쪽에 재사용). annualRate=0을 넣으면 성장 없이 lump+monthly*m만 남아 "원금(적립만)"
+   라인과 같은 식이 된다 — 별도 공식을 두지 않고 이 함수 하나로 계획선·원금선을 모두 만든다. */
+function fvProjectionSeries(lump, monthly, annualRate, months) {
+  const rm = Math.pow(1 + annualRate, 1 / 12) - 1;
+  const out = [];
+  for (let m = 0; m <= months; m++) {
+    const growth = Math.abs(rm) < 1e-9 ? monthly * m : monthly * ((Math.pow(1 + rm, m) - 1) / rm);
+    out.push(lump * Math.pow(1 + rm, m) + growth);
+  }
+  return out;
+}
+
+/* "YYYY-MM" 두 문자열 사이의 개월 수(b - a). 월별 스냅샷 이력의 month 필드가 이 형식이다. */
+function monthDiffYM(a, b) {
+  const [ay, am] = a.split("-").map(Number), [by, bm] = b.split("-").map(Number);
+  return (by - ay) * 12 + (bm - am);
+}
+
 /* MDD 계산 — index.html 원본과 동일 사본(A10에서 shared로 이식, 연간 MDD 계산에 사용) */
 function calcMDD(dates, closes) {
   let peakPrice = closes[0], peakIdx = 0;
