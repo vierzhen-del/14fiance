@@ -134,6 +134,9 @@ function addMyAssetRow(a = {}) {
     <div class="portfolio-weight-wrap">
       <input type="number" class="my-confirmed portfolio-weight" style="width:130px" min="0" step="1" value="${a.confirmedDps ?? ""}" placeholder="확정 DPS(원/주,선택)">
     </div>
+    <div class="portfolio-weight-wrap">
+      <input type="number" class="my-div-rate portfolio-weight" style="width:104px" min="0" step="0.01" value="${a.divRate ?? ""}" placeholder="분배율(%,선택)" title="월 분배율(%). 입력하면 월배당을 '현재가×분배율'로 계산해 주가 등락이 바로 반영됩니다(노션 배당기준 마스터의 배당률)."> %
+    </div>
     <select class="my-period" aria-label="지급시기">
       <option value="" ${!a.payPeriod ? "selected" : ""}>지급시기</option>
       <option value="월초" ${a.payPeriod === "월초" ? "selected" : ""}>월초</option>
@@ -163,6 +166,7 @@ function serializeMyAssets() {
       buyFreq: el.querySelector(".my-buy-freq").value,
       buyDay: el.querySelector(".my-buy-day").value.trim(),
       confirmedDps: parseFloat(el.querySelector(".my-confirmed").value) || 0,
+      divRate: parseFloat(el.querySelector(".my-div-rate").value) || 0,
       payPeriod: el.querySelector(".my-period").value,
       divType: el.dataset.divType || "",
       divExpiry: el.dataset.divExpiry || "",
@@ -458,6 +462,20 @@ function abbrevEtfName(name) {
   return s;
 }
 
+/* A24a: 셀이 작아도 글자 크기가 고정(10.5/11.5/9.5px)이라 좁은 셀에서 종목명이 겹치고
+   잘려 보이는 문제 — 셀의 화면상 예상 크기를 계산해 단계별로 글자를 줄이고, 아주 작은
+   셀은 부차 정보(비중%·등락%)를 감춰 종목명만 남긴다. 전체 정보는 title 툴팁과 탭 확대
+   오버레이(showTmZoom)로 계속 접근할 수 있으므로 정보가 사라지는 건 아니다.
+   셀 좌표는 "그룹 사각형(트리맵 전체의 %) × 그룹 내 셀 사각형(그룹 body의 %)" 합성이라
+   두 비율을 곱해 화면 픽셀을 근사한다(모바일 기준 폭·높이 상수). */
+const TREEMAP_NOMINAL_W = 380, TREEMAP_NOMINAL_H = 460;
+function treemapSizeClass(estW, estH) {
+  if (estH < 22 || estW < 38) return "tm-xs";
+  if (estH < 34 || estW < 64) return "tm-sm";
+  if (estH < 48 || estW < 92) return "tm-md";
+  return "";
+}
+
 function buildTreemapHTML(perRow, groupBy) {
   const keyFn = TREEMAP_GROUP_FIELDS[groupBy] || TREEMAP_GROUP_FIELDS.category;
   const groups = new Map();
@@ -485,7 +503,11 @@ function buildTreemapHTML(perRow, groupBy) {
       const label = p.meta ? p.meta.name : p.symbol;
       const pct = total > 0 ? (p.value / total) * 100 : 0;
       const chgText = chg == null ? "—" : `${chg >= 0 ? "+" : ""}${(chg * 100).toFixed(2)}%`;
-      return `<div class="tm-cell ${changeColorClass(chg)}" style="left:${r.x.toFixed(3)}%;top:${r.y.toFixed(3)}%;width:${r.w.toFixed(3)}%;height:${r.h.toFixed(3)}%;"
+      const sizeCls = treemapSizeClass(
+        (gr.w / 100) * (r.w / 100) * TREEMAP_NOMINAL_W,
+        (gr.h / 100) * (r.h / 100) * TREEMAP_NOMINAL_H,
+      );
+      return `<div class="tm-cell ${changeColorClass(chg)} ${sizeCls}" style="left:${r.x.toFixed(3)}%;top:${r.y.toFixed(3)}%;width:${r.w.toFixed(3)}%;height:${r.h.toFixed(3)}%;"
         data-tm-name="${label.replace(/"/g, "&quot;")}" data-tm-value="${fmtW(p.value)}" data-tm-pct="${pct.toFixed(1)}%" data-tm-chg="${chgText}"
         title="${label} · ${fmtW(p.value)} · 비중 ${pct.toFixed(1)}% · 등락 ${chgText}">
         <div class="hm-name">${abbrevEtfName(label)}</div>
@@ -809,7 +831,45 @@ function changelogPeriodKey(ts, granularity) {
   return `${d.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
 }
 
+/* A24c: 월배당 산출 근거 배지 — 같은 숫자라도 어떤 기준으로 나온 값인지 한눈에 보이게 한다.
+   rate=노션 등록 분배율, derived=확정DPS÷현재가 역산, confirmed=확정DPS 고정(폴백), ttm=TTM추정 */
+function DIV_BASIS_LABEL(p) {
+  if (p.divBasis === "rate") return `분배율 ${(p.effRate * 100).toFixed(2)}%×현재가`;
+  if (p.divBasis === "derived") return `역산 ${(p.effRate * 100).toFixed(2)}%×현재가`;
+  if (p.divBasis === "confirmed") return "확정";
+  return "추정(TTM)";
+}
+
 const CHANGE_TYPE_LABEL = { added: "🆕 신규", removed: "🗑️ 삭제", "qty-changed": "🔁 수량변경" };
+
+/* A24b: 변동이력 가독성 — 종목변동 수십 건이 쉼표로 이어진 한 문단이라 읽기 어려웠다.
+   ① 계좌별로 묶고 ② 종목코드에 등록 종목명을 붙이며 ③ 8건을 넘으면 나머지를 접는다. */
+const CHANGELOG_VISIBLE_ITEMS = 8;
+function changeSymbolLabel(symbol) {
+  const meta = state.metaBySymbol && state.metaBySymbol.get(symbol);
+  if (!meta) return symbol; // 아직 수집 목록에 없는 종목은 코드 그대로(이름을 지어내지 않음)
+  const code = symbol.replace(/\.KS$/, "");
+  return `${meta.name}<span class="chg-code">(${code})</span>`;
+}
+
+function changeItemsHTML(changeList) {
+  const byAccount = new Map();
+  for (const c of changeList) {
+    const acc = c.account || "계좌 미지정";
+    if (!byAccount.has(acc)) byAccount.set(acc, []);
+    byAccount.get(acc).push(c);
+  }
+  return [...byAccount.entries()].map(([acc, list]) => {
+    const li = (c) => `<li>${changeSymbolLabel(c.symbol)} <b>${CHANGE_TYPE_LABEL[c.type] || c.type}</b> <span class="chg-qty">${c.oldQty}→${c.newQty}</span></li>`;
+    const head = list.slice(0, CHANGELOG_VISIBLE_ITEMS).map(li).join("");
+    const rest = list.slice(CHANGELOG_VISIBLE_ITEMS);
+    return `<div class="chg-account">
+      <p class="chg-account-name">${acc} <span>${list.length}건</span></p>
+      <ul class="chg-list">${head}</ul>
+      ${rest.length ? `<details class="chg-more"><summary>…외 ${rest.length}건 펼치기</summary><ul class="chg-list">${rest.map(li).join("")}</ul></details>` : ""}
+    </div>`;
+  }).join("");
+}
 const CHANGE_SOURCE_LABEL = { "capture-account": "📸 계좌 캡처", "capture-buyplan": "📈 월매수 캡처", "capture-account-reset": "🆕 완전 신규 업데이트", import: "📂 가져오기" };
 
 function buildChangelogHTML(granularity) {
@@ -852,8 +912,8 @@ function buildChangelogHTML(granularity) {
       <p class="chart-title" style="margin-top:0; font-size:13.5px;">${period} <span class="stat-sub" style="font-size:11.5px;">(이벤트 ${entries.length}건: ${[...new Set(entries.map((e) => CHANGE_SOURCE_LABEL[e.source] || e.source))].join(", ")})</span></p>
       <p class="stat-sub" style="margin:4px 0;">📊 자산변동: ${fmtW(first.beforeValue)} → ${fmtW(last.afterValue)}
         ${assetPct != null ? `<span style="color:${assetDiff >= 0 ? "var(--good)" : "var(--critical)"}">(${assetDiff >= 0 ? "+" : ""}${fmtW(assetDiff)}, ${assetPct.toFixed(1)}%)</span>` : ""}</p>
-      ${weightLines.length ? `<p class="stat-sub" style="margin:4px 0;">⚖️ 비중변동: ${weightLines.join(" · ")}</p>` : ""}
-      ${changeList.length ? `<p class="stat-sub" style="margin:4px 0;">📦 종목변동 ${changeList.length}건: ${changeList.map((c) => `${c.account} ${c.symbol} ${CHANGE_TYPE_LABEL[c.type]}(${c.oldQty}→${c.newQty})`).join(", ")}</p>` : ""}
+      ${weightLines.length ? `<p class="stat-sub" style="margin:4px 0; line-height:1.7;">⚖️ 비중변동: ${weightLines.join(" · ")}</p>` : ""}
+      ${changeList.length ? `<p class="stat-sub" style="margin:8px 0 2px;">📦 종목변동 ${changeList.length}건</p>${changeItemsHTML(changeList)}` : ""}
     </div>`;
   }).join("");
   return `${rows}<p class="stat-sub" style="margin-top:6px;">총 ${log.length}건의 변경 이벤트가 기록되어 있습니다(최대 300건, 이 브라우저에만 보관).</p>`;
@@ -1190,6 +1250,9 @@ async function renderMyAssets() {
   for (const it of items) {
     const meta = state.metaBySymbol.get(it.symbol);
     let close = it.full.closes[it.full.closes.length - 1];
+    // A24c: 확정DPS·TTM을 분배율로 역산할 때의 기준가 — 그 값들이 산출된 시점의 가격이므로
+    // 실시간가가 아니라 "수집 종가"를 써야 한다(아래 derivedRate 주석 참조).
+    const baseClose = close;
     // 🔄 최신시세 켜짐 + 해당 국내 종목의 장중 가격이 있으면 주간 종가 대신 사용
     if (liveKr && liveKr.prices[it.symbol] > 0) { close = liveKr.prices[it.symbol]; liveApplied += 1; }
     const isUsd = (it.full.currency || "USD") === "USD";
@@ -1203,9 +1266,34 @@ async function renderMyAssets() {
     const profit = cost != null ? value - cost : null;
     const ttm = meta && meta.ttmDividend ? meta.ttmDividend : 0;
     const divYield = meta && meta.dividendYield ? meta.dividendYield : 0;
-    // 확정 DPS(주당)가 있으면 최우선 적용(CLAUDE.md 원칙) — TTM÷12 평균은 신규 상장·특별배당 종목에서 실제 지급액을 과소 반영함
+    /* A24c: 월배당은 "현재가 × 분배율"이 기본이다(2026-08-01 사용자 결정).
+       커버드콜·고배당 ETF는 실제로 기준주가에 분배율을 곱해 지급하므로, 확정 DPS(원/주)를
+       고정값으로 쓰면 주가가 빠져도 분배금이 그대로여서 실제 지급액과 괴리가 생겼다.
+       close는 🔄 최신시세가 켜져 있으면 장중 실시간가로 교체된 값이라(위 참조) 주가 하락이
+       곧바로 분배금 감소로 반영된다. 분배율 출처는 ① 노션 배당기준 마스터 등록값(divRate)
+       ② 없으면 확정DPS÷현재가 역산 순. 실제 지급 확정액은 divHistory(연도별 확정 월배당)가
+       따로 보관하므로 "확정=실지급 기록 / 예상=분배율×현재가"로 역할이 나뉜다. */
+    const registeredRate = it.divRate > 0 ? it.divRate / 100 : 0;
+    /* ⚠️ 역산 분배율의 분모는 반드시 "수집 종가(baseClose)"여야 한다 — 실시간가로 나누면
+       close × (confirmedDps/close) = confirmedDps 로 상쇄돼 주가 연동이 무효가 된다(구현 중 실측).
+       baseClose로 나눠야 confirmedDps × (실시간가/수집종가), 즉 수집 이후 주가 변동분만큼
+       분배금이 조정된다. TTM 경로도 같은 이유로 월 분배율(연배당수익률÷12)로 환산해 연동시킨다. */
+    const derivedRate = !registeredRate && it.confirmedDps > 0 && baseClose > 0 ? it.confirmedDps / baseClose : 0;
+    // TTM 역산은 manifest의 dividendYield가 아니라 ttm÷수집종가를 쓴다 — 네이버가 준 연배당
+    // 수익률은 자체 기준가로 계산돼 우리 종가와 어긋나서(실측 8.65% vs 7.26%) 그대로 쓰면
+    // 주가 연동과 무관하게 기존 표시액이 20% 가까이 튄다. ttm÷baseClose면 수집 시점 값은
+    // 종전(ttm/12)과 정확히 같고 주가 변동분만 추가로 반영된다.
+    const ttmRate = !registeredRate && !derivedRate && baseClose > 0
+      ? (ttm > 0 ? ttm / 12 / baseClose : divYield / 12)
+      : 0;
+    const effRate = registeredRate || derivedRate || ttmRate;
+    // divBasis: 화면에 산출 근거를 표시하기 위한 구분 — rate(등록 분배율)/derived(확정DPS 역산)/ttm(TTM 역산)
+    const divBasis = registeredRate ? "rate" : derivedRate ? "derived" : "ttm";
     const usedConfirmed = it.confirmedDps > 0;
-    const monthlyDiv = usedConfirmed ? toKrw(it.confirmedDps) * it.qty : toKrw(ttm / 12) * it.qty;
+    const monthlyDiv = effRate > 0 ? toKrw(close * effRate) * it.qty : 0;
+    // 확정 DPS 대비 괴리(분배율 기준으로 계산했을 때 실제 등록 확정값과 얼마나 차이나는지)
+    const dpsFromRate = effRate > 0 ? close * effRate : null;
+    const dpsGapPct = dpsFromRate != null && it.confirmedDps > 0 ? (dpsFromRate - it.confirmedDps) / it.confirmedDps : null;
     // 다음달 기대월배당: 등록된 연 배당률(divYield) × 현재가 기준 — TTM 평균과 별개로 "지금 주가라면 다음달 얼마"를 보여주는 참고치
     const nextMonthDiv = divYield > 0 ? toKrw((close * divYield) / 12) * it.qty : 0;
     const buyTimes = BUY_FREQ_TIMES[it.buyFreq] || 1;
@@ -1234,7 +1322,7 @@ async function renderMyAssets() {
     if (cost != null) { totalCost += cost; costedValue += value; }
     totalMonthlyDiv += monthlyDiv;
     totalMonthlyBuy += monthlyBuy;
-    perRow.push({ ...it, meta, close, isUsd, value, cost, profit, monthlyDiv, nextMonthDiv, monthlyBuy, erosion, usedConfirmed, trailReturn });
+    perRow.push({ ...it, meta, close, isUsd, value, cost, profit, monthlyDiv, nextMonthDiv, monthlyBuy, erosion, usedConfirmed, trailReturn, effRate, divBasis, dpsFromRate, dpsGapPct });
 
     const accKey = it.account || "계좌 미지정";
     if (!accountMap.has(accKey)) accountMap.set(accKey, { value: 0, cost: 0, monthlyDiv: 0, monthlyBuy: 0, n: 0 });
@@ -1305,12 +1393,18 @@ async function renderMyAssets() {
 
   const rowsHTML = perRow.map((p) => {
     const ttm = p.meta && p.meta.ttmDividend ? p.meta.ttmDividend : 0;
-    const perShareMonthly = p.usedConfirmed ? p.confirmedDps : ttm / 12;
+    // A24c: 주당 분배금은 실제 계산에 쓴 값(분배율×현재가)을 그대로 보여준다 — 화면 숫자와
+    // 월배당 합계가 서로 다른 근거로 계산되면 사용자가 검산할 수 없기 때문.
+    const perShareMonthly = p.dpsFromRate != null ? p.dpsFromRate : p.confirmedDps > 0 ? p.confirmedDps : ttm / 12;
+    const basisText = DIV_BASIS_LABEL(p);
+    const basisColor = p.divBasis === "ttm" ? "var(--text-muted)" : "var(--good)";
     const distLabel = perShareMonthly > 0
-      ? `${p.isUsd ? "$" + perShareMonthly.toFixed(4) : fmtW(perShareMonthly)} <span style="color:${p.usedConfirmed ? "var(--good)" : "var(--text-muted)"}; font-size:11px;">${p.usedConfirmed ? "확정" : "추정"}</span>`
+      ? `${p.isUsd ? "$" + perShareMonthly.toFixed(4) : fmtW(perShareMonthly)} <span style="color:${basisColor}; font-size:11px;">${basisText}</span>${
+          p.dpsGapPct != null && Math.abs(p.dpsGapPct) >= 0.02
+            ? `<br><span style="color:var(--critical); font-size:11px;">확정 ${fmtW(p.confirmedDps)} 대비 ${p.dpsGapPct >= 0 ? "+" : ""}${(p.dpsGapPct * 100).toFixed(0)}%</span>` : ""}`
       : "—";
     const divLabel = p.monthlyDiv > 0
-      ? `${fmtW(p.monthlyDiv)} <span style="color:${p.usedConfirmed ? "var(--good)" : "var(--text-muted)"}; font-size:11px;">${p.usedConfirmed ? "확정" : "추정(TTM)"}</span>`
+      ? `${fmtW(p.monthlyDiv)} <span style="color:${basisColor}; font-size:11px;">${basisText}</span>`
       : "—";
     return `<tr>
       <td>${p.account || "미지정"}</td>

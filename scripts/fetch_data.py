@@ -372,10 +372,20 @@ def fetch_dividend_summary_kr(symbol: str) -> dict | None:
     per_share_ttm = div.get("dividendPerShareTtm")
     if yield_ttm is None and per_share_ttm is None:
         return None
-    return {
+    out = {
         "ttmDividend": round(float(per_share_ttm), 6) if per_share_ttm is not None else 0.0,
         "dividendYield": round(float(yield_ttm) / 100, 6) if yield_ttm is not None else 0.0,
     }
+    # 개별 배당락일은 이 API에 없지만(위 주석 참조) 올해 배당 횟수·최근 배당월은 준다 —
+    # 지금까지 받아놓고 버리던 값이라 그대로 저장해 "올해 N회 · 최근 M월"까지는 표시 가능하게 한다.
+    # 배당락일 자체를 추정해서 채우지는 않는다(지어내기 금지 원칙).
+    count_this_year = div.get("dividendCountThisYear")
+    month_this_year = div.get("dividendMonthThisYear")
+    if count_this_year is not None:
+        out["dividendCountThisYear"] = int(count_this_year)
+    if month_this_year is not None:
+        out["dividendMonthThisYear"] = int(month_this_year)
+    return out
 
 
 def main() -> int:
@@ -485,6 +495,12 @@ def main() -> int:
                 time.sleep(interval)
                 entry["ttmDividend"] = summary["ttmDividend"] if summary else 0.0
                 entry["dividendYield"] = summary["dividendYield"] if summary else 0.0
+                # 올해 배당 횟수·최근 배당월(있을 때만) — 국내는 배당락일 이력이 없어
+                # 이 두 값이 "월배당 여부·최근 지급월"을 알 수 있는 유일한 단서다.
+                if summary:
+                    for key in ("dividendCountThisYear", "dividendMonthThisYear"):
+                        if key in summary:
+                            entry[key] = summary[key]
                 div_note = f", div TTM {entry['dividendYield']*100:.2f}%" if summary else ""
 
             manifest[market].append(entry)

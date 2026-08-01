@@ -415,6 +415,17 @@
   .hm-val { font-size: 12.5px; color: #fff; font-weight: 700; margin-top: 4px; }
   .hm-sub { font-size: 10px; color: #fff; opacity: .75; margin-top: 2px; }
   .hm-account-title { font-size: 12.5px; font-weight: 600; color: var(--text-muted); margin: 16px 0 6px; } /* 자급률·월매수 섹션에서도 사용 */
+
+  /* A24b: 변동이력 종목변동 목록 — 계좌별 그룹 + 항목 리스트(기존엔 한 문단 통짜였음) */
+  .chg-account { margin: 6px 0 2px; padding-left: 2px; }
+  .chg-account-name { margin: 6px 0 2px; font-size: 12px; font-weight: 700; color: var(--text-muted); }
+  .chg-account-name span { font-weight: 400; opacity: .75; }
+  .chg-list { margin: 0 0 2px; padding-left: 16px; list-style: none; }
+  .chg-list li { font-size: 12px; line-height: 1.75; color: var(--text-muted); }
+  .chg-list li b { font-weight: 600; }
+  .chg-code { opacity: .6; font-size: 11px; margin-left: 2px; }
+  .chg-qty { font-variant-numeric: tabular-nums; opacity: .9; }
+  .chg-more > summary { font-size: 11.5px; color: var(--text-muted); cursor: pointer; padding: 2px 0 2px 16px; opacity: .8; }
   .treemap { position: relative; width: 100%; height: 520px; margin: 10px 0 18px; }
   @media (max-width: 640px) { .treemap { height: 420px; } }
   .tm-group { position: absolute; box-sizing: border-box; border: 1px solid var(--page-plane); display: flex; flex-direction: column; overflow: hidden; }
@@ -425,6 +436,18 @@
   .tm-cell .hm-name { font-size: 10.5px; }
   .tm-cell .hm-val { font-size: 11.5px; margin-top: 1px; }
   .tm-cell .hm-sub { font-size: 9.5px; margin-top: 1px; }
+  /* A24a: 셀 크기별 글자 축소 — 좁은 셀에서 종목명이 겹치거나 셀 밖으로 밀려나던 문제.
+     아주 작은 셀은 부차 정보를 감추고 종목명만 한 줄로 남긴다(전체 정보는 탭 확대로 확인). */
+  .tm-cell.tm-md .hm-name { font-size: 9.5px; }
+  .tm-cell.tm-md .hm-val { font-size: 10.5px; }
+  .tm-cell.tm-md .hm-sub { font-size: 8.5px; }
+  .tm-cell.tm-sm { padding: 2px 3px; }
+  .tm-cell.tm-sm .hm-name { font-size: 8.5px; line-height: 1.15; }
+  .tm-cell.tm-sm .hm-val { font-size: 9.5px; margin-top: 0; }
+  .tm-cell.tm-sm .hm-sub { display: none; }
+  .tm-cell.tm-xs { padding: 1px 2px; }
+  .tm-cell.tm-xs .hm-name { font-size: 7.5px; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tm-cell.tm-xs .hm-val, .tm-cell.tm-xs .hm-sub { display: none; }
   /* 등락 색 — 한국 관례(상승=빨강, 하락=파랑), 절대값 커질수록 진하게 */
   .tm-flat { background: #6b6f76; }
   .tm-up1 { background: #8a4a4a; } .tm-up2 { background: #a63d3d; } .tm-up3 { background: #c23030; } .tm-up4 { background: #de2121; }
