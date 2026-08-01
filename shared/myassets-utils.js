@@ -369,6 +369,154 @@ function buildChart(container, opts) {
   svg.addEventListener("pointerleave", onLeave);
 }
 
+/* ---------- A29: 계좌별 월별 손익 ----------
+   실제 매매내역(입출금·추가매수 시점)이 없어 완벽한 손익 분해는 불가능하다 — 대신 "지금
+   보유한 수량을 그 기간 내내 그대로 갖고 있었다면"이라는 가정으로 월말 평가액을 과거로
+   재구성하고, 그 월간 증감을 손익으로 본다(A26b 포트폴리오 MDD와 같은 합성 방식이지만
+   단위는 %가 아니라 원화 절대값). 원화 환산은 그 시점의 실제 환율을 쓴다(현재 환율로
+   과거를 재는 오차를 없애기 위함 — fx.dates/fx.rates가 이미 그 이력을 갖고 있다). */
+
+/* 이분탐색으로 date 이하 마지막 환율을 찾는다(환율 미수집일은 직전 영업일 값으로 대체). */
+function fxRateOnOrBefore(fx, date) {
+  if (!fx || !fx.dates || !fx.dates.length) return null;
+  let lo = 0, hi = fx.dates.length - 1, ans = null;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (fx.dates[mid] <= date) { ans = fx.rates[mid]; lo = mid + 1; } else hi = mid - 1;
+  }
+  return ans;
+}
+
+/* rows: perRow(계좌로 이미 필터링된 배열). 반환 { dates, values(원화) } — 공통 교집합 날짜
+   위에서만 계산한다(한 종목이라도 그 날짜에 값이 없으면 전체 평가액을 낼 수 없으므로). */
+function accountMonthlyValueSeries(rows, fx) {
+  const usable = (rows || []).filter((p) => p.qty > 0 && p.full && p.full.dates && p.full.dates.length);
+  if (!usable.length) return null;
+  const priceMaps = usable.map((p) => {
+    const m = new Map();
+    for (let i = 0; i < p.full.dates.length; i++) m.set(p.full.dates[i], p.full.closes[i]);
+    return m;
+  });
+  let commonDates = [...priceMaps[0].keys()];
+  for (let i = 1; i < priceMaps.length; i++) commonDates = commonDates.filter((d) => priceMaps[i].has(d));
+  commonDates.sort();
+  if (commonDates.length < 2) return null;
+  const dates = [], values = [];
+  for (const date of commonDates) {
+    let v = 0;
+    for (let i = 0; i < usable.length; i++) {
+      const close = priceMaps[i].get(date);
+      const isUsd = (usable[i].full.currency || "USD") === "USD";
+      const rate = isUsd ? fxRateOnOrBefore(fx, date) : 1;
+      if (isUsd && rate == null) { v = null; break; } // 그 날짜의 환율을 못 구하면 이 날은 건너뜀
+      v += close * rate * usable[i].qty;
+    }
+    if (v == null) continue;
+    dates.push(date); values.push(v);
+  }
+  return dates.length >= 2 ? { dates, values } : null;
+}
+
+/* 일별 평가액 시리즈 → 월별 손익(원) — 각 달의 "마지막 거래일" 평가액 차이.
+   반환 [{month:"YYYY-MM", pnl}] — 시간순, 첫 달은 비교 대상(전월)이 없어 제외된다. */
+function monthlyPnlFromDailySeries(dailySeries) {
+  if (!dailySeries) return [];
+  const { dates, values } = dailySeries;
+  const monthEnd = new Map(); // 같은 달의 뒤쪽 날짜로 계속 덮어써서 결국 "그 달의 마지막 거래일"만 남는다
+  for (let i = 0; i < dates.length; i++) monthEnd.set(dates[i].slice(0, 7), values[i]);
+  const months = [...monthEnd.keys()].sort();
+  const out = [];
+  for (let i = 1; i < months.length; i++) {
+    out.push({ month: months[i], pnl: monthEnd.get(months[i]) - monthEnd.get(months[i - 1]) });
+  }
+  return out;
+}
+
+/* 월별 손익 막대그래프 — buildCompareChart/buildChart와 같은 SVG 좌표계·호버 패턴을 쓰지만
+   선이 아니라 막대(rect)이고, 부호에 따라 색이 갈린다(참고 화면: 양수=파랑/청록, 음수=주황). */
+function buildMonthlyBarChart(container, months, opts = {}) {
+  if (!months || !months.length) {
+    container.innerHTML = `<p class="compare-empty">${opts.emptyMsg || "표시할 월별 손익 데이터가 없습니다."}</p>`;
+    return;
+  }
+  const H = opts.height || CHART_H;
+  const n = months.length;
+  const vals = months.map((m) => m.pnl);
+  const vMin = Math.min(0, ...vals), vMax = Math.max(0, ...vals);
+  const ticks = niceTicks(vMin, vMax, 5);
+  const tMin = ticks[0], tMax = ticks[ticks.length - 1];
+  const yAt = (v) => PAD_T + (1 - (v - tMin) / (tMax - tMin || 1)) * (H - PAD_T - PAD_B);
+  const bw = (CHART_W - PAD_L - PAD_R) / n;
+  const zeroY = yAt(0);
+  const good = cssVar("--good") || "#2e7d32", bad = cssVar("--critical") || "#c62828";
+  const fmtW = (v) => fmtPrice(v, "KRW");
+
+  const gridSvg = ticks.map((t) => {
+    const y = yAt(t).toFixed(2);
+    return `<line class="gridline" x1="${PAD_L}" x2="${CHART_W - PAD_R}" y1="${y}" y2="${y}"/>` +
+           `<text class="axis-label" x="${PAD_L - 6}" y="${Number(y) + 3}" text-anchor="end">${fmtW(t)}</text>`;
+  }).join("");
+
+  const xTickEvery = Math.max(1, Math.ceil(n / 12));
+  let xLabelsSvg = "";
+  months.forEach((m, i) => {
+    if (i % xTickEvery !== 0 && i !== n - 1) return;
+    const x = (PAD_L + (i + 0.5) * bw).toFixed(2);
+    xLabelsSvg += `<text class="axis-label" x="${x}" y="${H - 4}" text-anchor="middle">${m.month.slice(2)}</text>`;
+  });
+
+  const barsSvg = months.map((m, i) => {
+    const x = PAD_L + i * bw + bw * 0.15;
+    const w = bw * 0.7;
+    const y1 = yAt(Math.max(0, m.pnl)), y2 = yAt(Math.min(0, m.pnl));
+    const color = m.pnl >= 0 ? good : bad;
+    return `<rect x="${x.toFixed(2)}" y="${y1.toFixed(2)}" width="${w.toFixed(2)}" height="${Math.max(0.5, y2 - y1).toFixed(2)}" fill="${color}"/>`;
+  }).join("");
+
+  container.innerHTML = `
+    <div class="chart-box">
+      <svg class="chart" viewBox="0 0 ${CHART_W} ${H}" preserveAspectRatio="xMidYMid meet">
+        ${gridSvg}
+        ${xLabelsSvg}
+        <line class="baseline" x1="${PAD_L}" x2="${CHART_W - PAD_R}" y1="${zeroY.toFixed(2)}" y2="${zeroY.toFixed(2)}"/>
+        ${barsSvg}
+        <g class="hover-layer" style="display:none">
+          <line class="crosshair-line" x1="0" x2="0" y1="${PAD_T}" y2="${H - PAD_B}"/>
+        </g>
+      </svg>
+      <div class="tooltip"></div>
+    </div>`;
+
+  const svg = container.querySelector("svg");
+  const hoverLayer = container.querySelector(".hover-layer");
+  const crosshair = container.querySelector(".crosshair-line");
+  const tooltip = container.querySelector(".tooltip");
+
+  function onMove(evt) {
+    const pt = svg.createSVGPoint();
+    pt.x = evt.clientX; pt.y = evt.clientY;
+    const loc = pt.matrixTransform(svg.getScreenCTM().inverse());
+    let i = Math.floor((loc.x - PAD_L) / bw);
+    i = Math.min(n - 1, Math.max(0, i));
+    const x = PAD_L + (i + 0.5) * bw;
+    hoverLayer.style.display = "";
+    crosshair.setAttribute("x1", x); crosshair.setAttribute("x2", x);
+    const rect = svg.getBoundingClientRect();
+    const px = rect.left + (x / CHART_W) * rect.width;
+    tooltip.style.left = (px - rect.left) + "px";
+    tooltip.style.top = ((PAD_T + 4) / H) * 100 + "%";
+    tooltip.style.transform = "translate(-50%, 0%)";
+    tooltip.style.opacity = "1";
+    const m = months[i];
+    const color = m.pnl >= 0 ? good : bad;
+    tooltip.innerHTML = `<div class="t-date">${m.month}</div><div class="t-row"><strong style="color:${color}">${m.pnl >= 0 ? "+" : ""}${fmtW(m.pnl)}</strong></div>`;
+  }
+  function onLeave() { hoverLayer.style.display = "none"; tooltip.style.opacity = "0"; }
+
+  svg.addEventListener("pointermove", onMove);
+  svg.addEventListener("pointerleave", onLeave);
+}
+
 function trailingReturnAnnualized(dates, closes, months) {
   if (!dates || dates.length < 2) return null;
   const lastClose = closes[closes.length - 1];

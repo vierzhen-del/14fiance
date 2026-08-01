@@ -1282,6 +1282,26 @@ function buildMDDBreakdownHTML(perRow, groupBy) {
     </table></div>`;
 }
 
+/* A29: 계좌별 월별 손익 차트를 실제로 그린다 — 환율 이력(loadFx)을 매번 새로 불러오지
+   않도록 fetchJSON 자체 캐시(state.cache의 "fx:USDKRW" 키)에 의존한다. accountKey="__all__"
+   이면 전체 계좌(perRow 전체)를 하나로 합쳐서 계산한다. */
+async function renderMonthlyPnlChart(accountKey) {
+  const container = document.getElementById("myMonthlyPnlChart");
+  if (!container) return;
+  const csv = state.myAssetsCsvData;
+  if (!csv) return;
+  const rows = accountKey === "__all__" ? csv.perRow : csv.perRow.filter((p) => (p.account || "계좌 미지정") === accountKey);
+  container.innerHTML = `<p class="compare-empty">불러오는 중…</p>`;
+  const fx = await loadFx();
+  const daily = accountMonthlyValueSeries(rows, fx);
+  if (!daily) {
+    container.innerHTML = `<p class="compare-empty">가격 이력이 부족해 월별 손익을 계산할 수 없습니다 — 주간 시세가 2회 이상 쌓인 종목이 필요합니다.</p>`;
+    return;
+  }
+  const months = monthlyPnlFromDailySeries(daily).slice(-24); // 최근 24개월
+  buildMonthlyBarChart(container, months, { emptyMsg: "아직 월이 하나뿐이라 손익을 비교할 전월이 없습니다." });
+}
+
 /* ---------- A28: 설정탭 API 키 (텔레그램) ----------
    capture/index.html의 CAPTURE_CLAUDE_KEY/CAPTURE_GEMINI_KEY와 같은 신뢰 모델 — localStorage
    에만 저장하고 저장소·서버에는 절대 커밋/전송하지 않는다(CLAUDE.md 원칙). 텔레그램 Bot API는
@@ -2305,6 +2325,13 @@ async function renderMyAssets() {
 
       <p class="chart-title" style="margin-top:24px;">🎯 성향별 MDD</p>
       ${buildMDDBreakdownHTML(perRow, "style")}
+
+      <p class="chart-title" style="margin-top:24px;">💵 계좌별 월별 손익</p>
+      <p class="stat-sub">선택한 계좌의 <b>현재 보유 수량을 그 기간 내내 갖고 있었다고 가정</b>하고 월말 평가액 변화를 손익으로 계산합니다 — 실제 입출금·매매 내역은 반영하지 않으므로 추가 매수·환매가 있었던 달은 실제 손익과 다르게 보일 수 있습니다.</p>
+      <div class="controls" style="margin-bottom:8px;">
+        <select id="myMonthlyPnlAccount" aria-label="월별 손익 계좌 선택"></select>
+      </div>
+      <div id="myMonthlyPnlChart"><p class="compare-empty">계좌를 선택하면 표시됩니다.</p></div>
     </div>
 
     <div class="dash-panel" data-tab="summary" hidden>
@@ -2854,6 +2881,21 @@ async function renderMyAssets() {
       const ok = await copyTextToClipboard(prompt);
       flashStatus("myAiStatus", ok ? "프롬프트 복사됨 — AI 채팅에 붙여넣으세요" : "복사 실패");
     });
+  }
+
+  // A29: 계좌별 월별 손익 — 계좌 선택 select, 선택은 state에 보존(다른 select들과 같은 패턴).
+  const pnlSel = document.getElementById("myMonthlyPnlAccount");
+  if (pnlSel) {
+    pnlSel.innerHTML = `<option value="__all__">전체 계좌(합산)</option>` +
+      [...accountMap.keys()].map((a) => `<option value="${a}">${a}</option>`).join("");
+    const savedPnlAcc = state.myMonthlyPnlAccount && [...accountMap.keys(), "__all__"].includes(state.myMonthlyPnlAccount)
+      ? state.myMonthlyPnlAccount : "__all__";
+    pnlSel.value = savedPnlAcc;
+    pnlSel.addEventListener("change", () => {
+      state.myMonthlyPnlAccount = pnlSel.value;
+      renderMonthlyPnlChart(pnlSel.value);
+    });
+    renderMonthlyPnlChart(savedPnlAcc);
   }
 
   // A25b: 월별 비중 변화 — 그룹 기준 전환(계좌별/카테고리별), 선택은 state에 보존.
