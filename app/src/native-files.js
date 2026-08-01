@@ -123,6 +123,31 @@
     }
   };
 
+  /* A28: 종합 탭 "📤 리포트 생성"에서 옵시디안을 선택하면 부르는 함수. buildReportText()가
+     만든 텍스트를 그대로 저장한다(별도 가공 없음) — exportObsidianNotes와 같은 볼트에
+     남기지만 파일이 다르므로(고정 이력 노트 vs 그때그때 생성되는 리포트) 별도 함수로 둔다.
+     경로 미설정이면 조용히 건너뛴다(옵시디안 백업과 동일 정책). */
+  window.exportReportNote = async function (text) {
+    try {
+      if (typeof obsidianVaultPath !== "function") return false;
+      const vault = obsidianVaultPath();
+      if (!vault) return false;
+      const path = `${vault}/${FOLDER}/종합-리포트.md`;
+      let dir = lastWorkingDir || DIR_PRIMARY;
+      try {
+        await writeTextTo(dir, path, text);
+      } catch (primaryErr) {
+        dir = dir === DIR_PRIMARY ? DIR_FALLBACK : DIR_PRIMARY;
+        await writeTextTo(dir, path, text);
+      }
+      lastWorkingDir = dir;
+      return true;
+    } catch (err) {
+      console.warn("리포트 노트 저장 실패:", err.message);
+      return false;
+    }
+  };
+
   async function readBackupJson() {
     // 저장 시 DOCUMENTS/EXTERNAL 중 어느 쪽에 실제로 기록됐는지 알 수 없으므로(권한 상태가
     // 그 사이 바뀔 수도 있음) 두 위치를 순서대로 시도한다.

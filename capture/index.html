@@ -122,6 +122,9 @@
             <option value="총계">총계만</option>
           </select>
           <button type="button" id="myCsvBtn" class="btn-action">📄 시트 저장</button>
+          <button type="button" id="myTsvCopyBtn" class="btn-action">📋 TSV 복사</button>
+          <button type="button" id="myCsvImportBtn" class="btn-action">📥 CSV/TSV 가져오기</button>
+          <input type="file" id="myCsvImportFile" accept=".csv,.tsv,text/csv,text/tab-separated-values,text/plain" style="display:none;">
           <a href="https://app.notion.com/p/3865efd0e46281c49a72c9bbc70dcea0" target="_blank" rel="noopener" class="btn-action" style="text-decoration:none;">📋 배당 기준 SOP 확인</a>
           <button type="button" id="myIncludeStocksBtn" class="btn-action"></button>
           <span id="myAssetStatus" class="action-status"></span>
@@ -604,6 +607,36 @@ async function init() {
     }
     downloadBlob(new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" }), `my-assets${suffix}-${todayStr()}.csv`);
     flashStatus("myAssetStatus", "시트 저장 완료 ✓");
+  });
+  // A28: TSV 클립보드 복사 — 구글시트·엑셀에 Ctrl+V로 바로 붙여넣기 위함(파일 다운로드 없이).
+  document.getElementById("myTsvCopyBtn").addEventListener("click", async () => {
+    if (!state.myAssetsCsvData) { flashStatus("myAssetStatus", "먼저 보유 종목을 입력하세요"); return; }
+    const tsv = csvToTSV(buildMyAssetsSheets(state.myAssetsCsvData)["종목현황"]);
+    await copyTextToClipboard(tsv, "myAssetStatus", "TSV 복사됨 — 구글시트·엑셀에 붙여넣으세요(Ctrl+V)");
+  });
+  // A28: CSV/TSV 가져오기 — 계좌+종목이 이미 있으면 갱신, 없으면 추가(전체 삭제 아님).
+  // 캡처 반영·JSON 가져오기와 같은 "계좌 변동" 이벤트이므로 changelog에 MDD before/after가
+  // 자동으로 남는다(pushAssetChangelog가 이미 그 일을 한다 — 호출부 수정 불필요).
+  document.getElementById("myCsvImportBtn").addEventListener("click", () => document.getElementById("myCsvImportFile").click());
+  document.getElementById("myCsvImportFile").addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const text = await file.text();
+    const { rows, warnings } = parseMyAssetsHoldingsCSV(text);
+    if (!rows.length) {
+      flashStatus("myAssetStatus", warnings[0] || "가져올 종목이 없습니다");
+      e.target.value = "";
+      return;
+    }
+    const beforeHoldings = snapshotHoldingsMap();
+    const beforeSnap = snapshotAccountValues();
+    const { added, updated } = applyCSVHoldingsRows(rows);
+    saveMyAssets();
+    await renderMyAssets();
+    pushAssetChangelog("import-csv", beforeHoldings, beforeSnap, snapshotHoldingsMap(), snapshotAccountValues());
+    if (warnings.length) console.warn("CSV 가져오기 경고:\n" + warnings.join("\n"));
+    flashStatus("myAssetStatus", `CSV 가져오기: ${added}건 추가, ${updated}건 갱신${warnings.length ? ` (건너뜀 ${warnings.length}건 — 콘솔 확인)` : ""} ✓`);
+    e.target.value = "";
   });
   document.getElementById("myIncludeStocksBtn").addEventListener("click", () => {
     const includeStocks = localStorage.getItem(MY_INCLUDE_STOCKS_KEY) !== "0";

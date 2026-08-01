@@ -618,6 +618,9 @@
             <option value="총계">총계만</option>
           </select>
           <button type="button" id="myCsvBtn" class="btn-action">📄 시트 저장</button>
+          <button type="button" id="myTsvCopyBtn" class="btn-action">📋 TSV 복사</button>
+          <button type="button" id="myCsvImportBtn" class="btn-action">📥 CSV/TSV 가져오기</button>
+          <input type="file" id="myCsvImportFile" accept=".csv,.tsv,text/csv,text/tab-separated-values,text/plain" style="display:none;">
           <a href="https://app.notion.com/p/3865efd0e46281c49a72c9bbc70dcea0" target="_blank" rel="noopener" class="btn-action" style="text-decoration:none;">📋 배당 기준 SOP 확인</a>
           <button type="button" id="myIncludeStocksBtn" class="btn-action"></button>
           <button type="button" id="myLiveQuotesBtn" class="btn-action"></button>
@@ -873,6 +876,13 @@ function initSectionCollapse() {
 }
 
 function todayStr() { return new Date().toISOString().slice(0, 10); }
+
+/* A26a/A28: 계좌번호 마스킹 — shared/myassets-utils.js와 동일 사본(이중 미러 구조).
+   6자리 이상 연속 숫자만 대상, 뒤 2자리는 남긴다. */
+function maskAccountLabel(label) {
+  if (!label) return label;
+  return String(label).replace(/\d{6,}/g, (run) => "*".repeat(run.length - 2) + run.slice(-2));
+}
 function nowDateTimeStr() {
   const d = new Date();
   const pad = (n) => String(n).padStart(2, "0");
@@ -3128,7 +3138,7 @@ function changeItemsHTML(changeList) {
     </div>`;
   }).join("");
 }
-const CHANGE_SOURCE_LABEL = { "capture-account": "📸 계좌 캡처", "capture-buyplan": "📈 월매수 캡처", "capture-account-reset": "🆕 완전 신규 업데이트", import: "📂 가져오기" };
+const CHANGE_SOURCE_LABEL = { "capture-account": "📸 계좌 캡처", "capture-buyplan": "📈 월매수 캡처", "capture-account-reset": "🆕 완전 신규 업데이트", import: "📂 가져오기", "import-csv": "📄 CSV/TSV 가져오기" };
 
 /* A26b: "📉 MDD 변동: -18.2% → -16.9% (+1.3%p 개선)" 한 줄. 값이 없으면 빈 문자열 —
    변동이력 카드와 추이 탭 MDD 이력이 같은 표기를 쓰도록 여기 한 곳에 둔다. */
@@ -3385,6 +3395,139 @@ function buildMDDBreakdownHTML(perRow, groupBy) {
       <thead><tr><th>구분</th><th>평가액</th><th>비중</th><th>MDD</th><th>최대낙폭 구간</th><th>회복</th></tr></thead>
       <tbody>${body}</tbody>
     </table></div>`;
+}
+
+/* ---------- A28: 설정탭 API 키 (텔레그램) ----------
+   capture/index.html의 CAPTURE_CLAUDE_KEY/CAPTURE_GEMINI_KEY와 같은 신뢰 모델 — localStorage
+   에만 저장하고 저장소·서버에는 절대 커밋/전송하지 않는다(CLAUDE.md 원칙). 텔레그램 Bot API는
+   브라우저 CORS를 허용해서(노션·카카오와 달리) 클라이언트에서 직접 호출할 수 있다. 저장소의
+   GitHub Actions 시크릿(TELEGRAM_BOT_TOKEN, signal-alert.yml 전용)은 CI 서버에서만 쓰이고
+   클라이언트로는 절대 노출되지 않으므로 재사용할 수 없다 — 사용자 본인 봇을 새로 만들어
+   여기 넣어야 한다. */
+const MY_TELEGRAM_TOKEN_KEY = "my_assets_telegram_token_v1";
+const MY_TELEGRAM_CHATID_KEY = "my_assets_telegram_chatid_v1";
+function telegramBotToken() { return (localStorage.getItem(MY_TELEGRAM_TOKEN_KEY) || "").trim(); }
+function telegramChatId() { return (localStorage.getItem(MY_TELEGRAM_CHATID_KEY) || "").trim(); }
+
+/* 성공 시 {ok:true}, 실패 시 {ok:false, error}. 네트워크 자체가 막힌 환경(오프라인 등)도
+   여기서 잡아 호출부가 항상 같은 모양의 결과를 받게 한다. */
+async function sendTelegramMessage(text) {
+  const token = telegramBotToken(), chatId = telegramChatId();
+  if (!token || !chatId) return { ok: false, error: "설정 탭에서 텔레그램 봇 토큰과 chat_id를 먼저 저장하세요." };
+  try {
+    // parse_mode를 안 쓴다 — 리포트 텍스트에 "&"·"<"·">"가 섞이면(종목명의 S&P500 등)
+    // HTML 모드는 이스케이프 없이 그대로 보내면 400 오류가 난다. 서식보다 항상 전송되는
+    // 쪽이 중요하므로 그냥 일반 텍스트로 보낸다.
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text }),
+    });
+    const data = await res.json().catch(() => null);
+    if (res.ok && data && data.ok) return { ok: true };
+    return { ok: false, error: (data && data.description) || `전송 실패(HTTP ${res.status})` };
+  } catch (err) {
+    return { ok: false, error: "네트워크 오류 — " + (err && err.message) };
+  }
+}
+
+/* ---------- A28: 종합 탭 "리포트 생성" ----------
+   종합(계좌별 요약)·비중(성향별)·추이(MDD)·배당(TOP5) 정보를 한 텍스트로 모아 다운로드·
+   클립보드·텔레그램·옵시디안에 공통으로 쓴다. 계좌명은 maskAccountLabel로 가린다 —
+   텔레그램·클립보드로 이 텍스트가 그대로 밖에 나갈 수 있는 경로이기 때문(A26a와 같은 이유). */
+function buildReportText(csv, history) {
+  if (!csv || !csv.perRow || !csv.perRow.length) return null;
+  const fmtW = (v) => fmtPrice(v, "KRW");
+  const lines = [];
+  lines.push(`📊 14fiance 포트폴리오 리포트 (${todayStr()})`);
+  lines.push("");
+
+  lines.push("[종합]");
+  lines.push(`총 평가액: ${fmtW(csv.totalValue)}`);
+  lines.push(`총 월배당: ${fmtW(csv.totalMonthlyDiv)}`);
+  if (csv.totalProfit != null) lines.push(`총 손익(매입단가 입력분 기준): ${csv.totalProfit >= 0 ? "+" : ""}${fmtW(csv.totalProfit)}`);
+  lines.push("");
+
+  lines.push("[계좌별 요약]");
+  for (const [acc, g] of csv.accountMap) {
+    const pct = csv.totalValue > 0 ? (g.value / csv.totalValue) * 100 : 0;
+    lines.push(`- ${maskAccountLabel(acc)}: ${fmtW(g.value)} (${pct.toFixed(1)}%), 월배당 ${fmtW(g.monthlyDiv)}`);
+  }
+  lines.push("");
+
+  const styleMap = new Map();
+  for (const p of csv.perRow) {
+    if (!(p.value > 0)) continue;
+    const s = (p.meta && p.meta.style) || "미분류";
+    styleMap.set(s, (styleMap.get(s) || 0) + p.value);
+  }
+  lines.push("[비중(성향별)]");
+  for (const [s, v] of [...styleMap.entries()].sort((a, b) => b[1] - a[1])) {
+    lines.push(`- ${s}: ${csv.totalValue > 0 ? ((v / csv.totalValue) * 100).toFixed(1) : "0.0"}% (${fmtW(v)})`);
+  }
+  lines.push("");
+
+  lines.push("[추이(MDD)]");
+  const mdd = portfolioMDD(csv.perRow);
+  if (mdd) {
+    lines.push(`전체기간 MDD: ${(mdd.mdd * 100).toFixed(1)}% (${mdd.peakDate} → ${mdd.troughDate}, ${mdd.recoveredDate ? "회복 완료" : "미회복"})`);
+    lines.push("※ 현재 보유 비중으로 과거 가격이력을 합성한 낙폭 — 실제 계좌 평가액 낙폭과는 다릅니다.");
+  } else {
+    lines.push("가격 이력이 부족해 MDD를 계산할 수 없습니다.");
+  }
+  if (history && history.length >= 2) {
+    const sorted = history.slice().sort((a, b) => a.month.localeCompare(b.month));
+    const first = sorted[0], last = sorted[sorted.length - 1];
+    const diff = last.value - first.value;
+    const pct = first.value > 0 ? (diff / first.value) * 100 : 0;
+    lines.push(`평가액 변동(${first.month}→${last.month}): ${diff >= 0 ? "+" : ""}${fmtW(diff)} (${pct.toFixed(1)}%, 스냅샷 단순비교)`);
+  }
+  lines.push("");
+
+  const top5 = csv.perRow.filter((p) => p.monthlyDiv > 0).sort((a, b) => b.monthlyDiv - a.monthlyDiv).slice(0, 5);
+  lines.push("[월배당 TOP5]");
+  if (top5.length) {
+    for (const p of top5) lines.push(`- ${(p.meta && p.meta.name) || p.symbol} (${maskAccountLabel(p.account || "계좌 미지정")}): ${fmtW(p.monthlyDiv)}/월`);
+  } else {
+    lines.push("월배당 정보가 있는 종목이 없습니다.");
+  }
+  lines.push("");
+  lines.push("— 14fiance에서 자동 생성됨. 매매 자문이 아닌 참고용 정보입니다.");
+  return lines.join("\n");
+}
+
+/* ---------- A28: AI 분석 탭(옵션) ----------
+   capture 앱이 이미 관리하는 제미나이 키(CAPTURE_GEMINI_KEY와 같은 localStorage 키 문자열)를
+   그대로 재사용한다 — capture-parse.js가 로드되지 않는 root index.html에서도 쓸 수 있도록
+   상수를 하드코딩하되(둘이 다른 스크립트라 상수 공유 불가) 값은 동일하다. 같은 브라우저·앱
+   에서 한 번만 키를 넣으면 캡처 파싱과 AI 분석 탭이 같은 키를 공유한다(같은 origin이라
+   localStorage가 공유되므로). */
+const AI_GEMINI_KEY_STORAGE = "capture_gemini_key";
+const AI_GEMINI_MODEL_DEFAULT = "gemini-2.5-flash";
+function geminiApiKey() { return (localStorage.getItem(AI_GEMINI_KEY_STORAGE) || "").trim(); }
+
+/* callGeminiVision(capture-parse.js)의 텍스트 전용 버전 — 이미지 파트 없이 프롬프트만 보낸다. */
+async function callGeminiText(promptText, apiKey, model) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model || AI_GEMINI_MODEL_DEFAULT}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const resp = await fetch(url, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ contents: [{ parts: [{ text: promptText }] }] }),
+  });
+  if (!resp.ok) {
+    const errText = await resp.text().catch(() => "");
+    throw new Error(`Gemini API 오류 ${resp.status}: ${errText.slice(0, 300)}`);
+  }
+  const data = await resp.json();
+  return ((data.candidates || [])[0]?.content?.parts || []).map((p) => p.text || "").join("");
+}
+
+function buildAiAnalysisPrompt(reportText) {
+  return `다음은 내 투자 포트폴리오 리포트입니다. 매매를 추천하지 말고 아래 관점에서 관찰·리스크 위주로 짧게 분석해줘:
+1) 계좌·성향 비중이 한쪽으로 쏠려 있는지
+2) MDD(최대낙폭)로 볼 때 분산이 잘 되고 있는지
+3) 배당 집중도(TOP5가 전체 월배당에서 차지하는 비중)가 과도한지
+4) 눈에 띄는 리스크나 점검해볼 만한 점
+
+${reportText}`;
 }
 
 /* ---------- A25d: 옵시디안 볼트 백업용 노트 생성 ----------
@@ -4214,6 +4357,7 @@ async function renderMyAssets() {
       <button type="button" class="dash-tab-btn" data-tab="signal">📡 시그널</button>
       <button type="button" class="dash-tab-btn" data-tab="review">🧺 포트폴리오검토</button>
       <button type="button" class="dash-tab-btn" data-tab="changelog">🗂️ 변동이력</button>
+      <button type="button" class="dash-tab-btn" data-tab="ai">🤖 AI 분석</button>
       <button type="button" class="dash-tab-btn" data-tab="settings">⚙️ 설정</button>
     </div>
 
@@ -4295,6 +4439,19 @@ async function renderMyAssets() {
         </table>
         </div>
       </details>
+
+      <p class="chart-title" style="margin-top:24px;">📤 리포트 생성</p>
+      <p class="stat-sub">종합·비중·추이·배당 정보를 텍스트 한 장으로 모읍니다 — 계좌번호는 자동으로 가려집니다. 구글시트·엑셀·노션은 API 직접 연동이 브라우저에서 막혀 있어 클립보드 복사로 대체합니다(복사된 텍스트를 각 서비스에 붙여넣으세요).</p>
+      <div class="controls" style="margin:6px 0 8px; flex-wrap:wrap; gap:10px 16px;">
+        <label style="font-size:12.5px; display:inline-flex; align-items:center; gap:4px;"><input type="checkbox" class="my-report-dest" value="download" checked> 📥 다운로드</label>
+        <label style="font-size:12.5px; display:inline-flex; align-items:center; gap:4px;"><input type="checkbox" class="my-report-dest" value="clipboard"> 📋 클립보드(구글시트·엑셀·노션)</label>
+        <label style="font-size:12.5px; display:inline-flex; align-items:center; gap:4px;"><input type="checkbox" class="my-report-dest" value="obsidian" id="myReportObsidianWrap"> 🗂️ 옵시디안</label>
+        <label style="font-size:12.5px; display:inline-flex; align-items:center; gap:4px;"><input type="checkbox" class="my-report-dest" value="telegram"> 📨 텔레그램</label>
+      </div>
+      <div class="action-row">
+        <button type="button" id="myReportBtn" class="btn-action">📤 리포트 생성</button>
+        <span id="myReportStatus" class="action-status"></span>
+      </div>
     </div>
 
     <div class="dash-panel" data-tab="alloc" hidden>
@@ -4490,6 +4647,17 @@ async function renderMyAssets() {
       <div id="myChangelogBody"></div>
     </div>
 
+    <div class="dash-panel" data-tab="ai" hidden>
+      <p class="chart-title" style="margin-top:20px;">🤖 AI 분석 (옵션)</p>
+      <p class="stat-sub">「📋 종합」 탭의 리포트를 AI에게 보내 계좌·성향 쏠림, 분산도, 배당 집중도 같은 관찰 포인트를 받아봅니다 — <b>매매 자문이 아닌 참고용</b>입니다. 설정 탭(또는 캡처 앱)에 제미나이 키가 있으면 자동으로 분석하고, 없으면 프롬프트만 복사해 원하는 AI 채팅에 직접 붙여넣을 수 있습니다.</p>
+      <div class="action-row" style="margin:8px 0;">
+        <button type="button" id="myAiAnalyzeBtn" class="btn-action">🔍 AI 분석 시작</button>
+        <button type="button" id="myAiPromptCopyBtn" class="btn-action">📋 프롬프트만 복사</button>
+        <span id="myAiStatus" class="action-status"></span>
+      </div>
+      <div id="myAiResult"></div>
+    </div>
+
     <div class="dash-panel" data-tab="settings" hidden>
       <p class="chart-title" style="margin-top:20px;">📋 참조 노션 SOP (공통 SSOT 3종)</p>
       <p class="stat-sub"><a href="https://app.notion.com/p/3955efd0e46281dab7f3cbd905a15dfd" target="_blank" rel="noopener">📊 계좌 종목 현황 SOP — 계좌×종목×수량 단일 기록처</a></p>
@@ -4518,6 +4686,25 @@ async function renderMyAssets() {
       </div>
       <p class="stat-sub">경로는 <b>문서 폴더 기준 상대경로</b>로 적으세요(안드로이드 저장소 정책상 임의 절대경로는 앱이 쓸 수 없습니다). 예를 들어 <code>Obsidian/14rae</code>를 넣으면 <b>문서/Obsidian/14rae/14fiance/</b> 아래에 파일이 생깁니다. 옵시디안에서 "폴더를 볼트로 열기"로 그 폴더(또는 상위 <code>문서/Obsidian</code>)를 지정하면 됩니다.</p>
       <p class="stat-sub"><b>노션을 안 쓰는 경우</b>에도 이 경로만 지정해두면 기록이 전부 폰에 남습니다 — 노션 연동은 필수가 아니며, 이 백업만으로 배당 이력·종목변동·일별 결과를 계속 추적할 수 있습니다. (웹 브라우저에서는 파일 저장 권한이 없어 이 기능은 앱에서만 동작합니다.)</p>
+
+      <p class="chart-title" style="margin-top:20px;">🔑 API 키 (텔레그램·AI 분석)</p>
+      <p class="stat-sub">여기 입력한 키는 <b>이 기기의 브라우저(localStorage)에만</b> 저장되고 저장소·서버로는 전송되지 않습니다. AI 분석 탭은 캡처 앱(📸 캡처 탭 → 설정)에서 이미 넣어둔 제미나이 키를 그대로 씁니다 — 같은 브라우저·앱이면 한 번만 넣으면 됩니다.</p>
+      <div class="action-row" style="margin:8px 0;">
+        <input type="password" id="myTelegramToken" placeholder="텔레그램 봇 토큰(선택)" style="min-width:220px;" autocomplete="off">
+        <input type="text" id="myTelegramChatId" placeholder="chat_id" style="min-width:110px;" autocomplete="off">
+        <button type="button" id="myTelegramSaveBtn" class="btn-action">저장</button>
+        <button type="button" id="myTelegramTestBtn" class="btn-action">🔌 연결 테스트</button>
+        <button type="button" id="myTelegramClearBtn" class="btn-action" style="color:var(--critical);">삭제</button>
+        <span id="myTelegramStatus" class="action-status"></span>
+      </div>
+      <p class="stat-sub">봇 토큰은 텔레그램에서 <b>@BotFather</b>에게 <code>/newbot</code>을 보내면 발급됩니다. chat_id는 그 봇과 대화를 한 번 시작한 뒤 브라우저로 <code>https://api.telegram.org/bot&lt;토큰&gt;/getUpdates</code>를 열면 <code>"chat":{"id":...}</code> 값으로 확인할 수 있습니다. 저장해두면 「📋 종합」 탭의 "📤 리포트 생성"에서 텔레그램으로 바로 보낼 수 있습니다.</p>
+      <div class="action-row" style="margin:8px 0;">
+        <button type="button" id="myKeysExportBtn" class="btn-action">🔑 키 내보내기</button>
+        <button type="button" id="myKeysImportBtn" class="btn-action">🔑 키 불러오기</button>
+        <input type="file" id="myKeysImportFile" accept="application/json" style="display:none;">
+        <span id="myKeysStatus" class="action-status"></span>
+      </div>
+      <p class="stat-sub">키 내보내기는 <b>이 기기의 API 키만</b> 담은 별도 파일입니다(보유 종목·계좌 정보는 포함되지 않음) — 위 "📤 내보내기"(백업 파일)와는 다른 파일이니 따로 보관하세요. 재설치·기기변경 시 이 파일로 키만 복원할 수 있습니다. <b>이 파일은 저장소에 커밋하거나 다른 사람과 공유하지 마세요.</b></p>
 
       <p class="chart-title" style="margin-top:20px;">💾 백업·복원</p>
       <p class="stat-sub">📤 내보내기 파일에는 보유 종목·목표 설정과 함께 <b>스냅샷·변동이력·워치리스트가 모두 포함</b>되어, 재설치·다른 기기에서 📂 가져오기 한 번으로 전체 복원됩니다. (앱(APK)에서는 데이터가 바뀔 때마다 문서/14fiance/ 폴더에 백업 파일이 자동 저장되고 "📂 백업 폴더에서 복원" 버튼을 쓸 수 있습니다.)</p>
@@ -4643,6 +4830,144 @@ async function renderMyAssets() {
         flashStatus("myObsidianStatus", ok ? "백업 완료 ✓" : "백업 실패 — 경로·권한을 확인하세요");
       });
     }
+  }
+
+  // A28: 텔레그램 봇 토큰·chat_id 저장/삭제/연결테스트 — capture 앱의 API 키 UI와 같은 결.
+  const tgTokenInput = document.getElementById("myTelegramToken");
+  const tgChatInput = document.getElementById("myTelegramChatId");
+  if (tgTokenInput && tgChatInput) {
+    tgTokenInput.value = telegramBotToken();
+    tgChatInput.value = telegramChatId();
+    document.getElementById("myTelegramSaveBtn").addEventListener("click", () => {
+      localStorage.setItem(MY_TELEGRAM_TOKEN_KEY, tgTokenInput.value.trim());
+      localStorage.setItem(MY_TELEGRAM_CHATID_KEY, tgChatInput.value.trim());
+      flashStatus("myTelegramStatus", "저장됨 ✓");
+    });
+    document.getElementById("myTelegramClearBtn").addEventListener("click", () => {
+      localStorage.removeItem(MY_TELEGRAM_TOKEN_KEY);
+      localStorage.removeItem(MY_TELEGRAM_CHATID_KEY);
+      tgTokenInput.value = ""; tgChatInput.value = "";
+      flashStatus("myTelegramStatus", "삭제됨");
+    });
+    document.getElementById("myTelegramTestBtn").addEventListener("click", async () => {
+      // 저장 버튼을 안 눌러도 입력칸 값 그대로 테스트할 수 있게, 테스트 직전에 먼저 저장한다.
+      localStorage.setItem(MY_TELEGRAM_TOKEN_KEY, tgTokenInput.value.trim());
+      localStorage.setItem(MY_TELEGRAM_CHATID_KEY, tgChatInput.value.trim());
+      flashStatus("myTelegramStatus", "전송 중…");
+      const r = await sendTelegramMessage("✅ 14fiance 연결 테스트 — 이 메시지가 보이면 텔레그램 연동이 정상입니다.");
+      flashStatus("myTelegramStatus", r.ok ? "성공 — 텔레그램에서 확인하세요 ✓" : `실패: ${r.error}`, 5000);
+    });
+  }
+  // A28: 키 내보내기/불러오기 — 보유 종목 백업(📤 내보내기)과 완전히 분리된 별도 파일.
+  // 키는 serializeMyAssets()에 절대 섞지 않는다 — 그 파일은 "🤖 클로드에 복사"로 AI 채팅
+  // 텍스트에도 그대로 들어가는데, 거기에 시크릿이 실려 나가면 안 되기 때문.
+  const keysExportBtn = document.getElementById("myKeysExportBtn");
+  if (keysExportBtn) {
+    keysExportBtn.addEventListener("click", () => {
+      const keys = { telegramToken: telegramBotToken(), telegramChatId: telegramChatId() };
+      downloadBlob(new Blob([JSON.stringify(keys, null, 2)], { type: "application/json" }), `my-assets-keys-${todayStr()}.json`);
+      flashStatus("myKeysStatus", "키 파일 저장됨 — 이 파일은 공유하지 마세요");
+    });
+    document.getElementById("myKeysImportBtn").addEventListener("click", () => document.getElementById("myKeysImportFile").click());
+    document.getElementById("myKeysImportFile").addEventListener("change", (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const data = JSON.parse(reader.result);
+          if (data.telegramToken != null) localStorage.setItem(MY_TELEGRAM_TOKEN_KEY, data.telegramToken);
+          if (data.telegramChatId != null) localStorage.setItem(MY_TELEGRAM_CHATID_KEY, data.telegramChatId);
+          if (tgTokenInput) tgTokenInput.value = telegramBotToken();
+          if (tgChatInput) tgChatInput.value = telegramChatId();
+          flashStatus("myKeysStatus", "키 불러오기 완료 ✓");
+        } catch (err) {
+          flashStatus("myKeysStatus", "키 파일을 읽을 수 없습니다");
+        }
+      };
+      reader.readAsText(file);
+      e.target.value = "";
+    });
+  }
+
+  // A28: 종합 탭 리포트 생성 — 체크된 목적지마다 같은 텍스트를 각자 방식으로 내보낸다.
+  // 구글시트·엑셀·노션·옵시디안(웹)은 브라우저에서 직접 API를 부를 수 없어 전부 클립보드
+  // 복사 하나로 묶는다(사용자가 그 텍스트를 각 서비스에 붙여넣는다) — 실제 API 연동은
+  // 텔레그램만(CORS 허용), 옵시디안은 네이티브(APK)에서만 파일로 직접 저장한다.
+  const reportBtn = document.getElementById("myReportBtn");
+  if (reportBtn) {
+    const reportObsWrap = document.getElementById("myReportObsidianWrap");
+    if (reportObsWrap && typeof window.exportReportNote !== "function") {
+      reportObsWrap.closest("label").title = "웹에서는 옵시디안에 직접 쓸 수 없어 클립보드 복사로 대체됩니다(앱에서는 볼트에 직접 저장).";
+    }
+    reportBtn.addEventListener("click", async () => {
+      const csv = state.myAssetsCsvData;
+      const text = csv ? buildReportText(csv, history) : null;
+      if (!text) { flashStatus("myReportStatus", "먼저 보유 종목을 입력하세요"); return; }
+      const dests = [...document.querySelectorAll(".my-report-dest:checked")].map((el) => el.value);
+      if (!dests.length) { flashStatus("myReportStatus", "내보낼 곳을 하나 이상 선택하세요"); return; }
+      const results = [];
+      if (dests.includes("download")) {
+        downloadBlob(new Blob([text], { type: "text/plain;charset=utf-8" }), `14fiance-리포트-${todayStr()}.txt`);
+        results.push("다운로드 완료");
+      }
+      if (dests.includes("clipboard")) {
+        const ok = await copyTextToClipboard(text);
+        results.push(ok ? "클립보드 복사됨" : "클립보드 복사 실패");
+      }
+      if (dests.includes("obsidian")) {
+        if (typeof window.exportReportNote === "function") {
+          const ok = await window.exportReportNote(text);
+          results.push(ok ? "옵시디안 저장됨" : "옵시디안 저장 실패(볼트 경로 확인)");
+        } else {
+          const ok = await copyTextToClipboard(text);
+          results.push(ok ? "옵시디안용 클립보드 복사됨" : "클립보드 복사 실패");
+        }
+      }
+      if (dests.includes("telegram")) {
+        // 텔레그램 메시지는 4096자 제한 — 넘으면 잘라 보내고 잘렸다는 사실을 알린다.
+        const tgText = text.length > 4000 ? text.slice(0, 3900) + "\n…(길이 제한으로 이하 생략)" : text;
+        const r = await sendTelegramMessage(tgText);
+        results.push(r.ok ? "텔레그램 전송됨" : `텔레그램 실패: ${r.error}`);
+      }
+      flashStatus("myReportStatus", results.join(" · "), 6000);
+    });
+  }
+
+  // A28: AI 분석 탭 — 제미나이 키가 있으면 자동 호출, 없으면 프롬프트 복사로 폴백.
+  const aiAnalyzeBtn = document.getElementById("myAiAnalyzeBtn");
+  if (aiAnalyzeBtn) {
+    const buildPromptOrWarn = () => {
+      const csv = state.myAssetsCsvData;
+      const text = csv ? buildReportText(csv, history) : null;
+      if (!text) { flashStatus("myAiStatus", "먼저 보유 종목을 입력하세요"); return null; }
+      return buildAiAnalysisPrompt(text);
+    };
+    aiAnalyzeBtn.addEventListener("click", async () => {
+      const prompt = buildPromptOrWarn();
+      if (!prompt) return;
+      const key = geminiApiKey();
+      const resultEl = document.getElementById("myAiResult");
+      if (!key) {
+        const ok = await copyTextToClipboard(prompt);
+        flashStatus("myAiStatus", ok ? "제미나이 키가 없어 프롬프트를 복사했습니다 — AI 채팅에 붙여넣으세요" : "복사 실패", 6000);
+        return;
+      }
+      flashStatus("myAiStatus", "분석 중… (제미나이 호출)");
+      try {
+        const answer = await callGeminiText(prompt, key);
+        resultEl.innerHTML = `<div class="card" style="margin-top:10px; white-space:pre-wrap; line-height:1.6;">${(answer || "(응답이 비어 있습니다)").replace(/</g, "&lt;")}</div>`;
+        flashStatus("myAiStatus", "분석 완료 ✓");
+      } catch (err) {
+        flashStatus("myAiStatus", "분석 실패: " + err.message, 6000);
+      }
+    });
+    document.getElementById("myAiPromptCopyBtn").addEventListener("click", async () => {
+      const prompt = buildPromptOrWarn();
+      if (!prompt) return;
+      const ok = await copyTextToClipboard(prompt);
+      flashStatus("myAiStatus", ok ? "프롬프트 복사됨 — AI 채팅에 붙여넣으세요" : "복사 실패");
+    });
   }
 
   // A25b: 월별 비중 변화 — 그룹 기준 전환(계좌별/카테고리별), 선택은 state에 보존.
@@ -5630,16 +5955,24 @@ function buildMyAssetsText() {
 
 /* 내 자산 CSV — 시트(금융비서 대시보드)의 종목현황/계좌별/지급시기별 구성과 동일한 형태.
    탭별로 나눠 받을 수 있도록 각 표를 별도 시트(키)로 반환한다. */
+/* A28: 가져오기(parseMyAssetsHoldingsCSV)와 열 순서를 맞춰야 하므로 한 배열로 관리한다.
+   앞 6열(계좌·종목명·코드·성향·수량·매입단가)은 addMyAssetRow가 그대로 쓸 수 있는 값이라
+   내보내기→가져오기 왕복이 가능하고, 뒤쪽(현재가~지급시기)은 그 시점 계산 결과라 참고용
+   — 가져올 때는 DPS구분이 "확정"인 행만 확정DPS로 되살린다("추정(TTM)"은 매번 다시
+   계산되는 값이라 그대로 되돌리면 안 됨). */
+const HOLDINGS_SHEET_HEADER = ["계좌", "종목명", "코드", "성향", "수량", "매입단가", "현재가", "평가액(원)", "손익(원)", "DPS(주당)", "DPS구분", "월배당(원)", "지급시기"];
+
 function buildMyAssetsSheets(d) {
   const w = (v) => Math.round(v);
   const sheets = {};
 
-  const rowLines = [csvRow(["계좌", "종목", "코드", "수량", "현재가", "평가액(원)", "손익(원)", "DPS(주당)", "DPS구분", "월배당(원)", "지급시기"])];
+  const rowLines = [csvRow(HOLDINGS_SHEET_HEADER)];
   for (const p of d.perRow) {
     const ttm = p.meta && p.meta.ttmDividend ? p.meta.ttmDividend : 0;
     const dps = p.usedConfirmed ? p.confirmedDps : ttm / 12;
     rowLines.push(csvRow([
-      p.account || "미지정", p.meta ? p.meta.name : p.symbol, p.symbol, p.qty,
+      p.account || "미지정", p.meta ? p.meta.name : p.symbol, p.symbol, (p.meta && p.meta.style) || "",
+      p.qty, p.avgPrice > 0 ? (p.isUsd ? p.avgPrice + " USD" : w(p.avgPrice)) : "",
       p.isUsd ? p.close + " USD" : w(p.close),
       w(p.value), p.profit == null ? "" : w(p.profit),
       dps > 0 ? (p.isUsd && !p.usedConfirmed ? dps.toFixed(4) + " USD" : w(dps)) : "",
@@ -5672,6 +6005,128 @@ function buildMyAssetsCSV(d) {
     lines.push(name, body, "");
   }
   return lines.join("\n");
+}
+
+/* ---------- A28: 종목현황 CSV/TSV 가져오기 ----------
+   구글시트·엑셀에서 편집한 표를 다시 보유종목으로 반영한다. 쉼표(CSV)·탭(TSV) 구분자를
+   자동 인식하고, 값 안에 구분자가 있어도 따옴표로 감싸져 있으면 안전하게 분리한다
+   (RFC4180 최소구현 — csvField가 만드는 형태와 정확히 맞물린다). */
+function parseDelimitedTable(text, delim) {
+  const rows = [];
+  let row = [], field = "", inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; } else { inQuotes = false; }
+      } else field += c;
+    } else if (c === '"') {
+      inQuotes = true;
+    } else if (c === delim) {
+      row.push(field); field = "";
+    } else if (c === "\n" || c === "\r") {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      row.push(field); field = "";
+      if (row.some((f) => f !== "")) rows.push(row);
+      row = [];
+    } else field += c;
+  }
+  if (field !== "" || row.length) { row.push(field); if (row.some((f) => f !== "")) rows.push(row); }
+  return rows;
+}
+
+/* "12345", "12.34 USD", "" 셋 다 다루는 숫자 파서 — USD 표기는 그대로 숫자만 뽑는다.
+   avgPrice/close는 원래 통화 그대로 저장되는 필드라 " USD" 접미사는 버려도 된다. */
+function parseNumericCell(v) {
+  if (v == null) return null;
+  const s = String(v).replace(/USD/i, "").trim();
+  if (!s) return null;
+  const n = Number(s.replace(/,/g, ""));
+  return Number.isFinite(n) ? n : null;
+}
+
+/* CSV/TSV 텍스트 → addMyAssetRow가 바로 쓸 수 있는 row 객체 배열.
+   반환: { rows, warnings } — 코드가 수집 목록에 없는 행은 건너뛰고 warnings에 이유를 남긴다
+   (틀린 종목을 추측해서 채우지 않는다 — capture 파이프라인과 같은 원칙). */
+function parseMyAssetsHoldingsCSV(text) {
+  const delim = text.indexOf("\t") >= 0 && text.indexOf("\t") < (text.indexOf(",") === -1 ? Infinity : text.indexOf(",")) ? "\t" : ",";
+  const table = parseDelimitedTable(text.trim(), delim);
+  if (!table.length) return { rows: [], warnings: ["빈 파일입니다."] };
+  const header = table[0].map((h) => h.trim());
+  const idx = (name) => header.indexOf(name);
+  const iAcc = idx("계좌"), iName = idx("종목명"), iCode = idx("코드"), iQty = idx("수량"),
+    iAvg = idx("매입단가"), iDps = idx("DPS(주당)"), iDpsType = idx("DPS구분"), iPeriod = idx("지급시기");
+  if (iCode < 0 || iQty < 0) {
+    return { rows: [], warnings: [`헤더에 "코드"·"수량" 열이 없습니다 — 앱에서 내려받은 종목현황 CSV/TSV인지 확인하세요.`] };
+  }
+  const rows = [], warnings = [];
+  for (let i = 1; i < table.length; i++) {
+    const line = table[i];
+    const symbol = (line[iCode] || "").trim();
+    if (!symbol) continue;
+    const meta = state.metaBySymbol && state.metaBySymbol.get(symbol);
+    if (!meta) { warnings.push(`${i + 1}행 "${symbol}"(${(line[iName] || "").trim()}) — 수집 목록에 없는 코드라 건너뜀`); continue; }
+    const qty = parseNumericCell(line[iQty]);
+    if (qty == null || qty <= 0) { warnings.push(`${i + 1}행 "${symbol}" — 수량이 없어 건너뜀`); continue; }
+    const r = { account: (iAcc >= 0 ? line[iAcc] : "") || "", symbol, qty };
+    const avg = iAvg >= 0 ? parseNumericCell(line[iAvg]) : null;
+    if (avg != null && avg > 0) r.avgPrice = avg;
+    // "추정(TTM)"은 매번 다시 계산되는 값이라 그대로 되돌리면 다음 렌더에서 덮어써질 뿐이니
+    // 저장하지 않는다 — "확정"일 때만 사용자가 직접 입력해 둔 값으로 되살린다.
+    if (iDpsType >= 0 && (line[iDpsType] || "").trim() === "확정") {
+      const dps = iDps >= 0 ? parseNumericCell(line[iDps]) : null;
+      if (dps != null && dps > 0) r.confirmedDps = dps;
+    }
+    if (iPeriod >= 0 && (line[iPeriod] || "").trim()) r.payPeriod = normalizePayPeriod(line[iPeriod].trim());
+    rows.push(r);
+  }
+  if (!rows.length && !warnings.length) warnings.push("가져올 종목이 없습니다.");
+  return { rows, warnings };
+}
+
+/* CSV 텍스트 → TSV 텍스트 — 구글시트·엑셀에 붙여넣기(클립보드)용. 이미 만든 CSV 파서로
+   구조화한 뒤 탭으로 다시 이어 붙인다(파서를 두 번 만들지 않음). */
+function csvToTSV(csvText) {
+  const table = parseDelimitedTable(csvText.trim(), ",");
+  return table.map((row) => row.map((f) => (/\t|\n/.test(f) ? f.replace(/\t/g, " ") : f)).join("\t")).join("\n");
+}
+
+/* CSV/TSV 가져오기는 계좌+종목이 이미 있으면 수량·매입단가·확정DPS·지급시기만 갱신(upsert)하고,
+   없으면 새 행을 추가한다. 전체를 지우고 다시 채우지 않는 이유: CSV에 없는 계좌(다른 화면에서
+   입력해 둔 종목)를 실수로 날리면 안 되기 때문 — 이건 "완전 신규 업데이트"가 아니라 부분 갱신
+   도구다. capture/index.html의 upsertAccountHolding과 같은 결의 로직이지만, 이 함수는 root
+   index.html에도 필요해 capture 전용 함수에 의존하지 않고 여기(공용)에 다시 둔다. */
+function applyCSVHoldingsRows(rows) {
+  let added = 0, updated = 0;
+  for (const r of rows) {
+    const existing = [...document.querySelectorAll("#myAssetRows .portfolio-row")].find(
+      (row) => row.querySelector(".my-account").value === (r.account || "") && row.querySelector(".my-symbol").value === r.symbol
+    );
+    if (existing) {
+      existing.querySelector(".my-qty").value = r.qty || 0;
+      if (r.avgPrice) existing.querySelector(".my-avg").value = r.avgPrice;
+      if (r.confirmedDps) existing.querySelector(".my-confirmed").value = r.confirmedDps;
+      if (r.payPeriod) existing.querySelector(".my-period").value = r.payPeriod;
+      updated++;
+    } else {
+      addMyAssetRow(r);
+      added++;
+    }
+  }
+  return { added, updated };
+}
+
+/* 클립보드 복사 공용 헬퍼 — capture/index.html은 이미 자체 copyToClipboard를 갖고 있어
+   그대로 두고, 여기서는 root index.html과 새 기능(TSV·리포트)이 공유해 쓸 이름을 따로 둔다. */
+async function copyTextToClipboard(text, statusId, label) {
+  try {
+    await navigator.clipboard.writeText(text);
+    if (statusId) flashStatus(statusId, label || "복사됨 ✓");
+    return true;
+  } catch (err) {
+    if (statusId) flashStatus(statusId, "복사 실패 — 브라우저 권한을 확인하세요");
+    return false;
+  }
 }
 
 async function renderPortfolio() {
@@ -7053,6 +7508,36 @@ async function init() {
     }
     downloadBlob(new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" }), `my-assets${suffix}-${todayStr()}.csv`);
     flashStatus("myAssetStatus", "시트 저장 완료 ✓");
+  });
+  // A28: TSV 클립보드 복사 — 구글시트·엑셀에 Ctrl+V로 바로 붙여넣기 위함(파일 다운로드 없이).
+  document.getElementById("myTsvCopyBtn").addEventListener("click", async () => {
+    if (!state.myAssetsCsvData) { flashStatus("myAssetStatus", "먼저 보유 종목을 입력하세요"); return; }
+    const tsv = csvToTSV(buildMyAssetsSheets(state.myAssetsCsvData)["종목현황"]);
+    await copyTextToClipboard(tsv, "myAssetStatus", "TSV 복사됨 — 구글시트·엑셀에 붙여넣으세요(Ctrl+V)");
+  });
+  // A28: CSV/TSV 가져오기 — 계좌+종목이 이미 있으면 갱신, 없으면 추가(전체 삭제 아님).
+  // 캡처 반영·JSON 가져오기와 같은 "계좌 변동" 이벤트이므로 changelog에 MDD before/after가
+  // 자동으로 남는다(pushAssetChangelog가 이미 그 일을 한다 — 호출부 수정 불필요).
+  document.getElementById("myCsvImportBtn").addEventListener("click", () => document.getElementById("myCsvImportFile").click());
+  document.getElementById("myCsvImportFile").addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const text = await file.text();
+    const { rows, warnings } = parseMyAssetsHoldingsCSV(text);
+    if (!rows.length) {
+      flashStatus("myAssetStatus", warnings[0] || "가져올 종목이 없습니다");
+      e.target.value = "";
+      return;
+    }
+    const beforeHoldings = snapshotHoldingsMap();
+    const beforeSnap = snapshotAccountValues();
+    const { added, updated } = applyCSVHoldingsRows(rows);
+    saveMyAssets();
+    await renderMyAssets();
+    pushAssetChangelog("import-csv", beforeHoldings, beforeSnap, snapshotHoldingsMap(), snapshotAccountValues());
+    if (warnings.length) console.warn("CSV 가져오기 경고:\n" + warnings.join("\n"));
+    flashStatus("myAssetStatus", `CSV 가져오기: ${added}건 추가, ${updated}건 갱신${warnings.length ? ` (건너뜀 ${warnings.length}건 — 콘솔 확인)` : ""} ✓`);
+    e.target.value = "";
   });
   document.getElementById("myIncludeStocksBtn").addEventListener("click", () => {
     const includeStocks = localStorage.getItem(MY_INCLUDE_STOCKS_KEY) !== "0";

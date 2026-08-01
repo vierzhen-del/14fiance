@@ -33,6 +33,19 @@ function flashStatus(elId, msg, ms = 2500) {
 
 function todayStr() { return new Date().toISOString().slice(0, 10); }
 
+/* ---------- A26a: 계좌번호 마스킹 ----------
+   AI가 읽어온 화면 계좌명에는 실계좌번호가 그대로 들어 있다
+   ("7164484143-15 [연금저축 CMA(비대면)(회사지원)]"). 처음엔 capture-parse.js 전용이었지만
+   A28 리포트 생성(종합 탭)도 같은 마스킹이 필요해 여기(공용 유틸)로 옮겼다 — capture 앱은
+   여전히 이 함수를 그대로 쓴다(스크립트 로드 순서상 myassets-utils.js가 먼저 실행됨).
+   6자리 이상 연속 숫자만 대상이고 뒤 2자리는 남긴다 — 어느 계좌인지 사람이 알아볼 수는
+   있으면서 번호 전체는 복원되지 않게. 6자리 미만은 건드리지 않으므로 "-15" 같은
+   상품구분 꼬리표나 계좌명 속 숫자는 그대로다. */
+function maskAccountLabel(label) {
+  if (!label) return label;
+  return String(label).replace(/\d{6,}/g, (run) => "*".repeat(run.length - 2) + run.slice(-2));
+}
+
 function nowDateTimeStr() {
   const d = new Date();
   const pad = (n) => String(n).padStart(2, "0");
