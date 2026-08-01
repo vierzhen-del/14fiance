@@ -2097,10 +2097,13 @@ function diffHoldingsSnapshots(beforeMap, afterMap) {
 /* renderMyAssets()가 채워둔 state.myAssetsCsvData.accountMap 기준 계좌별 평가액 스냅샷(자산변동·비중변동용) */
 function snapshotAccountValues() {
   const csv = state.myAssetsCsvData;
-  if (!csv) return { totalValue: 0, byAccount: {} };
+  if (!csv) return { totalValue: 0, byAccount: {}, mdd: null };
   const byAccount = {};
   for (const [acc, g] of csv.accountMap) byAccount[acc] = g.value;
-  return { totalValue: csv.totalValue, byAccount };
+  // A26b: 이 함수는 계좌 변동 직전/직후에 각각 호출되므로(호출부 6곳), 여기서 MDD를 함께
+  // 담아두면 호출부를 하나도 고치지 않고 before/after MDD가 changelog에 그대로 남는다.
+  const m = portfolioMDD(csv.perRow);
+  return { totalValue: csv.totalValue, byAccount, mdd: m ? m.mdd : null };
 }
 
 /* ---------- A25a: 월별 스냅샷 자동 기록(계좌별·카테고리별 비중 포함) ----------
@@ -2108,7 +2111,9 @@ function snapshotAccountValues() {
    정보도 없었다. 계좌를 갱신(캡처 반영·가져오기)하면 그 달 스냅샷이 자동으로 갱신되게 한다.
    비중(%)이 아니라 **평가액**을 저장한다 — 나중에 그룹이 늘어도 합이 깨지지 않고, 화면에서
    나눠 쓰면 되기 때문. 같은 달이면 덮어쓴다(수동 버튼과 동일 규칙). */
-function upsertMonthlySnapshot() {
+/* mddOverride: pushAssetChangelog가 방금 계산해둔 afterSnap.mdd를 넘겨 재계산을 아낀다.
+   수동 "📸 이번 달 스냅샷 저장" 버튼 경로는 인자 없이 불러 여기서 직접 계산한다. */
+function upsertMonthlySnapshot(mddOverride) {
   const csv = state.myAssetsCsvData;
   if (!csv) return; // 아직 렌더 전이면 기록할 값이 없음
   const month = todayStr().slice(0, 7);
@@ -2125,7 +2130,10 @@ function upsertMonthlySnapshot() {
 
   let hist = [];
   try { hist = JSON.parse(localStorage.getItem(MY_ASSETS_HISTORY_KEY) || "[]"); } catch (e) { hist = []; }
-  const entry = { month, value: csv.totalValue, monthlyDiv: csv.totalMonthlyDiv, dpsBySymbol, byAccount, byCategory };
+  // A26b: 월 단위 MDD 이력이 비중 이력과 같은 주기로 쌓인다(추이 탭 "MDD 이력" 표의 재료).
+  let mdd = mddOverride;
+  if (mdd === undefined) { const m = portfolioMDD(csv.perRow); mdd = m ? m.mdd : null; }
+  const entry = { month, value: csv.totalValue, monthlyDiv: csv.totalMonthlyDiv, mdd, dpsBySymbol, byAccount, byCategory };
   const idx = hist.findIndex((h) => h.month === month);
   if (idx >= 0) hist[idx] = entry; else hist.push(entry);
   hist.sort((a, b) => a.month.localeCompare(b.month));
@@ -2142,11 +2150,16 @@ function pushAssetChangelog(source, beforeHoldings, beforeSnap, afterHoldings, a
     ts: nowDateTimeStr(), source, changes,
     beforeValue: beforeSnap.totalValue, afterValue: afterSnap.totalValue,
     beforeByAccount: beforeSnap.byAccount, afterByAccount: afterSnap.byAccount,
+    // A26b: 이 변동이 계좌 전체 낙폭을 어떻게 바꿨는지. 구버전 엔트리엔 없으므로 화면에서
+    // 두 값이 다 있을 때만 줄을 그린다(없는 값을 0으로 지어내지 않는다).
+    beforeMdd: beforeSnap.mdd != null ? beforeSnap.mdd : null,
+    afterMdd: afterSnap.mdd != null ? afterSnap.mdd : null,
   });
   localStorage.setItem(MY_ASSETS_CHANGELOG_KEY, JSON.stringify(log.slice(0, 300)));
   // A25a: 계좌가 실제로 바뀐 시점이므로 이번 달 스냅샷(비중 포함)도 함께 갱신한다 —
   // 수동 버튼을 누르지 않아도 월별 이력이 쌓이게 하는 것이 이 호출의 목적.
-  upsertMonthlySnapshot();
+  // A26b: 방금 계산한 변동 직후 MDD를 넘겨 같은 시리즈를 두 번 계산하지 않게 한다.
+  upsertMonthlySnapshot(afterSnap.mdd != null ? afterSnap.mdd : null);
   // MY_ASSETS_KEY 안에도 이력이 사본으로 박제돼 있어(applyMyAssets가 앱 재시작 시 그 사본으로
   // 각 이력 키를 되씌운다) 방금 쓴 값을 saveMyAssets()로 즉시 동기화해두지 않으면, 앱을
   // 재실행했을 때 이 changelog 항목이 사라진다(2026-08-01 실사례: 스냅샷 항목 소실과 동일 원인).
@@ -3047,6 +3060,16 @@ function changeItemsHTML(changeList) {
 }
 const CHANGE_SOURCE_LABEL = { "capture-account": "📸 계좌 캡처", "capture-buyplan": "📈 월매수 캡처", "capture-account-reset": "🆕 완전 신규 업데이트", import: "📂 가져오기" };
 
+/* A26b: "📉 MDD 변동: -18.2% → -16.9% (+1.3%p 개선)" 한 줄. 값이 없으면 빈 문자열 —
+   변동이력 카드와 추이 탭 MDD 이력이 같은 표기를 쓰도록 여기 한 곳에 둔다. */
+function mddChangeLineHTML(beforeMdd, afterMdd) {
+  if (beforeMdd == null || afterMdd == null) return "";
+  const b = beforeMdd * 100, a = afterMdd * 100, d = a - b;
+  const verdict = Math.abs(d) < 0.05 ? "변화 없음" : `${d > 0 ? "+" : ""}${d.toFixed(1)}%p ${d > 0 ? "개선" : "악화"}`;
+  return `<p class="stat-sub" style="margin:4px 0;">📉 MDD 변동: ${b.toFixed(1)}% → ${a.toFixed(1)}%
+    <span style="color:${d >= 0 ? "var(--good)" : "var(--critical)"}">(${verdict})</span></p>`;
+}
+
 function buildChangelogHTML(granularity) {
   const log = loadAssetChangelog();
   if (!log.length) {
@@ -3076,6 +3099,11 @@ function buildChangelogHTML(granularity) {
       return Math.abs(d) >= 0.1 ? `${acc} ${beforePct.toFixed(1)}%→${afterPct.toFixed(1)}%(${d >= 0 ? "+" : ""}${d.toFixed(1)}%p)` : null;
     }).filter(Boolean);
 
+    // A26b: MDD변동 — 기간 시작 직전 ↔ 종료 직후 계좌 전체 낙폭. MDD는 음수라 값이 커지면
+    // (0에 가까워지면) 낙폭이 얕아진 것 = 개선이다. 마스킹 도입 전 구버전 엔트리처럼 두 값 중
+    // 하나라도 없으면 줄 자체를 생략한다.
+    const mddLine = mddChangeLineHTML(first.beforeMdd, last.afterMdd);
+
     // 종목변동: 기간 내 모든 이벤트의 changes를 계좌+종목 기준으로 합쳐 마지막 상태만 표시
     const changeMap = new Map();
     for (const e of entries) {
@@ -3088,6 +3116,7 @@ function buildChangelogHTML(granularity) {
       <p class="stat-sub" style="margin:4px 0;">📊 자산변동: ${fmtW(first.beforeValue)} → ${fmtW(last.afterValue)}
         ${assetPct != null ? `<span style="color:${assetDiff >= 0 ? "var(--good)" : "var(--critical)"}">(${assetDiff >= 0 ? "+" : ""}${fmtW(assetDiff)}, ${assetPct.toFixed(1)}%)</span>` : ""}</p>
       ${weightLines.length ? `<p class="stat-sub" style="margin:4px 0; line-height:1.7;">⚖️ 비중변동: ${weightLines.join(" · ")}</p>` : ""}
+      ${mddLine}
       ${changeList.length ? `<p class="stat-sub" style="margin:8px 0 2px;">📦 종목변동 ${changeList.length}건</p>${changeItemsHTML(changeList)}` : ""}
     </div>`;
   }).join("");
@@ -3138,6 +3167,84 @@ function buildWeightHistoryHTML(history, groupBy) {
     </table>
     </div>${warn}
     <p class="stat-sub" style="margin-top:6px;">각 달 스냅샷의 평가액을 그 달 합계로 나눈 비중입니다. 아래 숫자는 전월 대비 증감(%p).</p>`;
+}
+
+/* ---------- A26c: 📉 계좌 전체 MDD 이력 (추이 탭) ----------
+   세 블록으로 나뉜다. 앞 둘은 **지금 보유구성**만 있으면 스냅샷이 하나도 없어도 값이 나오고,
+   마지막 하나만 기록이 쌓여야 보인다.
+     ① 현재 구성 KPI — 전체기간·최근1년 MDD, 최대낙폭 구간, 전고점 회복 여부
+     ② 연도별 MDD — 시그널 탭의 단일 종목 연간 MDD와 같은 방식이되 포트폴리오 전체 기준
+     ③ 기록형 이력 — 월별 스냅샷 mdd + 변동이벤트 afterMdd를 시간순으로 합친 표
+   전체기간 NAV 시리즈를 한 번만 만들고 나머지는 슬라이스로 파생한다: buildMyBlendPctSeries는
+   "sinceDate 이후로 필터 → 교집합"이라 (전체 교집합 ∩ 최근1년) = (최근1년으로 다시 만든 것)이
+   같고, MDD는 비율이라 재정규화도 필요 없다. */
+function buildMDDHistoryHTML(history, changelog, perRow) {
+  const full = portfolioNavSeries(perRow);
+  if (!full) {
+    return `<p class="compare-empty">보유 종목의 가격 이력이 부족해 계좌 전체 MDD를 계산할 수 없습니다 — 주간 시세 수집이 2회 이상 쌓인 종목이 필요합니다.</p>`;
+  }
+  const pct = (v) => `${(v * 100).toFixed(1)}%`;
+  const sliceSince = (since) => {
+    const i = full.dates.findIndex((d) => d >= since);
+    return i >= 0 && full.dates.length - i >= 2
+      ? { dates: full.dates.slice(i), navs: full.navs.slice(i) } : null;
+  };
+  const mddOf = (s) => {
+    if (!s) return null;
+    const r = calcMDD(s.dates, s.navs);
+    return { mdd: r.mdd, peakDate: s.dates[r.peakIdx], troughDate: s.dates[r.troughIdx], recoveredDate: r.recoveryIdx >= 0 ? s.dates[r.recoveryIdx] : null };
+  };
+  const cur = mddOf(full);
+  const y1 = mddOf(sliceSince(benchSinceDate(12)));
+
+  // ① 현재 구성 KPI
+  const kpiHTML = `<div class="stats" style="margin-top:8px;">
+    <div class="stat"><p class="stat-label">전체기간 MDD</p><p class="stat-value" style="color:var(--critical)">${pct(cur.mdd)}</p><p class="stat-sub">${full.dates[0]} ~ ${full.dates[full.dates.length - 1]}</p></div>
+    <div class="stat"><p class="stat-label">최근 1년 MDD</p><p class="stat-value">${y1 ? pct(y1.mdd) : "―"}</p><p class="stat-sub">${y1 ? "최근 12개월 구간" : "1년치 데이터 부족"}</p></div>
+    <div class="stat"><p class="stat-label">최대낙폭 구간</p><p class="stat-value" style="font-size:15px;">${cur.peakDate} → ${cur.troughDate}</p><p class="stat-sub">고점에서 저점까지</p></div>
+    <div class="stat"><p class="stat-label">회복 여부</p><p class="stat-value" style="font-size:16px; color:${cur.recoveredDate ? "var(--good)" : "var(--critical)"}">${cur.recoveredDate ? "회복 완료" : "미회복"}</p><p class="stat-sub">${cur.recoveredDate ? `${cur.recoveredDate} 전고점 회복` : "아직 전고점 아래"}</p></div>
+  </div>`;
+
+  // ② 연도별 MDD
+  const annual = annualMDDs(full.dates, full.navs).slice().reverse();
+  const annualHTML = annual.length
+    ? `<div style="overflow-x:auto;"><table class="account-summary-table" style="margin-top:10px;">
+        <thead><tr><th>연도</th><th>MDD</th><th>거래일</th></tr></thead>
+        <tbody>${annual.map((a) => `<tr><td>${a.year}</td><td style="color:var(--critical)">${pct(a.mdd)}</td><td>${a.days}일</td></tr>`).join("")}</tbody>
+      </table></div>`
+    : `<p class="stat-sub">연도별로 나눌 만큼의 가격 이력이 아직 없습니다.</p>`;
+
+  // ③ 기록형 이력 — 월별 스냅샷과 변동이벤트를 시간순으로 합친다.
+  //    "2026-08"(월)과 "2026-08-01 12:00"(이벤트)은 문자열 정렬만으로 자연스럽게 섞인다.
+  const records = [];
+  for (const h of history || []) if (h && h.mdd != null) records.push({ when: h.month, kind: "📸 월별 스냅샷", mdd: h.mdd });
+  for (const e of changelog || []) if (e && e.afterMdd != null) records.push({ when: e.ts, kind: CHANGE_SOURCE_LABEL[e.source] || e.source, mdd: e.afterMdd });
+  records.sort((a, b) => String(a.when).localeCompare(String(b.when)));
+
+  let recordHTML;
+  if (records.length < 2) {
+    const only = records.length === 1 ? " (현재 1건만 기록됨)" : "";
+    recordHTML = `<p class="compare-empty">MDD 이력은 기록이 2건 이상 쌓여야 표시됩니다${only} — 계좌를 갱신(캡처 반영·가져오기)하면 그 시점 MDD가 자동으로 기록됩니다.</p>`;
+  } else {
+    const rows = records.slice(-24).reverse().map((r, ri, arr) => {
+      const prev = arr[ri + 1]; // reverse 상태라 다음 원소가 직전 기록
+      const d = prev ? (r.mdd - prev.mdd) * 100 : null;
+      const dHTML = d == null || Math.abs(d) < 0.05 ? "―"
+        : `<span style="color:${d > 0 ? "var(--good)" : "var(--critical)"}">${d > 0 ? "+" : ""}${d.toFixed(1)}%p ${d > 0 ? "개선" : "악화"}</span>`;
+      return `<tr><td>${r.when}</td><td>${r.kind}</td><td style="color:var(--critical)">${pct(r.mdd)}</td><td>${dHTML}</td></tr>`;
+    }).join("");
+    recordHTML = `<div style="overflow-x:auto;"><table class="account-summary-table" style="margin-top:10px;">
+      <thead><tr><th>시점</th><th>기록 계기</th><th>MDD</th><th>직전 대비</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+  }
+
+  return `${kpiHTML}
+    <p class="chart-title" style="margin-top:20px; font-size:13.5px;">📆 연도별 MDD</p>
+    ${annualHTML}
+    <p class="chart-title" style="margin-top:20px; font-size:13.5px;">🗂️ 기록된 MDD 이력</p>
+    ${recordHTML}
+    <p class="stat-sub" style="margin-top:8px;">현재 보유 비중으로 과거 가격이력을 합성한 낙폭입니다 — 실제 계좌 평가액 낙폭(입출금·매수 포함)과는 다릅니다.</p>`;
 }
 
 /* ---------- A25d: 옵시디안 볼트 백업용 노트 생성 ----------
@@ -3297,6 +3404,30 @@ function buildMyBlendPctSeries(perRow, sinceDate) {
     prev = prices;
   }
   return { dates, values };
+}
+
+/* ---------- A26b: 계좌 전체(포트폴리오) MDD ----------
+   "지금 이 보유구성이었다면 과거에 얼마나 빠졌을까"를 재는 값이다(사용자 확정 기준).
+   실제 계좌 평가액 스냅샷의 낙폭이 아니라 보유비중 합성 NAV(지수비교 탭과 같은 시리즈)의
+   낙폭을 쓰는 이유: 평가액은 입출금·추가매수로 오르내려 낙폭이 오염되는 반면, 합성 NAV는
+   종목을 바꿔야만 값이 변하므로 "계좌변동이 MDD를 어떻게 바꿨나"를 그대로 볼 수 있다.
+   months=null/미지정이면 전체 기간. 가격이력이 모자라면 null(값을 지어내지 않음). */
+function portfolioNavSeries(perRow, months) {
+  // buildMyBlendPctSeries는 %변화(0 시작)라 NAV(1 시작)로 되돌린다 — 낙폭은 비율이라 스케일 무관.
+  const s = buildMyBlendPctSeries(perRow || [], benchSinceDate(months));
+  return s && s.dates.length >= 2 ? { dates: s.dates, navs: s.values.map((v) => 1 + v) } : null;
+}
+
+function portfolioMDD(perRow, months) {
+  const s = portfolioNavSeries(perRow, months);
+  if (!s) return null;
+  const r = calcMDD(s.dates, s.navs);
+  return {
+    mdd: r.mdd,
+    peakDate: s.dates[r.peakIdx],
+    troughDate: s.dates[r.troughIdx],
+    recoveredDate: r.recoveryIdx >= 0 ? s.dates[r.recoveryIdx] : null,
+  };
 }
 
 /* 시리즈들의 시작일을 가장 늦은 공통 시작일로 맞춰 전부 그 날=0%가 되게 재정규화 —
@@ -4074,6 +4205,18 @@ async function renderMyAssets() {
       </div>
       <div id="myAssetChangeBody"></div>
       <p class="stat-sub" style="margin-top:6px;">이 사이트는 정적 페이지(서버 없음)라 일별 캡처는 자동으로 쌓이지 않습니다 — 확인할 때마다 "오늘 자산 스냅샷"을 눌러야 이력이 쌓입니다. 주간은 일별 캡처가 서로 다른 주에 2건 이상 쌓여야 계산됩니다.</p>
+
+      <p class="chart-title" style="margin-top:24px;">📅 월별 비중 변화</p>
+      <div class="controls" style="margin-bottom:8px;">
+        <select id="myTrendWeightGroup" aria-label="비중 이력 그룹 기준">
+          <option value="account">계좌별</option>
+          <option value="category">카테고리별</option>
+        </select>
+      </div>
+      <div id="myTrendWeightHistBody"></div>
+
+      <p class="chart-title" style="margin-top:24px;">📉 MDD 이력 (계좌 전체)</p>
+      ${buildMDDHistoryHTML(history, loadAssetChangelog(), perRow)}
     </div>
 
     <div class="dash-panel" data-tab="benchmark" hidden>
@@ -4356,17 +4499,23 @@ async function renderMyAssets() {
     }
   }
 
-  // A25b: 비중분석 탭의 월별 비중 변화 — 그룹 기준 전환(계좌별/카테고리별), 선택은 state에 보존
-  const weightSel = document.getElementById("myWeightHistGroup");
-  if (weightSel) {
-    const renderWeightHist = () => {
-      const body = document.getElementById("myWeightHistBody");
-      if (body) body.innerHTML = buildWeightHistoryHTML(history, weightSel.value);
-    };
-    if (state.myWeightHistGroup) weightSel.value = state.myWeightHistGroup;
-    weightSel.addEventListener("change", () => { state.myWeightHistGroup = weightSel.value; renderWeightHist(); });
-    renderWeightHist();
+  // A25b: 월별 비중 변화 — 그룹 기준 전환(계좌별/카테고리별), 선택은 state에 보존.
+  // A26c: 같은 표가 비중분석 탭과 추이 탭 두 곳에 붙는다. state.myWeightHistGroup 하나를
+  // 공유해 한쪽에서 바꾸면 다른 쪽 select 값과 본문도 같이 따라오게 한다(선택 어긋남 방지).
+  const weightHistPairs = [["myWeightHistGroup", "myWeightHistBody"], ["myTrendWeightGroup", "myTrendWeightHistBody"]];
+  const renderWeightHists = () => {
+    const groupBy = state.myWeightHistGroup || "account";
+    for (const [selId, bodyId] of weightHistPairs) {
+      const sel = document.getElementById(selId), body = document.getElementById(bodyId);
+      if (sel) sel.value = groupBy;
+      if (body) body.innerHTML = buildWeightHistoryHTML(history, groupBy);
+    }
+  };
+  for (const [selId] of weightHistPairs) {
+    const sel = document.getElementById(selId);
+    if (sel) sel.addEventListener("change", () => { state.myWeightHistGroup = sel.value; renderWeightHists(); });
   }
+  renderWeightHists();
 
   const changelogSel = document.getElementById("myChangelogGranularity");
   const renderChangelog = () => {

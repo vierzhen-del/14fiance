@@ -979,8 +979,10 @@ function renderCaptureHistory() {
   let hist = [];
   try { hist = JSON.parse(localStorage.getItem(CAPTURE_HISTORY_KEY) || "[]"); } catch (err) { hist = []; }
   if (!hist.length) { el.innerHTML = `<p class="stat-sub">아직 파싱 이력이 없습니다.</p>`; return; }
+  // A26a: 새 이력은 이미 마스킹된 라벨로 저장되지만, 마스킹 도입 전에 쌓인 20건에는 계좌번호가
+  // 그대로 남아 있다. 저장값을 소급 수정하지 않고 **표시할 때만** 가린다(기존 데이터 불변 원칙).
   el.innerHTML = hist.map((h) => `<div class="stat-sub" style="padding:5px 0; border-bottom:1px solid var(--gridline);">
-    ${h.ts} · ${h.type === "account" ? "💼 계좌" : "📈 월매수"} · ${h.count}종목${h.issues ? `, 이슈 ${h.issues}건` : ""}${h.label ? ` · ${h.label}` : ""}
+    ${h.ts} · ${h.type === "account" ? "💼 계좌" : "📈 월매수"} · ${h.count}종목${h.issues ? `, 이슈 ${h.issues}건` : ""}${h.label ? ` · ${maskAccountLabel(h.label)}` : ""}
   </div>`).join("");
 }
 

@@ -425,6 +425,18 @@ function matchAccountByLabel(label) {
   return loose || null;
 }
 
+/* ---------- A26a: 계좌번호 마스킹 ----------
+   AI가 읽어온 화면 계좌명에는 실계좌번호가 그대로 들어 있다
+   ("7164484143-15 [연금저축 CMA(비대면)(회사지원)]"). 이 문자열이 검토표·SOP 요약 텍스트·
+   파싱이력으로 그대로 새기 때문에(SOP 요약은 제미나이·노션에 붙여넣어지는 외부 경로),
+   표시용 값을 만드는 단계에서 한 번 가린다. 6자리 이상 연속 숫자만 대상이고 뒤 2자리는
+   남긴다 — 어느 계좌인지 사람이 알아볼 수는 있으면서 번호 전체는 복원되지 않게.
+   6자리 미만은 건드리지 않으므로 "-15" 같은 상품구분 꼬리표나 계좌명 속 숫자는 그대로다. */
+function maskAccountLabel(label) {
+  if (!label) return label;
+  return String(label).replace(/\d{6,}/g, (run) => "*".repeat(run.length - 2) + run.slice(-2));
+}
+
 /* ---------- 교차검증 엔진 (이번 세션에서 실제로 오류를 잡아낸 패턴 재구현) ----------
    1) 행 단위: qty×currentPrice ≈ evalAmount (오차 1% 초과 시 경고)
    2) 합계 대조: ΣevalAmount vs reported_total (오차 0.5% 초과 시 "누락 종목 가능성" 경고)
@@ -441,8 +453,10 @@ function validateAccountCapture(parsed) {
     if (!match) issues.push("수집 목록에 없는 종목 — 코드 세션에 추가 요청 필요");
     // A3f: 폴더에 여러 계좌가 섞여 있으면 행별 account, 아니면 최상위 account_label을 계좌 원문으로 사용
     const rawAccountLabel = h.account || parsed.account_label || null;
+    // A26a: 계좌 매칭은 마스킹 **전** 원본으로 해야 한다(숫자를 가린 뒤 매칭하면 계좌 자동채움이 깨진다).
+    // 매칭이 끝난 뒤에야 마스킹해서 내보낸다 — 검토표·SOP 요약·이력이 전부 이 값을 물려받는다.
     const matchedAccount = matchAccountByLabel(rawAccountLabel);
-    return { ...h, issues, matchedSymbol: match ? match.symbol : null, matchedName: match ? match.name : null, rawAccountLabel, matchedAccount };
+    return { ...h, account: maskAccountLabel(h.account), issues, matchedSymbol: match ? match.symbol : null, matchedName: match ? match.name : null, rawAccountLabel: maskAccountLabel(rawAccountLabel), matchedAccount };
   });
   const sumEval = holdings.reduce((a, h) => a + (h.evalAmount || 0), 0);
   let totalCheck = null;
@@ -451,7 +465,7 @@ function validateAccountCapture(parsed) {
     const diffPct = Math.abs(diff) / parsed.reported_total;
     totalCheck = { sumEval, reported: parsed.reported_total, diff, diffPct, ok: diffPct <= 0.005 };
   }
-  return { holdings, totalCheck, accountLabel: parsed.account_label || null };
+  return { holdings, totalCheck, accountLabel: maskAccountLabel(parsed.account_label || null) };
 }
 
 function validateBuyPlanCapture(parsed) {
@@ -460,8 +474,8 @@ function validateBuyPlanCapture(parsed) {
     const match = matchSymbolByName(h.name, h.symbol);
     if (!match) issues.push("수집 목록에 없는 종목 — 코드 세션에 추가 요청 필요");
     const rawAccountLabel = h.account || null;
-    const matchedAccount = matchAccountByLabel(rawAccountLabel);
-    return { ...h, issues, matchedSymbol: match ? match.symbol : null, matchedName: match ? match.name : null, rawAccountLabel, matchedAccount };
+    const matchedAccount = matchAccountByLabel(rawAccountLabel); // A26a: 매칭은 원본, 표시는 마스킹
+    return { ...h, account: maskAccountLabel(h.account), issues, matchedSymbol: match ? match.symbol : null, matchedName: match ? match.name : null, rawAccountLabel: maskAccountLabel(rawAccountLabel), matchedAccount };
   });
   return { holdings, reportedTotal: parsed.reported_total_monthly_amount ?? null };
 }
