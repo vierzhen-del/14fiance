@@ -335,8 +335,18 @@
   .account-summary-table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 8px 0 4px; }
   .account-summary-table th, .account-summary-table td {
     padding: 7px 8px; text-align: right; border-bottom: 1px solid var(--gridline);
+    /* A27b: white-space가 없으면 한글이 글자 단위로 세로 줄바꿈된다(CJK는 거의 모든 글자
+       사이에 줄바꿈 기회가 있음). 이 표는 전부 overflow-x:auto 래퍼 안에 있으므로
+       열을 억지로 줄이는 대신 가로 스크롤로 넘긴다. */
+    white-space: nowrap;
   }
-  .account-summary-table th:first-child, .account-summary-table td:first-child { text-align: left; }
+  /* 첫 열은 종목명·계좌명이라 길어질 수 있다 — 줄바꿈은 허용하되 keep-all로 어절 단위만
+     끊는다. 다만 keep-all은 CJK 사이만 막고 "_"·"-" 같은 문자의 줄바꿈 기회는 그대로 두어
+     "삼성_연금"이 "삼성/_/연금" 3줄로 쪼개졌다(실측) — 짧은 계좌명이 줄바꿈될 일이 없도록
+     min-width로 폭을 확보하고, 그보다 긴 종목명만 공백에서 자연스럽게 접히게 한다. */
+  .account-summary-table th:first-child, .account-summary-table td:first-child {
+    text-align: left; white-space: normal; word-break: keep-all; min-width: 6.5em;
+  }
   .account-summary-table th { color: var(--text-muted); font-weight: 600; font-size: 12px; border-bottom: 2px solid var(--baseline); }
   .account-summary-table tbody tr:hover td { background: rgba(127,127,127,.07); }
   .btn-add {

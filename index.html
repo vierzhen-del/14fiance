@@ -307,8 +307,18 @@
   .account-summary-table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 8px 0 4px; }
   .account-summary-table th, .account-summary-table td {
     padding: 7px 8px; text-align: right; border-bottom: 1px solid var(--gridline);
+    /* A27b: white-space가 없으면 한글이 글자 단위로 세로 줄바꿈된다(CJK는 거의 모든 글자
+       사이에 줄바꿈 기회가 있음). 이 표는 전부 overflow-x:auto 래퍼 안에 있으므로
+       열을 억지로 줄이는 대신 가로 스크롤로 넘긴다. */
+    white-space: nowrap;
   }
-  .account-summary-table th:first-child, .account-summary-table td:first-child { text-align: left; }
+  /* 첫 열은 종목명·계좌명이라 길어질 수 있다 — 줄바꿈은 허용하되 keep-all로 어절 단위만
+     끊는다. 다만 keep-all은 CJK 사이만 막고 "_"·"-" 같은 문자의 줄바꿈 기회는 그대로 두어
+     "삼성_연금"이 "삼성/_/연금" 3줄로 쪼개졌다(실측) — 짧은 계좌명이 줄바꿈될 일이 없도록
+     min-width로 폭을 확보하고, 그보다 긴 종목명만 공백에서 자연스럽게 접히게 한다. */
+  .account-summary-table th:first-child, .account-summary-table td:first-child {
+    text-align: left; white-space: normal; word-break: keep-all; min-width: 6.5em;
+  }
   .account-summary-table th { color: var(--text-muted); font-weight: 600; font-size: 12px; border-bottom: 2px solid var(--baseline); }
   .account-summary-table tbody tr:hover td { background: rgba(127,127,127,.07); }
   .btn-add {
@@ -2470,8 +2480,23 @@ function showMyDashTab(id) {
 
 /* 수익률 분석 — ① 스냅샷 이력 기반 전체 자산 변동, ② 지역별 수익률(매입단가 입력분),
    ③ 배당수익률(계좌별), ④ 배당수익률(지역·스타일 비중별) */
-function buildReturnAnalysisHTML(regionRetMap, styleRetMap, accountMap, history) {
+function buildReturnAnalysisHTML(regionRetMap, styleRetMap, accountMap, history, perRow) {
   const fmtW = (v) => fmtPrice(v, "KRW");
+
+  /* A27d: 손익 셀 한 벌 — 지역별·계좌별·성향별이 전부 같은 계산이라 한 곳에 모은다.
+     profit = costedValue - cost 로 재는 이유: value에는 매입단가 미입력분까지 들어 있어
+     value - cost 를 쓰면 분자만 부풀어 손익이 과대계상된다(분자·분모 모집단 일치 원칙). */
+  const returnRowsHTML = (entries) => entries.map(([label, g]) => {
+    const costedValue = g.costedValue || 0;
+    const profit = g.cost > 0 ? costedValue - g.cost : null;
+    const pct = g.cost > 0 ? (profit / g.cost) * 100 : null;
+    // 매입단가를 일부만 입력한 그룹은 "몇 %가 계산에 들어갔는지"를 밝혀야 오해가 없다.
+    const coverage = g.value > 0 ? (costedValue / g.value) * 100 : 0;
+    const partial = profit != null && coverage < 99.5
+      ? `<br><span class="stat-sub" style="font-size:11px;">평가액의 ${coverage.toFixed(0)}%만 반영</span>` : "";
+    return `<tr><td>${label}</td><td>${fmtW(g.value)}</td>
+      <td style="color:${profit == null ? "var(--text-muted)" : profit >= 0 ? "var(--good)" : "var(--critical)"}">${profit == null ? "<span title='매입단가 미입력 — 매입원가를 알 수 없어 계산 불가'>—</span>" : `${profit >= 0 ? "+" : ""}${fmtW(profit)}<br><span style="font-size:12px;">(${pct.toFixed(1)}%)</span>`}${partial}</td></tr>`;
+  }).join("");
 
   let historyReturnHTML = `<p class="compare-empty">"추이" 탭에서 월별 스냅샷을 2개월 이상 저장하면 기간 자산 변동률을 계산합니다.</p>`;
   if (history.length >= 2) {
@@ -2490,13 +2515,39 @@ function buildReturnAnalysisHTML(regionRetMap, styleRetMap, accountMap, history)
   }
 
   const REGION_ORDER = ["한국", "미국", "글로벌", "미분류"];
-  const regionReturnRows = REGION_ORDER.filter((r) => regionRetMap.has(r)).map((r) => {
-    const g = regionRetMap.get(r);
-    const profit = g.cost > 0 ? g.costedValue - g.cost : null;
-    const pct = g.cost > 0 ? (profit / g.cost) * 100 : null;
-    return `<tr><td>${r}</td><td>${fmtW(g.value)}</td>
-      <td style="color:${profit == null ? "var(--text-muted)" : profit >= 0 ? "var(--good)" : "var(--critical)"}">${profit == null ? "매입단가 미입력" : `${profit >= 0 ? "+" : ""}${fmtW(profit)} (${pct.toFixed(1)}%)`}</td></tr>`;
+  const STYLE_ORDER_RET = ["성장", "배당", "안전", "개별주", "미분류"];
+  const regionReturnRows = returnRowsHTML(REGION_ORDER.filter((r) => regionRetMap.has(r)).map((r) => [r, regionRetMap.get(r)]));
+  // A27d: 계좌별·성향별 수익률 — 사용자가 따로 입력하는 값이 아니라, 캡처·가져오기로 계좌를
+  // 갱신할 때 함께 들어오는 매입단가(avgPrice)에서 그대로 파생된다.
+  const accountReturnRows = returnRowsHTML(
+    [...accountMap.entries()].filter(([, g]) => g.value > 0).sort((a, b) => b[1].value - a[1].value));
+  const styleReturnRows = returnRowsHTML(STYLE_ORDER_RET.filter((s) => styleRetMap.has(s)).map((s) => [s, styleRetMap.get(s)]));
+
+  /* A27e: 종목 수익률 TOP5 / WORST5 — 매입단가 입력분만 대상(원가를 모르면 수익률이 없다). */
+  const rankable = (perRow || [])
+    .filter((p) => p.cost > 0 && p.profit != null)
+    .map((p) => ({ p, pct: (p.profit / p.cost) * 100 }))
+    .sort((a, b) => b.pct - a.pct);
+  const rankRowsHTML = (list) => list.map(({ p, pct }) => {
+    const color = pct >= 0 ? "var(--good)" : "var(--critical)";
+    return `<tr>
+      <td>${(p.meta && p.meta.name) || p.symbol}<br><span class="stat-sub" style="font-size:11.5px;">${p.account || "계좌 미지정"}</span></td>
+      <td>${fmtW(p.value)}</td>
+      <td style="color:${color}">${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%<br><span style="font-size:11.5px;">${p.profit >= 0 ? "+" : ""}${fmtW(p.profit)}</span></td></tr>`;
   }).join("");
+  const rankTableHTML = (list) => `<div style="overflow-x:auto;"><table class="account-summary-table">
+      <thead><tr><th>종목 · 계좌</th><th>평가액</th><th>수익률 · 손익</th></tr></thead>
+      <tbody>${rankRowsHTML(list)}</tbody>
+    </table></div>`;
+  // 모집단이 10건 미만이면 TOP과 WORST가 같은 종목을 중복 표시하게 되므로 반씩 나눠 자른다.
+  const rankN = Math.min(5, Math.floor(rankable.length / 2)) || (rankable.length ? 1 : 0);
+  const rankHTML = rankable.length === 0
+    ? `<p class="compare-empty">매입단가를 입력한 종목이 없어 수익률 순위를 계산할 수 없습니다 — 캡처 반영이나 가져오기로 매입단가가 들어오면 자동으로 표시됩니다.</p>`
+    : `<p class="chart-title" style="margin-top:20px; font-size:13.5px;">🏆 수익률 TOP${rankN}</p>
+       ${rankTableHTML(rankable.slice(0, rankN))}
+       <p class="chart-title" style="margin-top:20px; font-size:13.5px;">🔻 수익률 WORST${rankN}</p>
+       ${rankTableHTML(rankable.slice(-rankN).reverse())}
+       <p class="stat-sub" style="margin-top:6px;">매입단가를 입력한 ${rankable.length}종목만 순위에 들어갑니다(전체 보유 ${(perRow || []).length}종목).</p>`;
 
   // 시가배당률 = 연배당 ÷ 평가액(현재가·"최신시세" 켜져있으면 실시간 조회가 기준)
   // 투자배당률(YOC) = 연배당 ÷ 매입원가 — 매입단가 입력분에서만 계산 가능
@@ -2507,8 +2558,8 @@ function buildReturnAnalysisHTML(regionRetMap, styleRetMap, accountMap, history)
     .sort((a, b) => marketYield(b[1].monthlyDiv, b[1].value) - marketYield(a[1].monthlyDiv, a[1].value));
   const accountYieldRows = accountYieldEntries.map(([acc, g]) => {
     const cy = costYield(g.monthlyDiv, g.cost);
-    return `<tr><td>${acc}</td><td>${fmtW(g.value)}</td><td>${g.monthlyDiv > 0 ? fmtW(g.monthlyDiv) : "—"}</td>
-      <td>${marketYield(g.monthlyDiv, g.value).toFixed(2)}%</td><td>${cy == null ? "매입단가 미입력" : cy.toFixed(2) + "%"}</td></tr>`;
+    return `<tr><td>${acc}</td><td>${fmtW(g.value)}<br><span class="stat-sub" style="font-size:11.5px;">월배당 ${g.monthlyDiv > 0 ? fmtW(g.monthlyDiv) : "—"}</span></td>
+      <td>${marketYield(g.monthlyDiv, g.value).toFixed(2)}%<br><span class="stat-sub" style="font-size:11.5px;">${cy == null ? "<span title='매입단가 미입력 — 매입원가를 알 수 없어 계산 불가'>YOC —</span>" : "YOC " + cy.toFixed(2) + "%"}</span></td></tr>`;
   }).join("");
 
   const STYLE_ORDER = ["성장", "배당", "안전", "개별주", "미분류"];
@@ -2517,8 +2568,8 @@ function buildReturnAnalysisHTML(regionRetMap, styleRetMap, accountMap, history)
     ...STYLE_ORDER.filter((s) => styleRetMap.has(s)).map((s) => [s, styleRetMap.get(s)]),
   ].map(([label, g]) => {
     const cy = costYield(g.div, g.cost);
-    return `<tr><td>${label}</td><td>${fmtW(g.value)}</td><td>${g.div > 0 ? fmtW(g.div) : "—"}</td>
-      <td>${marketYield(g.div, g.value).toFixed(2)}%</td><td>${cy == null ? "매입단가 미입력" : cy.toFixed(2) + "%"}</td></tr>`;
+    return `<tr><td>${label}</td><td>${fmtW(g.value)}<br><span class="stat-sub" style="font-size:11.5px;">월배당 ${g.div > 0 ? fmtW(g.div) : "—"}</span></td>
+      <td>${marketYield(g.div, g.value).toFixed(2)}%<br><span class="stat-sub" style="font-size:11.5px;">${cy == null ? "<span title='매입단가 미입력 — 매입원가를 알 수 없어 계산 불가'>YOC —</span>" : "YOC " + cy.toFixed(2) + "%"}</span></td></tr>`;
   }).join("");
 
   return `<p class="chart-title" style="margin-top:20px;">📈 자산 수익률</p>
@@ -2532,10 +2583,29 @@ function buildReturnAnalysisHTML(regionRetMap, styleRetMap, accountMap, history)
     </table>
     </div>
 
+    <p class="chart-title" style="margin-top:20px;">📁 계좌별 수익률 (매입단가 입력분 기준)</p>
+    <div style="overflow-x:auto;">
+    <table class="account-summary-table">
+      <thead><tr><th>계좌</th><th>평가액</th><th>손익</th></tr></thead>
+      <tbody>${accountReturnRows}</tbody>
+    </table>
+    </div>
+
+    <p class="chart-title" style="margin-top:20px;">🎯 성향별 수익률 (매입단가 입력분 기준)</p>
+    <div style="overflow-x:auto;">
+    <table class="account-summary-table">
+      <thead><tr><th>성향</th><th>평가액</th><th>손익</th></tr></thead>
+      <tbody>${styleReturnRows}</tbody>
+    </table>
+    </div>
+    <p class="stat-sub" style="margin-top:6px;">위 「📈 자산 수익률」은 스냅샷 평가액을 단순 비교한 값(추가 납입·매도 포함)이고, 지역·계좌·성향별 손익은 <b>매입단가 기준 실손익</b>입니다 — 두 값은 서로 다릅니다.</p>
+
+    ${rankHTML}
+
     <p class="chart-title" style="margin-top:20px;">💰 배당수익률 (계좌별, 연환산)</p>
     <div style="overflow-x:auto;">
     <table class="account-summary-table">
-      <thead><tr><th>계좌</th><th>평가액</th><th>월배당</th><th>시가배당률</th><th>투자배당률(매입원가 기준)</th></tr></thead>
+      <thead><tr><th>계좌</th><th>평가액 · 월배당</th><th title="위=시가배당률(÷평가액), 아래 YOC=투자배당률(÷매입원가)">배당률<br>시가 / YOC</th></tr></thead>
       <tbody>${accountYieldRows}</tbody>
     </table>
     </div>
@@ -2543,7 +2613,7 @@ function buildReturnAnalysisHTML(regionRetMap, styleRetMap, accountMap, history)
     <p class="chart-title" style="margin-top:20px;">💰 배당수익률 (비중별: 지역·스타일, 연환산)</p>
     <div style="overflow-x:auto;">
     <table class="account-summary-table">
-      <thead><tr><th>구분</th><th>평가액</th><th>월배당</th><th>시가배당률</th><th>투자배당률(매입원가 기준)</th></tr></thead>
+      <thead><tr><th>구분</th><th>평가액 · 월배당</th><th title="위=시가배당률(÷평가액), 아래 YOC=투자배당률(÷매입원가)">배당률<br>시가 / YOC</th></tr></thead>
       <tbody>${weightYieldRows}</tbody>
     </table>
     </div>
@@ -3247,6 +3317,76 @@ function buildMDDHistoryHTML(history, changelog, perRow) {
     <p class="stat-sub" style="margin-top:8px;">현재 보유 비중으로 과거 가격이력을 합성한 낙폭입니다 — 실제 계좌 평가액 낙폭(입출금·매수 포함)과는 다릅니다.</p>`;
 }
 
+/* ---------- A27c: 그룹별 MDD (계좌별 / 성향별) ----------
+   A26의 전체 MDD 하나만으로는 "어느 계좌가·어느 성향이 낙폭을 키웠나"를 알 수 없다.
+   portfolioMDD는 넘겨받은 배열에서 가중치를 다시 계산하므로 perRow를 그룹으로 쪼개
+   그대로 넣기만 하면 된다(계산 함수 수정 불필요).
+   groupBy: "account" | "style". 가격이력이 모자란 그룹은 값을 지어내지 않고 "데이터 부족". */
+const MDD_GROUP_KEY = {
+  account: (p) => p.account || "계좌 미지정",
+  style: (p) => (p.meta && p.meta.style) || "미분류",
+};
+
+function buildMDDBreakdownHTML(perRow, groupBy) {
+  const keyOf = MDD_GROUP_KEY[groupBy] || MDD_GROUP_KEY.account;
+  const rows = (perRow || []).filter((p) => p.value > 0);
+  if (!rows.length) return `<p class="compare-empty">보유 종목이 없어 그룹별 MDD를 계산할 수 없습니다.</p>`;
+
+  const groups = new Map();
+  for (const p of rows) {
+    const k = keyOf(p);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(p);
+  }
+  const totalValue = rows.reduce((a, p) => a + p.value, 0) || 1;
+  const pct = (v) => `${(v * 100).toFixed(1)}%`;
+
+  /* 구간을 반드시 맞춰야 한다. 그룹마다 보유 종목이 달라 각자의 공통일자 교집합도 다른데,
+     그대로 두면 이력이 긴 종목만 든 그룹이 더 오래된 구간까지 훑어 **기계적으로** 더 깊은
+     MDD가 나온다(실측: 개별주 단독 그룹이 1990년까지 거슬러 -99%, 같은 표의 배당 그룹은
+     2023년부터라 -18%). 그렇게 나온 두 수를 나란히 놓으면 비교가 성립하지 않는다.
+     이 표의 목적이 "어느 그룹이 더 빠졌나"이므로 전체 포트폴리오의 공통 시작일을 모든
+     그룹에 강제한다. */
+  const allSeries = portfolioNavSeries(rows);
+  if (!allSeries) return `<p class="compare-empty">보유 종목의 가격 이력이 부족해 그룹별 MDD를 계산할 수 없습니다 — 주간 시세가 2회 이상 쌓인 종목이 필요합니다.</p>`;
+  const since = allSeries.dates[0];
+  const windowEnd = allSeries.dates[allSeries.dates.length - 1];
+  const mddSince = (list) => {
+    const s = buildMyBlendPctSeries(list, since);
+    if (!s || s.dates.length < 2) return null;
+    const r = calcMDD(s.dates, s.values.map((v) => 1 + v));
+    return {
+      mdd: r.mdd, peakDate: s.dates[r.peakIdx], troughDate: s.dates[r.troughIdx],
+      recoveredDate: r.recoveryIdx >= 0 ? s.dates[r.recoveryIdx] : null,
+    };
+  };
+
+  // 전체 MDD를 같은 구간으로 병기해야 그룹 값이 깊은지 얕은지 판단이 된다.
+  const all = mddSince(rows);
+  const body = [...groups.entries()]
+    .map(([name, list]) => ({ name, list, value: list.reduce((a, p) => a + p.value, 0) }))
+    .sort((a, b) => b.value - a.value)
+    .map(({ name, list, value }) => {
+      const m = mddSince(list);
+      const share = (value / totalValue) * 100;
+      if (!m) {
+        return `<tr><td>${name}</td><td>${fmtPrice(value, "KRW")}</td><td>${share.toFixed(1)}%</td>
+          <td colspan="3" class="stat-sub">가격이력 부족 — 계산 불가</td></tr>`;
+      }
+      return `<tr><td>${name}</td><td>${fmtPrice(value, "KRW")}</td><td>${share.toFixed(1)}%</td>
+        <td style="color:var(--critical)">${pct(m.mdd)}</td>
+        <td>${m.peakDate} → ${m.troughDate}</td>
+        <td style="color:${m.recoveredDate ? "var(--good)" : "var(--critical)"}">${m.recoveredDate ? "회복" : "미회복"}</td></tr>`;
+    }).join("");
+
+  return `${all ? `<p class="stat-sub" style="margin:4px 0;">전체 기준 MDD <b style="color:var(--critical)">${pct(all.mdd)}</b> (${all.peakDate} → ${all.troughDate}) — 아래 그룹 값과 비교해 보세요. 분산이 잘 됐다면 전체가 개별 그룹보다 얕습니다.</p>` : ""}
+    <p class="stat-sub" style="margin:4px 0;">모든 그룹을 <b>${since} ~ ${windowEnd}</b> 같은 구간으로 맞춰 계산했습니다 — 상장이 늦은 종목이 있으면 그 종목 때문에 공통 구간이 짧아집니다.</p>
+    <div style="overflow-x:auto;"><table class="account-summary-table">
+      <thead><tr><th>구분</th><th>평가액</th><th>비중</th><th>MDD</th><th>최대낙폭 구간</th><th>회복</th></tr></thead>
+      <tbody>${body}</tbody>
+    </table></div>`;
+}
+
 /* ---------- A25d: 옵시디안 볼트 백업용 노트 생성 ----------
    노션(온라인) 외에 폰에도 주요 기록을 남긴다. 여기서는 **문자열만 만들고**(순수 함수라
    웹에서도 검증 가능) 실제 파일 기록은 APK 전용 app/src/native-files.js가 담당한다.
@@ -3785,9 +3925,9 @@ async function renderMyAssets() {
     perRow.push({ ...it, meta, close, isUsd, value, cost, profit, monthlyDiv, nextMonthDiv, monthlyBuy, erosion, usedConfirmed, trailReturn, effRate, divBasis, dpsFromRate, dpsGapPct, divPrice, divPriceDate, recordDate, recordFuture, buyDeadline });
 
     const accKey = it.account || "계좌 미지정";
-    if (!accountMap.has(accKey)) accountMap.set(accKey, { value: 0, cost: 0, monthlyDiv: 0, monthlyBuy: 0, n: 0 });
+    if (!accountMap.has(accKey)) accountMap.set(accKey, { value: 0, cost: 0, costedValue: 0, monthlyDiv: 0, monthlyBuy: 0, n: 0 });
     const g = accountMap.get(accKey);
-    g.value += value; if (cost != null) g.cost += cost; g.monthlyDiv += monthlyDiv; g.monthlyBuy += monthlyBuy; g.n += 1;
+    g.value += value; if (cost != null) { g.cost += cost; g.costedValue += value; } g.monthlyDiv += monthlyDiv; g.monthlyBuy += monthlyBuy; g.n += 1;
 
     if (monthlyDiv > 0) {
       const pKey = it.payPeriod || "지급시기 미지정";
@@ -4018,7 +4158,7 @@ async function renderMyAssets() {
   const dailyHistory = JSON.parse(localStorage.getItem(MY_ASSETS_DAILY_HISTORY_KEY) || "[]");
 
   // 수익률 분석 — 자산 수익률(스냅샷 이력) + 지역별 수익률 + 배당수익률(계좌별·비중별)
-  const returnAnalysisHTML = buildReturnAnalysisHTML(regionRetMap, styleRetMap, accountMap, history);
+  const returnAnalysisHTML = buildReturnAnalysisHTML(regionRetMap, styleRetMap, accountMap, history, perRow);
 
   // 배당기준·이력 — 확정/추정 DPS, 다음달 기대월배당, 배당상승률
   const divBasisHTML = buildDividendBasisHTML(perRow, history);
@@ -4063,13 +4203,13 @@ async function renderMyAssets() {
 
     <div class="dash-tabs" id="myDashTabs">
       <button type="button" class="dash-tab-btn" data-tab="overview">📊 통합</button>
+      <button type="button" class="dash-tab-btn" data-tab="trend">📈 추이</button>
       <button type="button" class="dash-tab-btn" data-tab="summary">📋 종합</button>
       <button type="button" class="dash-tab-btn" data-tab="alloc">📊 비중분석</button>
       <button type="button" class="dash-tab-btn" data-tab="heatmap">🗺️ 비중 히트맵</button>
       <button type="button" class="dash-tab-btn" data-tab="divstatus">💰 월배당현황</button>
       <button type="button" class="dash-tab-btn" data-tab="suff">⚖️ 자급률·월매수</button>
       <button type="button" class="dash-tab-btn" data-tab="divbasis">💹 배당기준·이력</button>
-      <button type="button" class="dash-tab-btn" data-tab="trend">📈 추이</button>
       <button type="button" class="dash-tab-btn" data-tab="benchmark">📊 지수비교</button>
       <button type="button" class="dash-tab-btn" data-tab="signal">📡 시그널</button>
       <button type="button" class="dash-tab-btn" data-tab="review">🧺 포트폴리오검토</button>
@@ -4090,6 +4230,51 @@ async function renderMyAssets() {
         </select>
       </div>
       <div id="myOverviewBody"></div>
+    </div>
+
+    <div class="dash-panel" data-tab="trend" hidden>
+      ${yearlyHTML}
+      <p class="chart-title" style="margin-top:20px;">📈 평가액·월배당 추이 (월별 스냅샷)</p>
+      <div class="action-row" style="margin-bottom:8px;">
+        <button type="button" id="mySnapshotBtn" class="btn-action">📸 이번 달 스냅샷 저장</button>
+        <button type="button" id="myHistorySopBtn" class="btn-action">📋 이력 SOP 요약 복사</button>
+        <span id="mySnapshotStatus" class="action-status"></span>
+      </div>
+      ${trendHTML}
+
+      <p class="chart-title" style="margin-top:24px;">📅 자산변동 이력 (일별·주간·월별·연간)</p>
+      <div class="action-row" style="margin-bottom:8px;">
+        <button type="button" id="myDailySnapshotBtn" class="btn-action">📅 오늘 자산 스냅샷</button>
+        <span id="myDailySnapshotStatus" class="action-status"></span>
+      </div>
+      <div class="controls" style="margin-bottom:10px;">
+        <select id="myAssetChangeGranularity" aria-label="자산변동 보기 단위">
+          <option value="daily">일별</option>
+          <option value="weekly">주간</option>
+          <option value="monthly">월별</option>
+          <option value="yearly">연간</option>
+        </select>
+      </div>
+      <div id="myAssetChangeBody"></div>
+      <p class="stat-sub" style="margin-top:6px;">이 사이트는 정적 페이지(서버 없음)라 일별 캡처는 자동으로 쌓이지 않습니다 — 확인할 때마다 "오늘 자산 스냅샷"을 눌러야 이력이 쌓입니다. 주간은 일별 캡처가 서로 다른 주에 2건 이상 쌓여야 계산됩니다.</p>
+
+      <p class="chart-title" style="margin-top:24px;">📅 월별 비중 변화</p>
+      <div class="controls" style="margin-bottom:8px;">
+        <select id="myTrendWeightGroup" aria-label="비중 이력 그룹 기준">
+          <option value="account">계좌별</option>
+          <option value="category">카테고리별</option>
+        </select>
+      </div>
+      <div id="myTrendWeightHistBody"></div>
+
+      <p class="chart-title" style="margin-top:24px;">📉 MDD 이력 (계좌 전체)</p>
+      ${buildMDDHistoryHTML(history, loadAssetChangelog(), perRow)}
+
+      <p class="chart-title" style="margin-top:24px;">🗺️ 계좌별 MDD</p>
+      ${buildMDDBreakdownHTML(perRow, "account")}
+
+      <p class="chart-title" style="margin-top:24px;">🎯 성향별 MDD</p>
+      ${buildMDDBreakdownHTML(perRow, "style")}
     </div>
 
     <div class="dash-panel" data-tab="summary" hidden>
@@ -4178,45 +4363,6 @@ async function renderMyAssets() {
       <p class="chart-title" style="margin-top:20px;">💹 배당기준·이력</p>
       ${divBasisHTML}
       <p class="stat-sub" style="margin-top:8px;"><a href="https://app.notion.com/p/3865efd0e46281c49a72c9bbc70dcea0" target="_blank" rel="noopener">📋 배당 기준 SOP(노션) 확인</a></p>
-    </div>
-
-    <div class="dash-panel" data-tab="trend" hidden>
-      ${yearlyHTML}
-      <p class="chart-title" style="margin-top:20px;">📈 평가액·월배당 추이 (월별 스냅샷)</p>
-      <div class="action-row" style="margin-bottom:8px;">
-        <button type="button" id="mySnapshotBtn" class="btn-action">📸 이번 달 스냅샷 저장</button>
-        <button type="button" id="myHistorySopBtn" class="btn-action">📋 이력 SOP 요약 복사</button>
-        <span id="mySnapshotStatus" class="action-status"></span>
-      </div>
-      ${trendHTML}
-
-      <p class="chart-title" style="margin-top:24px;">📅 자산변동 이력 (일별·주간·월별·연간)</p>
-      <div class="action-row" style="margin-bottom:8px;">
-        <button type="button" id="myDailySnapshotBtn" class="btn-action">📅 오늘 자산 스냅샷</button>
-        <span id="myDailySnapshotStatus" class="action-status"></span>
-      </div>
-      <div class="controls" style="margin-bottom:10px;">
-        <select id="myAssetChangeGranularity" aria-label="자산변동 보기 단위">
-          <option value="daily">일별</option>
-          <option value="weekly">주간</option>
-          <option value="monthly">월별</option>
-          <option value="yearly">연간</option>
-        </select>
-      </div>
-      <div id="myAssetChangeBody"></div>
-      <p class="stat-sub" style="margin-top:6px;">이 사이트는 정적 페이지(서버 없음)라 일별 캡처는 자동으로 쌓이지 않습니다 — 확인할 때마다 "오늘 자산 스냅샷"을 눌러야 이력이 쌓입니다. 주간은 일별 캡처가 서로 다른 주에 2건 이상 쌓여야 계산됩니다.</p>
-
-      <p class="chart-title" style="margin-top:24px;">📅 월별 비중 변화</p>
-      <div class="controls" style="margin-bottom:8px;">
-        <select id="myTrendWeightGroup" aria-label="비중 이력 그룹 기준">
-          <option value="account">계좌별</option>
-          <option value="category">카테고리별</option>
-        </select>
-      </div>
-      <div id="myTrendWeightHistBody"></div>
-
-      <p class="chart-title" style="margin-top:24px;">📉 MDD 이력 (계좌 전체)</p>
-      ${buildMDDHistoryHTML(history, loadAssetChangelog(), perRow)}
     </div>
 
     <div class="dash-panel" data-tab="benchmark" hidden>
