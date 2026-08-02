@@ -28,6 +28,12 @@
 fetch해 개발 브랜치에 병합부터 한다. 다른 세션이 배포 브랜치에서 직접 작업한 커밋을 놓친 채 같은
 파일을 고치면 병합 충돌·기능 되돌림이 발생한다(실사례 있음). 상세는 `github-14fiance` 스킬.
 
+**내 자산 로직은 `index.html` 과 `shared/myassets.js` 이중 미러** — 루트 사이트(GitHub Pages)는
+`index.html` 안의 인라인 `<script>` 사본으로 돌고, `shared/myassets.js` 는 `capture/index.html` 과
+안드로이드 앱(`app/build-www.mjs`)이 로드한다. 둘은 **바이트 단위로 같은 사본**이라(`buildReportText`,
+`lastChangePct`, `maskAccountLabel` 등) 한쪽만 고치면 사이트와 앱의 동작이 조용히 갈라진다.
+고칠 때는 같은 문자열 치환을 두 파일에 함께 적용하고, 끝나면 두 사본이 동일한지 확인할 것.
+
 **AI 캡처 파싱은 Gemini 전용** — `capture/capture-parse.js` 의 `CAPTURE_CLAUDE_API_DISABLED = true` 가
 Claude API 호출 경로 4곳(자동 파싱 primary·교차검증·연결 테스트·인앱 AI 리뷰)을 전부 차단하고,
 구버전 localStorage의 `provider="claude"` 잔존값도 init에서 gemini로 마이그레이션한다. Anthropic
