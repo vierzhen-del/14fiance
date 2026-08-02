@@ -1815,6 +1815,8 @@ function buildReportText(csv, history) {
   lines.push("");
 
   for (const n of notes) lines.push(n);
+  // 생성 시각까지 남긴다 — 같은 날 여러 번 만들면 날짜만으로는 어느 시점 결과인지 알 수 없다.
+  lines.push(`🕘 생성 ${nowDateTimeStr()}`);
   lines.push("— 14fiance에서 자동 생성됨. 매매 자문이 아닌 참고용 정보입니다.");
 
   const text = lines.join("\n");
