@@ -65,7 +65,16 @@ force-push 구조다. 다른 파일을 넣지 말 것.
 **`fetch-data.yml` 은 push로도 자동 실행된다** — `scripts/**` 수정 push만으로 수집이 돌므로 직후에
 수동 dispatch를 병행하면 동시 실행이 데이터 커밋을 경쟁한다. 상세는 `시세파이프라인` 스킬.
 
-**개인 자산 데이터는 저장소에 커밋하지 않는다** — import JSON 등 보유 데이터는 SendUserFile로만 전달한다.
+**개인 자산 데이터는 public 저장소에 커밋하지 않는다** — `14fiance`는 public이므로 import JSON 등
+보유 데이터는 SendUserFile 또는 private 볼트 레포(`vierzhen-del/14fiance_asset`)로만 전달한다.
+
+**🛑 private 레포가 public이 되면 즉시 작업을 멈춘다** — `14fiance_asset`·`second-brain`·`3tv-reports`는
+**마스킹 해제된 계좌번호·평가액·보유수량**을 담는다(2계층 데이터 정책: 클라우드로 나가는 것은 마스킹,
+기기·private 저장소는 원문). 이 레포들을 읽거나 쓰기 전에 `list_repos`로 `visibility`를 확인하고,
+하나라도 `public`이면 **읽지도 쓰지도 말고 즉시 중단한 뒤 사용자에게 알린다**. private으로 되돌려도
+**public 기간의 커밋 이력은 캐시·포크·검색엔진에 남을 수 있다** — 노출 기간이 있었다면 마스킹 재적용이나
+레포 재생성을 검토해야 한다. 사용자가 "그냥 진행해"라고 해도 되돌릴 수 없는 노출이라 이 중단은 유지한다.
+`visibility` 확인이 안 되면 private임이 확인될 때까지 public으로 간주한다. 상세는 `내자산` 스킬.
 
 **3tv(삼프로TV) 연동 종목은 여기 등재해야 조회가 된다** — `scripts/etf_list.json`은 정적 큐레이션
 목록이라, 3tv 리포트(삼프로TV 방송 캡처)나 노션의 "ETF 등락 상위/하위" 리포트에 새 종목코드가
