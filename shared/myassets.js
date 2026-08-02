@@ -1707,18 +1707,15 @@ function reportSection(title) {
 // 비중이 이 값 미만인 계좌는 "기타 N개"로 접는다 — 0.3%짜리가 45%짜리와 같은 무게로 나열되면
 // 스캔 비용만 늘어난다(실측: 9개 계좌 중 4개가 1% 미만).
 const REPORT_MINOR_ACCOUNT_PCT = 1.0;
-// 종목명은 이 폭에서 잘라 한 줄을 유지한다 — "TIGER 배당커버드콜액티브"는 그대로 두면 줄이 접힌다.
-// 16이면 앞의 등락률·금액과 합쳐 31컬럼 안쪽이라 실측상 접히지 않는다.
-const REPORT_NAME_WIDTH = 16;
 const REPORT_ACCOUNT_WIDTH = 9;
 // 텔레그램 sendMessage 한 통의 상한. 종목이 크게 늘어도 400이 나지 않게 마지막에 자른다.
 const REPORT_MAX_CHARS = 4000;
 // A32d: 하락 WORST5는 평가액이 작은 종목(단가 변동이 커도 실제 손실액은 미미)이 순위를 흐리지
 // 않게, 이 평가액 이상인 종목만 대상으로 한다. 상승 TOP5는 그대로(작은 급등도 관심 대상이라).
 const REPORT_WORST_MIN_VALUE = 1000000;
-// A32c: 상승·하락 TOP5는 등락률·금액과 같은 줄에 종목명을 욱여넣어(REPORT_NAME_WIDTH=16)
+// A32c: 종목명을 등락률·금액(또는 월배당액)과 같은 줄에 욱여넣으면(예전 REPORT_NAME_WIDTH=16)
 // "TIGER 배당커버드콜액티브" 같은 긴 이름이 "…배당커버드콜…"처럼 알아보기 어렵게 잘렸다
-// (실사용 텔레그램 리포트에서 확인됨). 월배당 TOP5처럼 이름을 별도 줄로 내려 폭을 넓힌다.
+// (실사용 텔레그램 리포트에서 확인됨). 상승·하락·월배당 TOP5 전부 이름을 별도 줄로 내려 폭을 넓힌다.
 const REPORT_NAME_WIDTH_WIDE = 28;
 
 /* ---------- A28: 종합 탭 "리포트 생성" (A31에서 가독성·등락 보강) ----------
@@ -1887,9 +1884,10 @@ async function buildReportText(csv, history) {
   lines.push(reportSection("월배당 TOP5"));
   if (top5.length) {
     for (const p of top5) {
-      const name = truncWidth((p.meta && p.meta.name) || p.symbol, REPORT_NAME_WIDTH);
+      const name = truncWidth((p.meta && p.meta.name) || p.symbol, REPORT_NAME_WIDTH_WIDE);
       const acc = truncWidth(maskAccountLabel(p.account || "계좌 미지정"), REPORT_ACCOUNT_WIDTH);
-      lines.push(`${fmtKrwShort(p.monthlyDiv)}/월 ${name}`);
+      lines.push(`${fmtKrwShort(p.monthlyDiv)}/월`);
+      lines.push(`  ${name}`);
       lines.push(`  ${acc}`);
     }
   } else {
