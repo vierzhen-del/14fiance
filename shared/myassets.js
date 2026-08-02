@@ -1282,6 +1282,56 @@ function buildMDDBreakdownHTML(perRow, groupBy) {
     </table></div>`;
 }
 
+/* ---------- A32e: 내 포트폴리오 vs VOO·QQQ·SCHD MDD 동일기준 비교 ----------
+   buildMDDBreakdownHTML의 "공통 구간 정렬"과 같은 원리 — 벤치마크는 대개 포트폴리오보다
+   상장이 훨씬 오래돼(예: QQQ 1999년) 그대로 각자 전체기간 MDD를 병기하면 비교가 안 된다.
+   내 포트폴리오 + 세 벤치마크의 시작일 중 가장 늦은 날 ~ 종료일 중 가장 이른 날로 전부
+   맞춘 뒤 같은 calcMDD로 계산한다. 데이터가 없는 벤치마크만 조용히 빠진다(값을 지어내지 않음). */
+const MDD_BENCHMARK_SYMBOLS = ["VOO", "QQQ", "SCHD"];
+
+async function computeBenchmarkMDDCompare(perRow) {
+  const full = portfolioNavSeries(perRow);
+  if (!full) return null;
+  const benchData = [];
+  for (const symbol of MDD_BENCHMARK_SYMBOLS) {
+    try {
+      const d = await loadSymbol(symbol);
+      if (d && d.dates && d.dates.length >= 2 && d.closes) benchData.push({ symbol, dates: d.dates, closes: d.closes });
+    } catch (err) { /* 해당 벤치마크만 제외 */ }
+  }
+  if (!benchData.length) return null;
+
+  const since = [full.dates[0], ...benchData.map((b) => b.dates[0])].reduce((a, b) => (b > a ? b : a));
+  const until = [full.dates[full.dates.length - 1], ...benchData.map((b) => b.dates[b.dates.length - 1])].reduce((a, b) => (b < a ? b : a));
+
+  const mddCommon = (dates, values) => {
+    const si = dates.findIndex((d) => d >= since);
+    let ei = -1;
+    for (let i = 0; i < dates.length; i++) { if (dates[i] <= until) ei = i; else break; }
+    if (si < 0 || ei < si + 1) return null;
+    const ds = dates.slice(si, ei + 1), vs = values.slice(si, ei + 1);
+    const r = calcMDD(ds, vs);
+    return { mdd: r.mdd, peakDate: ds[r.peakIdx], troughDate: ds[r.troughIdx], recoveredDate: r.recoveryIdx >= 0 ? ds[r.recoveryIdx] : null };
+  };
+
+  const rows = [{ name: "내 포트폴리오", m: mddCommon(full.dates, full.navs) }];
+  for (const b of benchData) rows.push({ name: b.symbol, m: mddCommon(b.dates, b.closes) });
+  return { since, until, rows };
+}
+
+function buildBenchmarkMDDHTML(cmp) {
+  if (!cmp) return `<p class="compare-empty">벤치마크 가격 이력이 부족해 비교할 수 없습니다.</p>`;
+  const pct = (v) => `${(v * 100).toFixed(1)}%`;
+  const body = cmp.rows.map(({ name, m }) => m
+    ? `<tr><td>${name}</td><td style="color:var(--critical)">${pct(m.mdd)}</td><td>${m.peakDate} → ${m.troughDate}</td><td style="color:${m.recoveredDate ? "var(--good)" : "var(--critical)"}">${m.recoveredDate ? "회복" : "미회복"}</td></tr>`
+    : `<tr><td>${name}</td><td colspan="3" class="stat-sub">데이터 부족</td></tr>`).join("");
+  return `<p class="stat-sub" style="margin:4px 0;">공통 구간 <b>${cmp.since} ~ ${cmp.until}</b>으로 맞춰 계산했습니다(내 포트폴리오와 VOO·QQQ·SCHD 중 가장 늦게 시작한 시점부터).</p>
+    <div style="overflow-x:auto;"><table class="account-summary-table">
+      <thead><tr><th>구분</th><th>MDD</th><th>최대낙폭 구간</th><th>회복</th></tr></thead>
+      <tbody>${body}</tbody>
+    </table></div>`;
+}
+
 /* A29: 계좌별 월별 손익 차트를 실제로 그린다 — 환율 이력(loadFx)을 매번 새로 불러오지
    않도록 fetchJSON 자체 캐시(state.cache의 "fx:USDKRW" 키)에 의존한다. accountKey="__all__"
    이면 전체 계좌(perRow 전체)를 하나로 합쳐서 계산한다. */
@@ -1410,6 +1460,11 @@ function buildGoalPlanTableHTML(d, basis) {
     return `${actual - plan >= 0 ? "+" : ""}${fmtW(actual - plan)}`;
   };
   const achieveCell = (plan) => plan > 0 ? `${((d.actualNow / plan) * 100).toFixed(0)}%` : "—";
+  // A32a: 수기입력 목표액(#myGoalAmount)은 계좌별이 아니라 종합 하나뿐이라 __all__ 스코프에서만 붙인다.
+  const gi = state.myAssetsGoalInfo;
+  const goalLine = (d.scope === "__all__" && gi)
+    ? `<p class="stat-sub">🎯 수기입력 목표 ${fmtManwon(gi.goalAmount)} 도달까지 <b>${gi.goalLabel}</b> (연 ${(gi.goalRate * 100).toFixed(1)}% 가정 — 통합 탭 「🎯 목표 도달」 카드와 동일 계산)</p>`
+    : "";
   const rows = [
     ["총자산", d.actualNow, null],
     [`계획(${(d.rate1 * 100).toFixed(1)}%)${d.rate1IsDefault ? " · S&P500" : ""}`, d.plan1Now, d.plan1Now],
@@ -1428,7 +1483,8 @@ function buildGoalPlanTableHTML(d, basis) {
       <tr><td>달성률</td>${achRow}</tr>
     </tbody>
   </table></div>
-  <p class="stat-sub" style="margin-top:6px;">${d.t0Month}(이 앱으로 추적을 시작한 첫 달)부터 지금까지 ${d.elapsed}개월, 월 재투자액 ${fmtW(d.monthly)} 가정. 달성률 = 총자산 ÷ 계획금액.</p>`;
+  <p class="stat-sub" style="margin-top:6px;">${d.t0Month}(이 앱으로 추적을 시작한 첫 달)부터 지금까지 ${d.elapsed}개월, 월 재투자액 ${fmtW(d.monthly)} 가정. 달성률 = 총자산 ÷ 계획금액.</p>
+  ${goalLine}`;
 }
 
 /* 실제총자산·계획A·계획B·원금 네 선을 buildCompareChart로 겹쳐 그린다(원래 %전용이던
@@ -1485,9 +1541,13 @@ async function renderGoalPlanCompact() {
   }
   const fmtW = (v) => fmtPrice(v, "KRW");
   const ach1 = d.plan1Now > 0 ? (d.actualNow / d.plan1Now) * 100 : null;
+  // A32a: 통합 탭 "🎯 목표 도달" 카드가 쓰는 수기입력 목표액(#myGoalAmount) 도달 시점을 같이 보여준다.
+  const gi = state.myAssetsGoalInfo;
+  const goalLine = gi ? `<p class="stat-sub">🎯 수기입력 목표 ${fmtManwon(gi.goalAmount)} 도달까지 <b>${gi.goalLabel}</b> (연 ${(gi.goalRate * 100).toFixed(1)}% 가정)</p>` : "";
   wrap.innerHTML = `<p class="stat-label">📐 계획 달성현황 (계획 ${(d.rate1 * 100).toFixed(1)}%${d.rate1IsDefault ? " · S&P500" : ""} 대비)</p>
     <p class="stat-value" style="font-size:16px; color:${ach1 != null && ach1 >= 100 ? "var(--good)" : "var(--critical)"}">${ach1 != null ? ach1.toFixed(0) + "%" : "—"}</p>
-    <p class="stat-sub">실제 ${fmtW(d.actualNow)} vs 계획 ${fmtW(d.plan1Now)} — 「추이」 탭에서 전체 표·차트 확인</p>`;
+    <p class="stat-sub">실제 ${fmtW(d.actualNow)} vs 계획 ${fmtW(d.plan1Now)} — 「추이」 탭에서 전체 표·차트 확인</p>
+    ${goalLine}`;
 }
 
 /* 추이 탭의 전체 섹션 — 종합/계좌 select + 금액/수익률 토글, 바뀔 때마다 다시 그린다. */
@@ -1653,6 +1713,13 @@ const REPORT_NAME_WIDTH = 16;
 const REPORT_ACCOUNT_WIDTH = 9;
 // 텔레그램 sendMessage 한 통의 상한. 종목이 크게 늘어도 400이 나지 않게 마지막에 자른다.
 const REPORT_MAX_CHARS = 4000;
+// A32d: 하락 WORST5는 평가액이 작은 종목(단가 변동이 커도 실제 손실액은 미미)이 순위를 흐리지
+// 않게, 이 평가액 이상인 종목만 대상으로 한다. 상승 TOP5는 그대로(작은 급등도 관심 대상이라).
+const REPORT_WORST_MIN_VALUE = 1000000;
+// A32c: 상승·하락 TOP5는 등락률·금액과 같은 줄에 종목명을 욱여넣어(REPORT_NAME_WIDTH=16)
+// "TIGER 배당커버드콜액티브" 같은 긴 이름이 "…배당커버드콜…"처럼 알아보기 어렵게 잘렸다
+// (실사용 텔레그램 리포트에서 확인됨). 월배당 TOP5처럼 이름을 별도 줄로 내려 폭을 넓힌다.
+const REPORT_NAME_WIDTH_WIDE = 28;
 
 /* ---------- A28: 종합 탭 "리포트 생성" (A31에서 가독성·등락 보강) ----------
    종합(계좌별 요약)·비중(성향별)·추이(MDD)·등락(상승·하락 TOP5)·배당(TOP5) 정보를 한 텍스트로
@@ -1665,7 +1732,7 @@ const REPORT_MAX_CHARS = 4000;
       "라벨 줄 + 들여쓴 값 줄"로 미리 쪼갠다(종전에는 계좌 9줄 중 4줄이 제멋대로 접혔다).
    ② 면책·기준 설명은 본문에서 빼 notes로 모아 맨 아래 각주로 붙인다 — 숫자보다 문장이
       커 보이던 문제(MDD 2줄 면책)를 없앤다. */
-function buildReportText(csv, history) {
+async function buildReportText(csv, history) {
   if (!csv || !csv.perRow || !csv.perRow.length) return null;
   const fmtW = (v) => fmtPrice(v, "KRW");
   const lines = [];
@@ -1760,6 +1827,17 @@ function buildReportText(csv, history) {
   } else {
     lines.push("가격 이력이 부족해 MDD를 계산할 수 없습니다.");
   }
+  // A32e: VOO·QQQ·SCHD와 같은 기준(공통 구간 정렬)으로 MDD를 나란히 보여준다.
+  try {
+    const benchCmp = await computeBenchmarkMDDCompare(csv.perRow);
+    if (benchCmp) {
+      lines.push(`MDD 비교 (VOO·QQQ·SCHD 동일기준, ${benchCmp.since}~${benchCmp.until})`);
+      for (const { name, m } of benchCmp.rows) {
+        lines.push(m ? `  ${name} ${changeMark(m.mdd)} ${signedPct(m.mdd * 100, 1)}` : `  ${name} 데이터 부족`);
+      }
+      notes.push("※ MDD 비교는 내 포트폴리오와 세 벤치마크 중 가장 늦게 시작한 시점부터 공통 구간으로 맞춘 값입니다.");
+    }
+  } catch (err) { /* 벤치마크 조회 실패해도 리포트 나머지는 계속 생성 */ }
   if (history && history.length >= 2) {
     const sorted = history.slice().sort((a, b) => a.month.localeCompare(b.month));
     const first = sorted[0], last = sorted[sorted.length - 1];
@@ -1785,19 +1863,24 @@ function buildReportText(csv, history) {
     e.amount += amt; e.value += p.value; e.accounts += 1;
   }
   const ranked = [...bySymbol.values()].sort((a, b) => b.chg - a.chg);
-  const rankLine = (e) =>
-    `${changeMark(e.chg)}${signedPct(e.chg * 100, 1)} ${signedKrwShort(e.amount)} ${truncWidth(e.name, REPORT_NAME_WIDTH)}`;
+  const pushRankLine = (e) => {
+    lines.push(`${changeMark(e.chg)}${signedPct(e.chg * 100, 1)} ${signedKrwShort(e.amount)}`);
+    lines.push(`  ${truncWidth(e.name, REPORT_NAME_WIDTH_WIDE)}`);
+  };
 
   const gainers = ranked.filter((e) => e.chg > 0).slice(0, 5);
-  const losers = ranked.filter((e) => e.chg < 0).slice(-5).reverse();
+  const losers = ranked.filter((e) => e.chg < 0 && e.value >= REPORT_WORST_MIN_VALUE).slice(-5).reverse();
   lines.push(reportSection("상승 TOP5"));
-  if (gainers.length) for (const e of gainers) lines.push(rankLine(e));
+  if (gainers.length) for (const e of gainers) pushRankLine(e);
   else lines.push("상승 종목이 없습니다.");
   lines.push("");
-  lines.push(reportSection("하락 TOP5"));
-  if (losers.length) for (const e of losers) lines.push(rankLine(e));
+  lines.push(reportSection("하락 WORST5"));
+  if (losers.length) for (const e of losers) pushRankLine(e);
   else lines.push("하락 종목이 없습니다.");
-  if (ranked.length) notes.push(`※ 등락 기준: ${basis}. 주가 수집이 주 1회라 항상 "전일대비"는 아닙니다.`);
+  if (ranked.length) {
+    notes.push(`※ 등락 기준: ${basis}. 주가 수집이 주 1회라 항상 "전일대비"는 아닙니다.`);
+    notes.push(`※ 하락 WORST5는 평가액 ${fmtKrwShort(REPORT_WORST_MIN_VALUE)} 이상 종목 기준입니다.`);
+  }
   lines.push("");
 
   const top5 = csv.perRow.filter((p) => p.monthlyDiv > 0).sort((a, b) => b.monthlyDiv - a.monthlyDiv).slice(0, 5);
@@ -2461,6 +2544,10 @@ async function renderMyAssets() {
       : realGoal.months === 0 ? "이미 달성"
       : `${Math.floor(realGoal.months / 12) > 0 ? `${Math.floor(realGoal.months / 12)}년 ` : ""}${realGoal.months % 12 > 0 ? `${realGoal.months % 12}개월` : ""}`.trim()
     : null;
+  // A32a: 📐 계획 달성현황(컴팩트 카드·추이탭)에서도 "수기입력 목표액 도달까지"를 같이 보여주기
+  // 위해 저장 — 계산은 위 goal/goalLabel과 완전히 동일(같은 #myGoalAmount·#myExpectedReturn 참조),
+  // 여기서는 새 계산 없이 재사용만 한다.
+  state.myAssetsGoalInfo = goal ? { goalAmount, goalLabel, goalRate } : null;
 
   const rowsHTML = perRow.map((p) => {
     const ttm = p.meta && p.meta.ttmDividend ? p.meta.ttmDividend : 0;
@@ -2748,6 +2835,9 @@ async function renderMyAssets() {
 
       <p class="chart-title" style="margin-top:24px;">🎯 성향별 MDD</p>
       ${buildMDDBreakdownHTML(perRow, "style")}
+
+      <p class="chart-title" style="margin-top:24px;">📐 VOO·QQQ·SCHD MDD 비교</p>
+      <div id="myBenchMddWrap"><p class="compare-empty">불러오는 중…</p></div>
 
       <p class="chart-title" style="margin-top:24px;">💵 계좌별 월별 손익</p>
       <p class="stat-sub">선택한 계좌의 <b>현재 보유 수량을 그 기간 내내 갖고 있었다고 가정</b>하고 월말 평가액 변화를 손익으로 계산합니다 — 실제 입출금·매매 내역은 반영하지 않으므로 추가 매수·환매가 있었던 달은 실제 손익과 다르게 보일 수 있습니다.</p>
@@ -3253,7 +3343,7 @@ async function renderMyAssets() {
     }
     reportBtn.addEventListener("click", async () => {
       const csv = state.myAssetsCsvData;
-      const text = csv ? buildReportText(csv, history) : null;
+      const text = csv ? await buildReportText(csv, history) : null;
       if (!text) { flashStatus("myReportStatus", "먼저 보유 종목을 입력하세요"); return; }
       const dests = [...document.querySelectorAll(".my-report-dest:checked")].map((el) => el.value);
       if (!dests.length) { flashStatus("myReportStatus", "내보낼 곳을 하나 이상 선택하세요"); return; }
@@ -3288,14 +3378,14 @@ async function renderMyAssets() {
   // A28: AI 분석 탭 — 제미나이 키가 있으면 자동 호출, 없으면 프롬프트 복사로 폴백.
   const aiAnalyzeBtn = document.getElementById("myAiAnalyzeBtn");
   if (aiAnalyzeBtn) {
-    const buildPromptOrWarn = () => {
+    const buildPromptOrWarn = async () => {
       const csv = state.myAssetsCsvData;
-      const text = csv ? buildReportText(csv, history) : null;
+      const text = csv ? await buildReportText(csv, history) : null;
       if (!text) { flashStatus("myAiStatus", "먼저 보유 종목을 입력하세요"); return null; }
       return buildAiAnalysisPrompt(text);
     };
     aiAnalyzeBtn.addEventListener("click", async () => {
-      const prompt = buildPromptOrWarn();
+      const prompt = await buildPromptOrWarn();
       if (!prompt) return;
       const key = geminiApiKey();
       const resultEl = document.getElementById("myAiResult");
@@ -3314,7 +3404,7 @@ async function renderMyAssets() {
       }
     });
     document.getElementById("myAiPromptCopyBtn").addEventListener("click", async () => {
-      const prompt = buildPromptOrWarn();
+      const prompt = await buildPromptOrWarn();
       if (!prompt) return;
       const ok = await copyTextToClipboard(prompt);
       flashStatus("myAiStatus", ok ? "프롬프트 복사됨 — AI 채팅에 붙여넣으세요" : "복사 실패");
@@ -3375,6 +3465,14 @@ async function renderMyAssets() {
     renderGoalPlanSection(savedScope, savedBasis);
   }
   renderGoalPlanCompact(); // 통합 탭 상단 헤더 카드 — 탭과 무관하게 항상 갱신
+
+  // A32e: VOO·QQQ·SCHD MDD 비교 — 벤치마크 가격을 fetch해야 해서(비동기) 패널 템플릿과
+  // 별도로 채운다(다른 MDD 섹션들처럼 동기 계산이 안 됨).
+  const benchMddWrap = document.getElementById("myBenchMddWrap");
+  if (benchMddWrap) {
+    computeBenchmarkMDDCompare(perRow).then((cmp) => { benchMddWrap.innerHTML = buildBenchmarkMDDHTML(cmp); })
+      .catch((err) => { benchMddWrap.innerHTML = `<p class="compare-empty" style="color:var(--critical)">벤치마크 MDD 계산 실패: ${err.message}</p>`; });
+  }
 
   // A25b: 월별 비중 변화 — 그룹 기준 전환(계좌별/카테고리별), 선택은 state에 보존.
   // A26c: 같은 표가 비중분석 탭과 추이 탭 두 곳에 붙는다. state.myWeightHistGroup 하나를

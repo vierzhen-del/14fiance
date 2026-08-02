@@ -258,10 +258,19 @@ function buildCompareChart(container, seriesList, opts = {}) {
       .join("");
     tooltip.innerHTML = `<div class="t-date">${refDate}</div>${rows}`;
   }
-  function onLeave() { hoverLayer.style.display = "none"; tooltip.style.opacity = "0"; }
+  // A32b: 모바일은 hover가 없어 pointermove만으로는 탭해도 표시가 안 뜬다(드래그해야만 나옴).
+  // 탭(click)하면 그 위치에 고정해서 보여주고, 다시 탭하면 풀리게 한다.
+  let pinned = false;
+  function hide() { hoverLayer.style.display = "none"; tooltip.style.opacity = "0"; }
+  function onLeave() { if (!pinned) hide(); }
+  function onClick(evt) {
+    pinned = !pinned;
+    if (pinned) onMove(evt); else hide();
+  }
 
-  svg.addEventListener("pointermove", onMove);
+  svg.addEventListener("pointermove", (evt) => { if (!pinned) onMove(evt); });
   svg.addEventListener("pointerleave", onLeave);
+  svg.addEventListener("click", onClick);
 }
 
 function buildChart(container, opts) {
@@ -363,10 +372,18 @@ function buildChart(container, opts) {
       `<div class="t-row"><span class="t-key"><span class="t-swatch" style="background:${color}"></span>${seriesLabel}</span>` +
       `<strong>${valueFmt(values[i])}</strong></div>`;
   }
-  function onLeave() { hoverLayer.style.display = "none"; tooltip.style.opacity = "0"; }
+  // A32b: 탭(click)하면 그 위치에 고정해서 보여주고, 다시 탭하면 풀리게 한다(모바일은 hover가 없음).
+  let pinned = false;
+  function hide() { hoverLayer.style.display = "none"; tooltip.style.opacity = "0"; }
+  function onLeave() { if (!pinned) hide(); }
+  function onClick(evt) {
+    pinned = !pinned;
+    if (pinned) onMove(evt); else hide();
+  }
 
-  svg.addEventListener("pointermove", onMove);
+  svg.addEventListener("pointermove", (evt) => { if (!pinned) onMove(evt); });
   svg.addEventListener("pointerleave", onLeave);
+  svg.addEventListener("click", onClick);
 }
 
 /* ---------- A29: 계좌별 월별 손익 ----------
@@ -511,10 +528,18 @@ function buildMonthlyBarChart(container, months, opts = {}) {
     const color = m.pnl >= 0 ? good : bad;
     tooltip.innerHTML = `<div class="t-date">${m.month}</div><div class="t-row"><strong style="color:${color}">${m.pnl >= 0 ? "+" : ""}${fmtW(m.pnl)}</strong></div>`;
   }
-  function onLeave() { hoverLayer.style.display = "none"; tooltip.style.opacity = "0"; }
+  // A32b: 탭(click)하면 그 위치에 고정해서 보여주고, 다시 탭하면 풀리게 한다(모바일은 hover가 없음).
+  let pinned = false;
+  function hide() { hoverLayer.style.display = "none"; tooltip.style.opacity = "0"; }
+  function onLeave() { if (!pinned) hide(); }
+  function onClick(evt) {
+    pinned = !pinned;
+    if (pinned) onMove(evt); else hide();
+  }
 
-  svg.addEventListener("pointermove", onMove);
+  svg.addEventListener("pointermove", (evt) => { if (!pinned) onMove(evt); });
   svg.addEventListener("pointerleave", onLeave);
+  svg.addEventListener("click", onClick);
 }
 
 function trailingReturnAnnualized(dates, closes, months) {
