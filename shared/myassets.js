@@ -3137,6 +3137,17 @@ async function renderMyAssets() {
         <span id="myTelegramStatus" class="action-status"></span>
       </div>
       <p class="stat-sub">봇 토큰은 텔레그램에서 <b>@BotFather</b>에게 <code>/newbot</code>을 보내면 발급됩니다. chat_id는 그 봇과 대화를 한 번 시작한 뒤 브라우저로 <code>https://api.telegram.org/bot&lt;토큰&gt;/getUpdates</code>를 열면 <code>"chat":{"id":...}</code> 값으로 확인할 수 있습니다. 저장해두면 「📋 종합」 탭의 "📤 리포트 생성"에서 텔레그램으로 바로 보낼 수 있습니다.</p>
+
+      <p class="chart-title" style="margin-top:20px;" id="myAutoReportTitle">📤 평일 장마감 자동 리포트 (앱 전용)</p>
+      <p class="stat-sub">매일 <b>평일 16:05경(국내 장마감 후)</b> 앱을 직접 켜지 않아도 자동으로 실행돼 텔레그램 리포트를 보내고, 「추이」 탭의 오늘 자산 스냅샷도 함께 저장합니다. 위 텔레그램 봇 토큰·chat_id가 저장돼 있어야 동작합니다.</p>
+      <div class="action-row" style="margin:8px 0;">
+        <label style="display:inline-flex; align-items:center; gap:6px;">
+          <input type="checkbox" id="myAutoReportToggle">
+          자동 발신 켜기
+        </label>
+        <span id="myAutoReportStatus" class="action-status"></span>
+      </div>
+      <p class="stat-sub">알람 시각에 앱이 잠깐 자동으로 열렸다 닫힙니다(정상 동작). 기기 제조사의 강한 배터리 최적화(일부 삼성·샤오미 기기)가 걸려 있으면 지연되거나 건너뛸 수 있습니다 — 계속 안 오면 설정 &gt; 배터리에서 이 앱의 배터리 최적화를 "제한 없음"으로 바꿔보세요.</p>
       <div class="action-row" style="margin:8px 0;">
         <button type="button" id="myKeysExportBtn" class="btn-action">🔑 키 내보내기</button>
         <button type="button" id="myKeysImportBtn" class="btn-action">🔑 키 불러오기</button>
@@ -3297,6 +3308,25 @@ async function renderMyAssets() {
       flashStatus("myTelegramStatus", r.ok ? "성공 — 텔레그램에서 확인하세요 ✓" : `실패: ${r.error}`, 5000);
     });
   }
+
+  // A32f: 평일 장마감 자동 리포트 토글 — app/src/auto-report.js(앱 전용)가 정의하는
+  // window.setAutoReportEnabled/getAutoReportEnabled가 있을 때만 동작(웹에는 자동 실행 개념이
+  // 없으므로 이 섹션 자체를 숨긴다) — 옵시디안 섹션과 같은 네이티브 감지 패턴.
+  const autoReportToggle = document.getElementById("myAutoReportToggle");
+  if (autoReportToggle) {
+    if (typeof window.getAutoReportEnabled === "function" && typeof window.setAutoReportEnabled === "function") {
+      autoReportToggle.checked = window.getAutoReportEnabled();
+      autoReportToggle.addEventListener("change", async () => {
+        await window.setAutoReportEnabled(autoReportToggle.checked);
+        flashStatus("myAutoReportStatus", autoReportToggle.checked ? "켜짐 — 다음 평일 16:05경 자동 실행됩니다" : "꺼짐");
+      });
+    } else {
+      const titleEl = document.getElementById("myAutoReportTitle");
+      if (titleEl && titleEl.nextElementSibling) titleEl.nextElementSibling.textContent = "이 기능은 앱(APK)에서만 동작합니다 — 웹 브라우저에서는 자동 실행이 불가능합니다.";
+      autoReportToggle.disabled = true;
+    }
+  }
+
   // A28: 키 내보내기/불러오기 — 보유 종목 백업(📤 내보내기)과 완전히 분리된 별도 파일.
   // 키는 serializeMyAssets()에 절대 섞지 않는다 — 그 파일은 "🤖 클로드에 복사"로 AI 채팅
   // 텍스트에도 그대로 들어가는데, 거기에 시크릿이 실려 나가면 안 되기 때문.
