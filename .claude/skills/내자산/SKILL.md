@@ -75,9 +75,23 @@ JSON을 다시 만든다.
 자산 볼트는 second-brain 볼트(`14rae_work`)와 **분리한다.** 자산 볼트에는 마스킹 없는 계좌번호와
 실제 금액이 들어가므로, 공유·동기화 범위가 다른 노트와 섞이면 안 된다.
 
+**확정 경로 (2026-08-02, s26 실측)**
+
+| 구분 | 값 |
+|---|---|
+| 앱 설정에 넣는 값 | `14fiance_asset` |
+| 안드로이드 전체 경로 | `/storage/emulated/0/Documents/14fiance_asset/` |
+| 파일이 실제 쌓이는 곳 | `/storage/emulated/0/Documents/14fiance_asset/14fiance/` |
+| 옵시디안 "폴더를 볼트로 열기" 대상 | `Documents/14fiance_asset` (그 안에 `14fiance/` 폴더로 보인다) |
+
 - 앱 설정: 「⚙️ 설정」 탭 → "🗂️ 옵시디안 폰 백업" → 볼트 경로(`myObsidianPath`, localStorage)
-- 경로는 **문서 폴더 기준 상대경로**다(안드로이드 저장소 정책상 임의 절대경로 불가).
-  넣은 경로 아래 `14fiance/` 폴더가 생긴다.
+- 경로는 **문서 폴더 기준 상대경로**로 넣는다(안드로이드 저장소 정책상 임의 절대경로 불가).
+  `app/src/native-files.js`가 `<설정경로>/14fiance/` 아래에 기록한다(`FOLDER = "14fiance"` 고정).
+- 볼트 루트를 `14fiance_asset`으로 잡는 이유: 앱이 쓰는 `14fiance/` 밖에 여유 공간이 남아
+  에이전트가 만든 노트나 n8n이 동기화한 파일을 같은 볼트 안에 둘 수 있다.
+- ⚠️ 쓰기 권한이 없으면 앱 전용 외부 저장소(`DIR_FALLBACK = "EXTERNAL"`)로 **조용히 폴백**한다.
+  이 경우 파일은 `Android/data/io.github.vierzhen.myassets/files/` 아래로 가고 옵시디안에서 안 보인다 —
+  "백업했다는데 볼트에 파일이 없다"는 신고가 오면 여기부터 확인한다.
 - 동기화 대상 기기: **Tab S9(보관용) · s26(사용)** — 폐쇄 n8n이 Tailscale 안에서만 오간다.
   인터넷에 노출되지 않으므로 원문 보관이 성립한다.
 
