@@ -13,6 +13,25 @@ description: 14RAE 자산 전담 — 보유현황·배당 질답, 이상감지·
 ③ 이상감지 체크리스트를 돌린다. 그 결과를 기준으로 이후 대화를 이어간다 — 매번 처음부터
 다시 계산하지 않는다.
 
+## 연결 레포 (에이전트가 읽는 곳)
+
+| 레포 | 성격 | 무엇을 얻나 |
+|---|---|---|
+| `vierzhen-del/14fiance` | public | 자산 앱 코드 · `scripts/etf_list.json` 종목 카탈로그 · `data/*.json` 수집 가격 |
+| `vierzhen-del/3tv-reports` | **private** | 3protv 일자별 시황 — **급변 판정의 근거** |
+| `vierzhen-del/3tv` | public | 3protv 리포트 생성 로직 (형식·필드 이해용) |
+| `vierzhen-del/second-brain` | **private** | 옵시디안 볼트 git 사본. `14rae_work/00_지침/`에 운영규칙, `14rae_work/10_주식/10_계좌/`에 포트폴리오 노트 |
+| `vierzhen-del/14fiance_asset` | **private (등록 예정)** | 자산 전용 볼트 — 아래 참조 |
+
+세션에 없으면 `add_repo`로 붙인다. 나머지 20여 개는 남의 프로젝트 fork라 자산 작업과 무관하니 붙이지 않는다.
+
+> ⚠️ **`14fiance_asset`을 git에 올리는 것의 의미** — 이 볼트에는 **마스킹하지 않은 계좌번호와
+> 실제 금액**이 들어간다(2계층 정책). private 레포라도 GitHub라는 클라우드에 원문이 올라가는
+> 것이므로, "기기 안에만 둔다"는 폐쇄 전제와는 다른 상태가 된다. 2026-08-02 사용자가 이를
+> 알고 등록하기로 결정했다(`second-brain`도 같은 방식으로 이미 운영 중). 대신 **얻는 것**은
+> 에이전트가 파일 첨부 없이 볼트를 상시 읽을 수 있다는 점이다.
+> 등록 후에는 이 레포를 붙여 `00_에이전트-브리핑.md`를 직접 읽으면 된다.
+
 ## 데이터 지도 (어디를 보고 어디를 고치는가)
 
 | 대상 | 위치 | 성격 |
@@ -129,10 +148,18 @@ JSON을 다시 만든다.
 시장은 조용한데 내 계좌만 움직였으면 그때가 진짜 반영 사고다.
 
 대조 경로 두 가지:
-1. **`vierzhen-del/3tv-reports`** (private, 세션에 add_repo로 붙인다) —
-   `3protv/YYYY/MM/3protv오늘_YYYYMMDD_*.md` 가 일자별 시황이다. 프론트매터에
-   `indices:`(지수 등락)와 `holdings_mentioned:`(언급 종목)가 정형화돼 있어 파싱이 쉽다.
-   `3protvETF_*_ETF구성변화.md`는 ETF 등락 상·하위를 담는다.
+1. **`vierzhen-del/3tv-reports`** (private) — 일자별 시황. 파일 종류 넷:
+
+   | 파일 패턴 | 내용 |
+   |---|---|
+   | `3protv오늘_YYYYMMDD_*.md` | 일일시황(06시 방송). 미국장 정리 + 국내 전망 |
+   | `3protv야간_YYYYMMDD_*.md` | 야간 미장 |
+   | `3protv기사_YYYYMMDD.md` | 기사 모음 |
+   | `3protvETF_YYYYMMDD_ETF구성변화.md` | **ETF 등락 상·하위** — 종목 등재 갭 검출원 |
+
+   경로는 `3protv/YYYY/MM/` 이고 `_index.md`가 목록을 갖는다. 프론트매터가 정형화돼 있어
+   파싱이 쉽다 — `date`, `keyword`, `indices:`(지수별 등락), `holdings_mentioned:`(언급 종목),
+   `session`(일일시황/야간 등), `tags`.
 2. **노션 시세 기록** — 큰 장이 있었던 날은 별도 페이지로 남긴다
    (예: `📈 2026-07-31 한국 증시 역대급 폭등장`, `3b05efd0-e462-81e3-b045-f3ca976fba86`).
 
