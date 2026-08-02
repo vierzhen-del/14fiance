@@ -3655,27 +3655,198 @@ async function sendTelegramMessage(text) {
   }
 }
 
-/* ---------- A28: 종합 탭 "리포트 생성" ----------
-   종합(계좌별 요약)·비중(성향별)·추이(MDD)·배당(TOP5) 정보를 한 텍스트로 모아 다운로드·
-   클립보드·텔레그램·옵시디안에 공통으로 쓴다. 계좌명은 maskAccountLabel로 가린다 —
-   텔레그램·클립보드로 이 텍스트가 그대로 밖에 나갈 수 있는 경로이기 때문(A26a와 같은 이유). */
+/* ---------- A31: 리포트 등락 집계·표기 헬퍼 ----------
+   buildReportText가 쓰는 순수 함수 모음. 계산과 표기를 함수 밖으로 빼 화면(트리맵 등)에서도
+   재사용할 수 있게 하고, 브라우저 없이도 단독 검증이 가능하게 했다.
+   ⚠️ index.html에도 같은 사본이 있다(A28과 같은 이중 미러 구조) — 한쪽만 고치지 말 것. */
+
+/* 종목 한 줄의 변동액(원). 등락률을 모르는 종목은 null을 준다 — 0으로 채워 합계에 섞으면
+   "데이터 없음"이 "보합"으로 둔갑해 총 변동액·변동률이 조용히 왜곡된다.
+   value는 "현재가 × 수량"이므로 직전 평가액은 value/(1+chg), 그 차이가 변동액이다. */
+function rowChangeAmount(p) {
+  const chg = lastChangePct(p);
+  if (chg == null || !(p.value > 0) || chg <= -1) return null;
+  return p.value - p.value / (1 + chg);
+}
+
+/* 여러 종목의 등락 합계 — 계좌별·전체 어디에나 같은 함수를 쓴다.
+   pct의 분모는 "현재 평가액"이 아니라 직전 평가액(= 합계 − 변동액)이어야 등락률이 맞다.
+   missing은 등락 데이터가 없어 합계에서 빠진 종목 수(리포트에 그대로 밝힌다). */
+function aggregateChange(rows) {
+  let amount = 0, valued = 0, missing = 0, counted = 0;
+  for (const p of rows || []) {
+    if (!(p.value > 0)) continue;
+    const amt = rowChangeAmount(p);
+    if (amt == null) { missing += 1; continue; }
+    amount += amt; valued += p.value; counted += 1;
+  }
+  const prevValue = valued - amount;
+  return { amount, pct: prevValue > 0 ? amount / prevValue : null, missing, counted };
+}
+
+/* 등락의 비교 기준 문구 — 주가 수집이 주 1회라 이 값은 **항상 "전일대비"가 아니다**
+   (lastChangePct 주석 참조). 라이브 시세가 적용된 종목은 "마지막 수집 종가"가, 아니면
+   "직전 수집 종가"가 기준이므로 실제 기준일을 뽑아 밝힌다. 종목마다 기준일이 다르면
+   가장 많은 날짜를 대표로 쓰고 "등"을 붙인다. */
+function changeBasisLabel(rows) {
+  const counts = new Map();
+  let live = false;
+  for (const p of rows || []) {
+    const f = p.full;
+    if (!f || !f.closes || !f.dates || f.closes.length < 2) continue;
+    const n = f.closes.length;
+    const isLive = p.close !== f.closes[n - 1];
+    if (isLive) live = true;
+    const d = isLive ? f.dates[n - 1] : f.dates[n - 2];
+    if (d) counts.set(d, (counts.get(d) || 0) + 1);
+  }
+  if (!counts.size) return "직전 종가 대비";
+  let best = null, bestN = -1;
+  for (const [d, n] of counts) if (n > bestN || (n === bestN && d > best)) { best = d; bestN = n; }
+  return `${best}${counts.size > 1 ? " 등" : ""} 종가 대비${live ? " · 라이브 반영" : ""}`;
+}
+
+/* 축약 원화 — ₩795,324,454처럼 9자리가 그대로 나오면 한눈에 자릿수가 안 잡힌다.
+   부호는 값에 붙여 그대로 유지한다(음수를 넘겨도 마이너스가 사라지지 않게). */
+function fmtKrwShort(v) {
+  const n = Math.round(v), a = Math.abs(n), sign = n < 0 ? "-" : "";
+  if (a >= 1e12) return `${sign}₩${(a / 1e12).toFixed(2)}조`;
+  if (a >= 1e8) return `${sign}₩${(a / 1e8).toFixed(2)}억`;
+  if (a >= 1e4) return `${sign}₩${Math.round(a / 1e4).toLocaleString()}만`;
+  return `${sign}₩${a.toLocaleString()}`;
+}
+function signedKrwShort(v) { return (Math.round(v) > 0 ? "+" : "") + fmtKrwShort(v); }
+function signedKrw(v) {
+  const n = Math.round(v);
+  return `${n > 0 ? "+" : n < 0 ? "-" : ""}₩${Math.abs(n).toLocaleString()}`;
+}
+function signedPct(p, digits) { return `${p > 0 ? "+" : ""}${p.toFixed(digits == null ? 2 : digits)}%`; }
+
+/* 텔레그램은 parse_mode를 못 써서(종목명의 "S&P500" 때문 — sendTelegramMessage 주석) 굵게·색이
+   전부 불가능하다. 방향은 기호로만 구분한다(한국 관례에 맞춰 상승 ▲ · 하락 ▼). */
+function changeMark(v) { return v > 0 ? "▲" : v < 0 ? "▼" : "―"; }
+
+/* 한글은 표시 폭이 2배라 String.length로 자르면 줄 길이가 들쭉날쭉해진다 — 폭 기준으로 센다. */
+function displayWidth(s) {
+  let w = 0;
+  // 한중일 문자 대역(한글 자모·완성형·전각기호 등)만 2컬럼으로 센다.
+  for (const ch of String(s)) w += /[\u1100-\u115F\u2E80-\uA4CF\uAC00-\uD7A3\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFF60\uFFE0-\uFFE6]/.test(ch) ? 2 : 1;
+  return w;
+}
+function truncWidth(s, maxW) {
+  let w = 0, out = "";
+  for (const ch of String(s)) {
+    const cw = displayWidth(ch);
+    if (w + cw > maxW) return out + "…";
+    w += cw; out += ch;
+  }
+  return out;
+}
+
+/* 비중 막대 — 폭이 같은 블록문자(█/░)만 써서 비례폭 글꼴에서도 길이가 흐트러지지 않게 한다.
+   숫자만 있으면 45%와 7%의 크기 차이가 안 느껴져서 붙였다. */
+const REPORT_BAR_WIDTH = 10;
+function pctBar(pct) {
+  const filled = Math.max(0, Math.min(REPORT_BAR_WIDTH, Math.round((pct / 100) * REPORT_BAR_WIDTH)));
+  return "█".repeat(filled) + "░".repeat(REPORT_BAR_WIDTH - filled);
+}
+
+/* 섹션 헤더 — 종전 "[종합]" 대괄호는 스크롤 중에 경계가 안 보였다. 한 줄짜리 굵은 구분선으로
+   바꿔 줄 수를 늘리지 않으면서 대비만 올린다. */
+const REPORT_HEADER_WIDTH = 20;
+function reportSection(title) {
+  const inner = ` ${title} `;
+  return "━━" + inner + "━".repeat(Math.max(2, REPORT_HEADER_WIDTH - displayWidth(inner) - 2));
+}
+
+// 비중이 이 값 미만인 계좌는 "기타 N개"로 접는다 — 0.3%짜리가 45%짜리와 같은 무게로 나열되면
+// 스캔 비용만 늘어난다(실측: 9개 계좌 중 4개가 1% 미만).
+const REPORT_MINOR_ACCOUNT_PCT = 1.0;
+// 종목명은 이 폭에서 잘라 한 줄을 유지한다 — "TIGER 배당커버드콜액티브"는 그대로 두면 줄이 접힌다.
+// 16이면 앞의 등락률·금액과 합쳐 31컬럼 안쪽이라 실측상 접히지 않는다.
+const REPORT_NAME_WIDTH = 16;
+const REPORT_ACCOUNT_WIDTH = 9;
+// 텔레그램 sendMessage 한 통의 상한. 종목이 크게 늘어도 400이 나지 않게 마지막에 자른다.
+const REPORT_MAX_CHARS = 4000;
+
+/* ---------- A28: 종합 탭 "리포트 생성" (A31에서 가독성·등락 보강) ----------
+   종합(계좌별 요약)·비중(성향별)·추이(MDD)·등락(상승·하락 TOP5)·배당(TOP5) 정보를 한 텍스트로
+   모아 다운로드·클립보드·텔레그램·옵시디안, 그리고 buildAiAnalysisPrompt(LLM 입력)에 공통으로
+   쓴다. 계좌명은 maskAccountLabel로 가린다 — 텔레그램·클립보드로 이 텍스트가 그대로 밖에 나갈
+   수 있는 경로이기 때문(A26a와 같은 이유).
+
+   A31 레이아웃 원칙(모바일 텔레그램 실측 기준):
+   ① 값과 라벨이 줄바꿈으로 찢어지지 않게 한 줄을 30컬럼 안쪽으로 유지하고, 넘칠 것은
+      "라벨 줄 + 들여쓴 값 줄"로 미리 쪼갠다(종전에는 계좌 9줄 중 4줄이 제멋대로 접혔다).
+   ② 면책·기준 설명은 본문에서 빼 notes로 모아 맨 아래 각주로 붙인다 — 숫자보다 문장이
+      커 보이던 문제(MDD 2줄 면책)를 없앤다. */
 function buildReportText(csv, history) {
   if (!csv || !csv.perRow || !csv.perRow.length) return null;
   const fmtW = (v) => fmtPrice(v, "KRW");
   const lines = [];
-  lines.push(`📊 14fiance 포트폴리오 리포트 (${todayStr()})`);
+  const notes = [];
+  const total = csv.totalValue;
+  const pctOf = (v) => (total > 0 ? (v / total) * 100 : 0);
+
+  lines.push("📊 14fiance 포트폴리오 리포트");
+  lines.push(todayStr());
   lines.push("");
 
-  lines.push("[종합]");
-  lines.push(`총 평가액: ${fmtW(csv.totalValue)}`);
-  lines.push(`총 월배당: ${fmtW(csv.totalMonthlyDiv)}`);
-  if (csv.totalProfit != null) lines.push(`총 손익(매입단가 입력분 기준): ${csv.totalProfit >= 0 ? "+" : ""}${fmtW(csv.totalProfit)}`);
+  /* ── 종합 ── 총 평가액·총 월배당을 축약(₩7.95억)과 원 단위로 함께 보여 1초 안에 잡히게 한다. */
+  const chgAll = aggregateChange(csv.perRow);
+  const basis = changeBasisLabel(csv.perRow);
+  lines.push(reportSection("종합"));
+  lines.push(`평가액 ${fmtKrwShort(total)}`);
+  lines.push(`  ${fmtW(total)}`);
+  lines.push(`월배당 ${fmtKrwShort(csv.totalMonthlyDiv)}`);
+  lines.push(`  ${fmtW(csv.totalMonthlyDiv)}`);
+  if (chgAll.pct != null) {
+    lines.push(`등락 ${changeMark(chgAll.amount)} ${signedPct(chgAll.pct * 100)}`);
+    lines.push(`  ${signedKrw(chgAll.amount)}`);
+    lines.push(`  (${basis})`);
+    if (chgAll.missing > 0) lines.push(`  ※ ${chgAll.missing}종목은 등락 데이터 없어 제외`);
+  } else {
+    lines.push("등락 — 가격 이력이 부족해 계산 불가");
+  }
+  if (csv.totalProfit != null) {
+    lines.push(`손익 ${changeMark(csv.totalProfit)} ${signedKrw(csv.totalProfit)}`);
+    lines.push("  (매입단가 입력분 기준)");
+  }
   lines.push("");
 
-  lines.push("[계좌별 요약]");
-  for (const [acc, g] of csv.accountMap) {
-    const pct = csv.totalValue > 0 ? (g.value / csv.totalValue) * 100 : 0;
-    lines.push(`- ${maskAccountLabel(acc)}: ${fmtW(g.value)} (${pct.toFixed(1)}%), 월배당 ${fmtW(g.monthlyDiv)}`);
+  /* ── 계좌별 ── 평가액 내림차순 + 1% 미만은 접기. 계좌당 2줄 고정(1줄=이름·비중·막대,
+     2줄=평가액·월배당·등락)이라 어느 값이 어느 계좌 것인지 들여쓰기로 분명해진다. */
+  const rowsByAccount = new Map();
+  for (const p of csv.perRow) {
+    const k = p.account || "계좌 미지정";
+    if (!rowsByAccount.has(k)) rowsByAccount.set(k, []);
+    rowsByAccount.get(k).push(p);
+  }
+  const accounts = [...csv.accountMap.entries()]
+    .filter(([, g]) => g.value > 0)
+    .map(([acc, g]) => ({ acc, g, pct: pctOf(g.value), chg: aggregateChange(rowsByAccount.get(acc) || []) }))
+    .sort((a, b) => b.g.value - a.g.value);
+  // 접을 계좌가 하나뿐이면 접어도 줄 수가 그대로라 계좌명만 사라진다 — 2개 이상일 때만 묶는다.
+  const smalls = accounts.filter((a) => a.pct < REPORT_MINOR_ACCOUNT_PCT);
+  const fold = smalls.length >= 2;
+  const majors = fold ? accounts.filter((a) => a.pct >= REPORT_MINOR_ACCOUNT_PCT) : accounts;
+  const minors = fold ? smalls : [];
+
+  lines.push(reportSection("계좌별"));
+  for (const a of majors) {
+    lines.push(`${maskAccountLabel(a.acc)} ${a.pct.toFixed(1)}%`);
+    lines.push(`  ${pctBar(a.pct)}`);
+    const bits = [fmtKrwShort(a.g.value)];
+    if (a.g.monthlyDiv > 0) bits.push(`월 ${fmtKrwShort(a.g.monthlyDiv)}`);
+    if (a.chg.pct != null) bits.push(`${changeMark(a.chg.amount)}${signedPct(a.chg.pct * 100, 1)}`);
+    lines.push(`  ${bits.join(" · ")}`);
+  }
+  if (minors.length) {
+    const v = minors.reduce((s, a) => s + a.g.value, 0);
+    const d = minors.reduce((s, a) => s + a.g.monthlyDiv, 0);
+    lines.push(`기타 ${minors.length}개 계좌 ${pctOf(v).toFixed(1)}%`);
+    lines.push(`  ${fmtKrwShort(v)}${d > 0 ? ` · 월 ${fmtKrwShort(d)}` : ""}`);
+    notes.push(`※ 비중 ${REPORT_MINOR_ACCOUNT_PCT}% 미만 계좌는 "기타"로 묶었습니다.`);
   }
   lines.push("");
 
@@ -3685,17 +3856,22 @@ function buildReportText(csv, history) {
     const s = (p.meta && p.meta.style) || "미분류";
     styleMap.set(s, (styleMap.get(s) || 0) + p.value);
   }
-  lines.push("[비중(성향별)]");
+  lines.push(reportSection("비중 · 성향별"));
   for (const [s, v] of [...styleMap.entries()].sort((a, b) => b[1] - a[1])) {
-    lines.push(`- ${s}: ${csv.totalValue > 0 ? ((v / csv.totalValue) * 100).toFixed(1) : "0.0"}% (${fmtW(v)})`);
+    const pct = pctOf(v);
+    lines.push(`${s} ${pct.toFixed(1)}%`);
+    lines.push(`  ${pctBar(pct)} ${fmtKrwShort(v)}`);
   }
   lines.push("");
 
-  lines.push("[추이(MDD)]");
+  /* ── 추이 ── 숫자를 먼저 놓고 면책은 notes로 내린다. */
+  lines.push(reportSection("추이"));
   const mdd = portfolioMDD(csv.perRow);
   if (mdd) {
-    lines.push(`전체기간 MDD: ${(mdd.mdd * 100).toFixed(1)}% (${mdd.peakDate} → ${mdd.troughDate}, ${mdd.recoveredDate ? "회복 완료" : "미회복"})`);
-    lines.push("※ 현재 보유 비중으로 과거 가격이력을 합성한 낙폭 — 실제 계좌 평가액 낙폭과는 다릅니다.");
+    lines.push(`전체기간 MDD ${changeMark(mdd.mdd)} ${signedPct(mdd.mdd * 100, 1)}`);
+    lines.push(`  ${mdd.peakDate} → ${mdd.troughDate}`);
+    lines.push(`  ${mdd.recoveredDate ? "회복 완료" : "미회복"}`);
+    notes.push("※ MDD는 현재 보유 비중으로 과거 가격이력을 합성한 낙폭 — 실제 계좌 평가액 낙폭과는 다릅니다.");
   } else {
     lines.push("가격 이력이 부족해 MDD를 계산할 수 없습니다.");
   }
@@ -3704,20 +3880,60 @@ function buildReportText(csv, history) {
     const first = sorted[0], last = sorted[sorted.length - 1];
     const diff = last.value - first.value;
     const pct = first.value > 0 ? (diff / first.value) * 100 : 0;
-    lines.push(`평가액 변동(${first.month}→${last.month}): ${diff >= 0 ? "+" : ""}${fmtW(diff)} (${pct.toFixed(1)}%, 스냅샷 단순비교)`);
+    lines.push(`평가액 ${first.month}→${last.month}`);
+    lines.push(`  ${changeMark(diff)} ${signedPct(pct, 1)} ${signedKrw(diff)}`);
+    notes.push("※ 평가액 변동은 월 스냅샷 단순비교입니다.");
   }
   lines.push("");
 
+  /* ── 상승·하락 TOP5 ── 같은 종목이 여러 계좌에 걸쳐 있으면 등락률이 같아 목록이 한 종목으로
+     도배된다(실측: TIGER 배당커버드콜액티브가 3개 계좌). 종목 단위로 합쳐서 순위를 매긴다. */
+  const bySymbol = new Map();
+  for (const p of csv.perRow) {
+    if (!(p.value > 0)) continue;
+    const chg = lastChangePct(p), amt = rowChangeAmount(p);
+    if (chg == null || amt == null) continue;
+    if (!bySymbol.has(p.symbol)) {
+      bySymbol.set(p.symbol, { name: (p.meta && p.meta.name) || p.symbol, chg, amount: 0, value: 0, accounts: 0 });
+    }
+    const e = bySymbol.get(p.symbol);
+    e.amount += amt; e.value += p.value; e.accounts += 1;
+  }
+  const ranked = [...bySymbol.values()].sort((a, b) => b.chg - a.chg);
+  const rankLine = (e) =>
+    `${changeMark(e.chg)}${signedPct(e.chg * 100, 1)} ${signedKrwShort(e.amount)} ${truncWidth(e.name, REPORT_NAME_WIDTH)}`;
+
+  const gainers = ranked.filter((e) => e.chg > 0).slice(0, 5);
+  const losers = ranked.filter((e) => e.chg < 0).slice(-5).reverse();
+  lines.push(reportSection("상승 TOP5"));
+  if (gainers.length) for (const e of gainers) lines.push(rankLine(e));
+  else lines.push("상승 종목이 없습니다.");
+  lines.push("");
+  lines.push(reportSection("하락 TOP5"));
+  if (losers.length) for (const e of losers) lines.push(rankLine(e));
+  else lines.push("하락 종목이 없습니다.");
+  if (ranked.length) notes.push(`※ 등락 기준: ${basis}. 주가 수집이 주 1회라 항상 "전일대비"는 아닙니다.`);
+  lines.push("");
+
   const top5 = csv.perRow.filter((p) => p.monthlyDiv > 0).sort((a, b) => b.monthlyDiv - a.monthlyDiv).slice(0, 5);
-  lines.push("[월배당 TOP5]");
+  lines.push(reportSection("월배당 TOP5"));
   if (top5.length) {
-    for (const p of top5) lines.push(`- ${(p.meta && p.meta.name) || p.symbol} (${maskAccountLabel(p.account || "계좌 미지정")}): ${fmtW(p.monthlyDiv)}/월`);
+    for (const p of top5) {
+      const name = truncWidth((p.meta && p.meta.name) || p.symbol, REPORT_NAME_WIDTH);
+      const acc = truncWidth(maskAccountLabel(p.account || "계좌 미지정"), REPORT_ACCOUNT_WIDTH);
+      lines.push(`${fmtKrwShort(p.monthlyDiv)}/월 ${name}`);
+      lines.push(`  ${acc}`);
+    }
   } else {
     lines.push("월배당 정보가 있는 종목이 없습니다.");
   }
   lines.push("");
+
+  for (const n of notes) lines.push(n);
   lines.push("— 14fiance에서 자동 생성됨. 매매 자문이 아닌 참고용 정보입니다.");
-  return lines.join("\n");
+
+  const text = lines.join("\n");
+  return text.length <= REPORT_MAX_CHARS ? text : text.slice(0, REPORT_MAX_CHARS - 12) + "\n…(생략)";
 }
 
 /* ---------- A28: AI 분석 탭(옵션) ----------
@@ -3750,7 +3966,8 @@ function buildAiAnalysisPrompt(reportText) {
 1) 계좌·성향 비중이 한쪽으로 쏠려 있는지
 2) MDD(최대낙폭)로 볼 때 분산이 잘 되고 있는지
 3) 배당 집중도(TOP5가 전체 월배당에서 차지하는 비중)가 과도한지
-4) 눈에 띄는 리스크나 점검해볼 만한 점
+4) 등락(상승·하락 TOP5)에서 특정 섹터·성향에 손실이 몰려 있는지
+5) 눈에 띄는 리스크나 점검해볼 만한 점
 
 ${reportText}`;
 }
