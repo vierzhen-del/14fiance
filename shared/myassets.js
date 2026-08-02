@@ -999,6 +999,79 @@ function divRecordNoteHTML(p) {
 
 const CHANGE_TYPE_LABEL = { added: "🆕 신규", removed: "🗑️ 삭제", "qty-changed": "🔁 수량변경" };
 
+/* ---------- A37: 계좌 반영 전/후 변동 리포트 ----------
+   changelog 항목은 화면 표에만 있어서, "이번 반영으로 뭐가 바뀌었나"를 남에게 보내거나
+   에이전트에게 넘기려면 사람이 다시 옮겨 적어야 했다. 이 함수는 그 한 건을 그대로
+   읽을 수 있는 텍스트로 만든다.
+
+   **편입/편출을 맨 위에 따로 뽑는다** — 수량 증감은 자동매수로 설명되지만, 내 자산에
+   새로 들어오거나 빠진 종목은 판단이 필요한 사건이고 3protv ETF 리포트와 대조할
+   대상이기도 하다(그쪽도 🆕신규편입/🚪편출로 같은 축을 쓴다).
+
+   계좌명은 목적지에 따라 가린다 — buildReportText와 같은 규칙(opts.mask===false면 원문). */
+function buildChangeReportText(entry, opts) {
+  if (!entry) return null;
+  const maskAcc = (opts && opts.mask === false) ? ((s) => s || "계좌 미지정") : ((s) => maskAccountLabel(s || "계좌 미지정"));
+  const fmtW = (v) => fmtPrice(v, "KRW");
+  const nameOf = (sym) => {
+    const m = state.metaBySymbol && state.metaBySymbol.get(sym);
+    return m && m.name ? `${m.name}(${sym})` : sym;
+  };
+  const L = [];
+  L.push("🔄 계좌 반영 변동 리포트");
+  L.push(`${entry.ts} · ${CHANGE_SOURCE_LABEL[entry.source] || entry.source}`);
+  L.push("");
+
+  const dv = entry.afterValue - entry.beforeValue;
+  L.push(`총 평가액 ${fmtW(entry.beforeValue)} → ${fmtW(entry.afterValue)}`);
+  L.push(`  ${dv >= 0 ? "+" : ""}${fmtW(dv)}${entry.beforeValue > 0 ? ` (${dv >= 0 ? "+" : ""}${((dv / entry.beforeValue) * 100).toFixed(1)}%)` : ""}`);
+  if (entry.beforeMdd != null && entry.afterMdd != null) {
+    L.push(`계좌 전체 MDD ${(entry.beforeMdd * 100).toFixed(1)}% → ${(entry.afterMdd * 100).toFixed(1)}%`);
+  }
+  L.push("");
+
+  const added = entry.changes.filter((c) => c.type === "added");
+  const removed = entry.changes.filter((c) => c.type === "removed");
+  const changed = entry.changes.filter((c) => c.type === "qty-changed");
+
+  if (added.length) {
+    L.push(`🆕 편입 ${added.length}건`);
+    for (const c of added) L.push(`· ${maskAcc(c.account)} ${nameOf(c.symbol)} ${c.newQty}주`);
+    L.push("");
+  }
+  if (removed.length) {
+    L.push(`🚪 편출 ${removed.length}건`);
+    for (const c of removed) L.push(`· ${maskAcc(c.account)} ${nameOf(c.symbol)} ${c.oldQty}주 → 0`);
+    L.push("");
+  }
+  if (changed.length) {
+    L.push(`🔁 수량변경 ${changed.length}건`);
+    for (const c of changed) {
+      const d = (c.newQty || 0) - (c.oldQty || 0);
+      L.push(`· ${maskAcc(c.account)} ${nameOf(c.symbol)} ${c.oldQty}→${c.newQty} (${d >= 0 ? "+" : ""}${d})`);
+    }
+    L.push("");
+  }
+
+  // 계좌별 전후 — 어느 계좌에서 벌어진 일인지 한눈에
+  const accs = new Set([...Object.keys(entry.beforeByAccount || {}), ...Object.keys(entry.afterByAccount || {})]);
+  const accRows = [...accs].map((a) => ({
+    a, b: (entry.beforeByAccount || {})[a] || 0, f: (entry.afterByAccount || {})[a] || 0,
+  })).filter((r) => Math.abs(r.f - r.b) > 0).sort((x, y) => Math.abs(y.f - y.b) - Math.abs(x.f - x.b));
+  if (accRows.length) {
+    L.push("🏦 계좌별 변동");
+    for (const r of accRows) {
+      const d = r.f - r.b;
+      L.push(`· ${maskAcc(r.a)} ${fmtW(r.b)} → ${fmtW(r.f)} (${d >= 0 ? "+" : ""}${fmtW(d)})`);
+    }
+    L.push("");
+  }
+
+  L.push("※ 편입·편출은 자동매수로 설명되지 않는 사건이라 매도이력 대장 확인이 필요합니다.");
+  L.push("※ 보유 ETF의 내부 구성변화는 3protv ETF 리포트(🆕신규편입/🚪편출)와 대조하세요.");
+  return L.join("\n");
+}
+
 /* A24b: 변동이력 가독성 — 종목변동 수십 건이 쉼표로 이어진 한 문단이라 읽기 어려웠다.
    ① 계좌별로 묶고 ② 종목코드에 등록 종목명을 붙이며 ③ 8건을 넘으면 나머지를 접는다. */
 const CHANGELOG_VISIBLE_ITEMS = 8;
@@ -3247,7 +3320,9 @@ async function renderMyAssets() {
           <option value="monthly">월별</option>
           <option value="yearly">연간</option>
         </select>
+        <button type="button" id="myChangelogReportBtn" class="btn-action">🔄 최근 변동 리포트</button>
         <button type="button" id="myChangelogClearBtn" class="btn-action">🗑️ 이력 지우기</button>
+        <span id="myChangelogStatus" class="action-status"></span>
       </div>
       <div id="myChangelogBody"></div>
     </div>
@@ -3717,6 +3792,30 @@ async function renderMyAssets() {
   };
   if (state.myChangelogGranularity) changelogSel.value = state.myChangelogGranularity;
   changelogSel.addEventListener("change", () => { state.myChangelogGranularity = changelogSel.value; renderChangelog(); });
+  /* A37: 최근 변동 1건을 리포트로 뽑아 목적지별로 내보낸다. 목적지 규칙은 종합 탭
+     "리포트 생성"과 동일 — 옵시디안만 계좌명 원문(폐쇄 저장소), 나머지는 마스킹. */
+  const changelogReportBtn = document.getElementById("myChangelogReportBtn");
+  if (changelogReportBtn) changelogReportBtn.addEventListener("click", async () => {
+    const log = loadAssetChangelog();
+    if (!log.length) { flashStatus("myChangelogStatus", "기록된 변동이 없습니다"); return; }
+    const entry = log[0];
+    const masked = buildChangeReportText(entry, { mask: true });
+    const results = [];
+    const ok = await copyTextToClipboard(masked);
+    results.push(ok ? "클립보드 복사됨(계좌명 마스킹)" : "클립보드 실패");
+    if (typeof window.exportReportNote === "function") {
+      // 볼트는 기기 안 폐쇄 저장소라 원문으로 남긴다(A34와 같은 근거).
+      const raw = buildChangeReportText(entry, { mask: false });
+      const done = await window.exportReportNote(raw);
+      results.push(done ? "옵시디안 저장됨(원문)" : "옵시디안 저장 실패");
+    }
+    if (telegramBotToken() && telegramChatId()) {
+      const tg = masked.length > 4000 ? masked.slice(0, 3900) + "\n…(길이 제한으로 생략)" : masked;
+      const r = await sendTelegramMessage(tg);
+      results.push(r.ok ? "텔레그램 전송됨" : `텔레그램 실패: ${r.error}`);
+    }
+    flashStatus("myChangelogStatus", results.join(" · "));
+  });
   document.getElementById("myChangelogClearBtn").addEventListener("click", () => {
     localStorage.removeItem(MY_ASSETS_CHANGELOG_KEY);
     renderChangelog();
