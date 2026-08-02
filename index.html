@@ -3853,16 +3853,24 @@ const REPORT_NAME_WIDTH_WIDE = 28;
 /* ---------- A28: 종합 탭 "리포트 생성" (A31에서 가독성·등락 보강) ----------
    종합(계좌별 요약)·비중(성향별)·추이(MDD)·등락(상승·하락 TOP5)·배당(TOP5) 정보를 한 텍스트로
    모아 다운로드·클립보드·텔레그램·옵시디안, 그리고 buildAiAnalysisPrompt(LLM 입력)에 공통으로
-   쓴다. 계좌명은 maskAccountLabel로 가린다 — 텔레그램·클립보드로 이 텍스트가 그대로 밖에 나갈
-   수 있는 경로이기 때문(A26a와 같은 이유).
+   쓴다. 계좌명은 기본적으로 maskAccountLabel로 가린다 — 텔레그램·클립보드로 이 텍스트가 그대로
+   밖에 나갈 수 있는 경로이기 때문(A26a와 같은 이유).
+
+   A34: 다만 **옵시디안 목적지는 예외**다. 옵시디안 볼트는 기기 안(폐쇄망)에만 있고 노션·텔레그램처럼
+   밖으로 나가지 않으므로, 마스킹된 계좌명으로 저장하면 나중에 어느 계좌인지 대조가 안 돼 백업의
+   목적을 잃는다. opts.mask === false 로 부르면 원문 계좌명을 그대로 쓴다.
+   ⚠️ 이 옵션은 **로컬 저장 경로에만** 쓸 것 — 텔레그램·클립보드·다운로드는 반드시 기본값(마스킹)을
+   유지한다(클립보드는 다른 앱이 읽을 수 있고, 다운로드 파일은 공유될 수 있다).
 
    A31 레이아웃 원칙(모바일 텔레그램 실측 기준):
    ① 값과 라벨이 줄바꿈으로 찢어지지 않게 한 줄을 30컬럼 안쪽으로 유지하고, 넘칠 것은
       "라벨 줄 + 들여쓴 값 줄"로 미리 쪼갠다(종전에는 계좌 9줄 중 4줄이 제멋대로 접혔다).
    ② 면책·기준 설명은 본문에서 빼 notes로 모아 맨 아래 각주로 붙인다 — 숫자보다 문장이
       커 보이던 문제(MDD 2줄 면책)를 없앤다. */
-async function buildReportText(csv, history) {
+async function buildReportText(csv, history, opts) {
   if (!csv || !csv.perRow || !csv.perRow.length) return null;
+  // A34: 목적지별 계좌명 마스킹 분기. 기본은 마스킹(밖으로 나가는 경로), 옵시디안만 원문.
+  const maskAcc = (opts && opts.mask === false) ? ((s) => s || "") : maskAccountLabel;
   const fmtW = (v) => fmtPrice(v, "KRW");
   const lines = [];
   const notes = [];
@@ -3915,7 +3923,7 @@ async function buildReportText(csv, history) {
 
   lines.push(reportSection("계좌별"));
   for (const a of majors) {
-    lines.push(`${maskAccountLabel(a.acc)} ${a.pct.toFixed(1)}%`);
+    lines.push(`${maskAcc(a.acc)} ${a.pct.toFixed(1)}%`);
     lines.push(`  ${pctBar(a.pct)}`);
     const bits = [fmtKrwShort(a.g.value)];
     if (a.g.monthlyDiv > 0) bits.push(`월 ${fmtKrwShort(a.g.monthlyDiv)}`);
@@ -4017,7 +4025,7 @@ async function buildReportText(csv, history) {
   if (top5.length) {
     for (const p of top5) {
       const name = truncWidth((p.meta && p.meta.name) || p.symbol, REPORT_NAME_WIDTH_WIDE);
-      const acc = truncWidth(maskAccountLabel(p.account || "계좌 미지정"), REPORT_ACCOUNT_WIDTH);
+      const acc = truncWidth(maskAcc(p.account || "계좌 미지정"), REPORT_ACCOUNT_WIDTH);
       lines.push(`${fmtKrwShort(p.monthlyDiv)}/월`);
       lines.push(`  ${name}`);
       lines.push(`  ${acc}`);
@@ -5516,8 +5524,11 @@ async function renderMyAssets() {
         results.push(ok ? "클립보드 복사됨" : "클립보드 복사 실패");
       }
       if (dests.includes("obsidian")) {
+        // A34: 옵시디안은 기기 안 폐쇄 저장소라 마스킹하지 않은 원문으로 다시 만든다.
+        // (웹 폴백은 클립보드로 가므로 마스킹된 text를 그대로 쓴다 — 밖으로 나갈 수 있는 경로)
         if (typeof window.exportReportNote === "function") {
-          const ok = await window.exportReportNote(text);
+          const rawText = await buildReportText(csv, history, { mask: false });
+          const ok = await window.exportReportNote(rawText || text);
           results.push(ok ? "옵시디안 저장됨" : "옵시디안 저장 실패(볼트 경로 확인)");
         } else {
           const ok = await copyTextToClipboard(text);
