@@ -34,6 +34,17 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
+
+        <!-- A32f: 평일 장마감 자동 리포트 — 재부팅으로 AlarmManager 알람이 초기화되면
+             다시 걸어준다. BOOT_COMPLETED는 시스템만 보낼 수 있는 보호된 브로드캐스트라
+             exported=true로 열어도 안전하다(Android 12+는 이 속성 명시가 필수). -->
+        <receiver
+            android:name=".BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
     </application>
 
     <!-- Permissions -->
@@ -43,4 +54,6 @@
          낮은 버전 기기에서 필요하며, maxSdkVersion 지정은 @capacitor/filesystem 권장 방식(deprecated 경고 억제). -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <!-- A32f: 재부팅 후 자동 리포트 알람 재등록용. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 </manifest>

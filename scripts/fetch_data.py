@@ -382,9 +382,27 @@ def fetch_dividend_summary_kr(symbol: str) -> dict | None:
     count_this_year = div.get("dividendCountThisYear")
     month_this_year = div.get("dividendMonthThisYear")
     if count_this_year is not None:
-        out["dividendCountThisYear"] = int(count_this_year)
+        try:
+            out["dividendCountThisYear"] = int(count_this_year)
+        except (TypeError, ValueError):
+            pass
+    # ⚠️ 네이버는 분기·반기 배당 종목에서 이 값을 "1,4,7"처럼 **쉼표로 이어붙인 목록**으로 준다
+    # (069500 KODEX 200 실측, 2026-08-02). 단일 숫자를 가정하고 int()를 걸었더니 ValueError로
+    # 수집 전체가 죽어 2026-08-01 이후 15회 연속 실패했다 — 국내 종목 루프 첫 종목에서 터져
+    # 그 뒤 종목은 아예 수집되지 않았고, 신규 등재 종목도 계속 "수집 목록에 없음"으로 남았다.
+    # 목록이면 전부 보존하고(dividendMonthsThisYear), 표시용 "최근 배당월"은 최댓값을 쓴다.
     if month_this_year is not None:
-        out["dividendMonthThisYear"] = int(month_this_year)
+        months = [m.strip() for m in str(month_this_year).split(",") if m.strip()]
+        parsed = []
+        for m in months:
+            try:
+                parsed.append(int(m))
+            except ValueError:
+                continue
+        if parsed:
+            out["dividendMonthThisYear"] = max(parsed)
+            if len(parsed) > 1:
+                out["dividendMonthsThisYear"] = parsed
     return out
 
 

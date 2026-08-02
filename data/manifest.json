@@ -1,5 +1,5 @@
 {
- "updated": "2026-08-01 05:02 UTC",
+ "updated": "2026-08-02 21:33 UTC",
  "us": [
   {
    "symbol": "SPY",
@@ -560,6 +560,118 @@
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
+  },
+  {
+   "symbol": "SNDK",
+   "name": "SNDK (샌디스크)",
+   "category": "개별주(비ETF)",
+   "region": "미국",
+   "style": "개별주",
+   "assetType": "stock",
+   "currency": "USD",
+   "first": "2025-02-13",
+   "last": "2026-07-31",
+   "count": 367,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
+  },
+  {
+   "symbol": "SKHY",
+   "name": "SKHY (SK하이닉스 ADR)",
+   "category": "개별주(비ETF)",
+   "region": "미국",
+   "style": "개별주",
+   "assetType": "stock",
+   "currency": "USD",
+   "first": "2026-07-10",
+   "last": "2026-07-31",
+   "count": 16,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
+  },
+  {
+   "symbol": "INTC",
+   "name": "INTC (인텔)",
+   "category": "개별주(비ETF)",
+   "region": "미국",
+   "style": "개별주",
+   "assetType": "stock",
+   "currency": "USD",
+   "first": "2006-09-14",
+   "last": "2026-07-31",
+   "count": 5000,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
+  },
+  {
+   "symbol": "MU",
+   "name": "MU (마이크론)",
+   "category": "개별주(비ETF)",
+   "region": "미국",
+   "style": "개별주",
+   "assetType": "stock",
+   "currency": "USD",
+   "first": "2006-09-14",
+   "last": "2026-07-31",
+   "count": 5000,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
+  },
+  {
+   "symbol": "AMD",
+   "name": "AMD (AMD)",
+   "category": "개별주(비ETF)",
+   "region": "미국",
+   "style": "개별주",
+   "assetType": "stock",
+   "currency": "USD",
+   "first": "2006-09-14",
+   "last": "2026-07-31",
+   "count": 5000,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
+  },
+  {
+   "symbol": "SMCI",
+   "name": "SMCI (슈퍼마이크로컴퓨터)",
+   "category": "개별주(비ETF)",
+   "region": "미국",
+   "style": "개별주",
+   "assetType": "stock",
+   "currency": "USD",
+   "first": "2007-03-29",
+   "last": "2026-07-31",
+   "count": 4866,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
+  },
+  {
+   "symbol": "DISK",
+   "name": "DISK (TEMA MEMORY)",
+   "category": "메모리 배당",
+   "region": "미국",
+   "style": "성장",
+   "assetType": "etf",
+   "currency": "USD",
+   "first": "2026-07-01",
+   "last": "2026-07-31",
+   "count": 22,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
+  },
+  {
+   "symbol": "NOK",
+   "name": "NOK (노키아 ADR)",
+   "category": "개별주(비ETF)",
+   "region": "미국",
+   "style": "개별주",
+   "assetType": "stock",
+   "currency": "USD",
+   "first": "2006-09-14",
+   "last": "2026-07-31",
+   "count": 5000,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
   }
  ],
  "kr": [
@@ -575,7 +687,9 @@
    "last": "2026-07-31",
    "count": 5874,
    "ttmDividend": 849.0,
-   "dividendYield": 0.0097
+   "dividendYield": 0.0097,
+   "dividendCountThisYear": 3,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "102110.KS",
@@ -589,7 +703,9 @@
    "last": "2026-07-31",
    "count": 4519,
    "ttmDividend": 928.0,
-   "dividendYield": 0.0106
+   "dividendYield": 0.0106,
+   "dividendCountThisYear": 3,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "229200.KS",
@@ -603,7 +719,9 @@
    "last": "2026-07-31",
    "count": 2657,
    "ttmDividend": 28.0,
-   "dividendYield": 0.0026
+   "dividendYield": 0.0026,
+   "dividendCountThisYear": 1,
+   "dividendMonthThisYear": 4
   },
   {
    "symbol": "360750.KS",
@@ -617,7 +735,9 @@
    "last": "2026-07-31",
    "count": 1465,
    "ttmDividend": 253.0,
-   "dividendYield": 0.0097
+   "dividendYield": 0.0097,
+   "dividendCountThisYear": 3,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "133690.KS",
@@ -631,7 +751,9 @@
    "last": "2026-07-31",
    "count": 3884,
    "ttmDividend": 937.0,
-   "dividendYield": 0.0054
+   "dividendYield": 0.0054,
+   "dividendCountThisYear": 3,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "379800.KS",
@@ -645,7 +767,9 @@
    "last": "2026-07-31",
    "count": 1301,
    "ttmDividend": 479.0,
-   "dividendYield": 0.0202
+   "dividendYield": 0.0202,
+   "dividendCountThisYear": 3,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "379810.KS",
@@ -659,7 +783,9 @@
    "last": "2026-07-31",
    "count": 1301,
    "ttmDividend": 282.0,
-   "dividendYield": 0.0109
+   "dividendYield": 0.0109,
+   "dividendCountThisYear": 3,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "458730.KS",
@@ -673,7 +799,9 @@
    "last": "2026-07-31",
    "count": 759,
    "ttmDividend": 438.0,
-   "dividendYield": 0.0285
+   "dividendYield": 0.0285,
+   "dividendCountThisYear": 7,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "381180.KS",
@@ -687,7 +815,9 @@
    "last": "2026-07-31",
    "count": 1301,
    "ttmDividend": 169.0,
-   "dividendYield": 0.0043
+   "dividendYield": 0.0043,
+   "dividendCountThisYear": 3,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "390390.KS",
@@ -701,7 +831,9 @@
    "last": "2026-07-31",
    "count": 1245,
    "ttmDividend": 226.0,
-   "dividendYield": 0.0046
+   "dividendYield": 0.0046,
+   "dividendCountThisYear": 3,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "472150.KS",
@@ -715,7 +847,9 @@
    "last": "2026-07-31",
    "count": 640,
    "ttmDividend": 4202.0,
-   "dividendYield": 0.2524
+   "dividendYield": 0.2524,
+   "dividendCountThisYear": 7,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "0167B0.KS",
@@ -729,7 +863,9 @@
    "last": "2026-07-31",
    "count": 94,
    "ttmDividend": 840.0,
-   "dividendYield": 0.0866
+   "dividendYield": 0.0866,
+   "dividendCountThisYear": 4,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "498400.KS",
@@ -743,7 +879,9 @@
    "last": "2026-07-31",
    "count": 403,
    "ttmDividend": 2880.0,
-   "dividendYield": 0.17
+   "dividendYield": 0.17,
+   "dividendCountThisYear": 7,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "0219E0.KS",
@@ -757,7 +895,9 @@
    "last": "2026-07-31",
    "count": 13,
    "ttmDividend": 153.0,
-   "dividendYield": 0.0222
+   "dividendYield": 0.0222,
+   "dividendCountThisYear": 1,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "0177R0.KS",
@@ -771,7 +911,9 @@
    "last": "2026-07-31",
    "count": 69,
    "ttmDividend": 590.0,
-   "dividendYield": 0.0702
+   "dividendYield": 0.0702,
+   "dividendCountThisYear": 3,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "480040.KS",
@@ -785,7 +927,9 @@
    "last": "2026-07-31",
    "count": 552,
    "ttmDividend": 2832.0,
-   "dividendYield": 0.196
+   "dividendYield": 0.196,
+   "dividendCountThisYear": 7,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "441640.KS",
@@ -799,7 +943,9 @@
    "last": "2026-07-31",
    "count": 939,
    "ttmDividend": 1170.0,
-   "dividendYield": 0.0922
+   "dividendYield": 0.0922,
+   "dividendCountThisYear": 7,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "490590.KS",
@@ -813,7 +959,9 @@
    "last": "2026-07-31",
    "count": 445,
    "ttmDividend": 2822.0,
-   "dividendYield": 0.2222
+   "dividendYield": 0.2222,
+   "dividendCountThisYear": 7,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "0198A0.KS",
@@ -827,7 +975,9 @@
    "last": "2026-07-31",
    "count": 23,
    "ttmDividend": 175.0,
-   "dividendYield": 0.0251
+   "dividendYield": 0.0251,
+   "dividendCountThisYear": 1,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "402970.KS",
@@ -841,7 +991,9 @@
    "last": "2026-07-31",
    "count": 1170,
    "ttmDividend": 445.0,
-   "dividendYield": 0.0284
+   "dividendYield": 0.0284,
+   "dividendCountThisYear": 7,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "284430.KS",
@@ -855,7 +1007,9 @@
    "last": "2026-07-31",
    "count": 2125,
    "ttmDividend": 363.0,
-   "dividendYield": 0.0191
+   "dividendYield": 0.0191,
+   "dividendCountThisYear": 7,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "0183V0.KS",
@@ -869,7 +1023,9 @@
    "last": "2026-07-31",
    "count": 69,
    "ttmDividend": 471.0,
-   "dividendYield": 0.0457
+   "dividendYield": 0.0457,
+   "dividendCountThisYear": 3,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "329200.KS",
@@ -883,7 +1039,9 @@
    "last": "2026-07-31",
    "count": 1726,
    "ttmDividend": 396.0,
-   "dividendYield": 0.0986
+   "dividendYield": 0.0986,
+   "dividendCountThisYear": 7,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "0167A0.KS",
@@ -897,7 +1055,8 @@
    "last": "2026-07-31",
    "count": 94,
    "ttmDividend": 0.0,
-   "dividendYield": 0.0
+   "dividendYield": 0.0,
+   "dividendCountThisYear": 0
   },
   {
    "symbol": "0177X0.KS",
@@ -911,7 +1070,8 @@
    "last": "2026-07-31",
    "count": 79,
    "ttmDividend": 0.0,
-   "dividendYield": 0.0
+   "dividendYield": 0.0,
+   "dividendCountThisYear": 0
   },
   {
    "symbol": "0210A0.KS",
@@ -925,7 +1085,8 @@
    "last": "2026-07-31",
    "count": 28,
    "ttmDividend": 0.0,
-   "dividendYield": 0.0
+   "dividendYield": 0.0,
+   "dividendCountThisYear": 0
   },
   {
    "symbol": "426030.KS",
@@ -939,7 +1100,8 @@
    "last": "2026-07-31",
    "count": 1033,
    "ttmDividend": 30.0,
-   "dividendYield": 0.0007
+   "dividendYield": 0.0007,
+   "dividendCountThisYear": 0
   },
   {
    "symbol": "0137V0.KS",
@@ -953,7 +1115,9 @@
    "last": "2026-07-31",
    "count": 157,
    "ttmDividend": 49.0,
-   "dividendYield": 0.0045
+   "dividendYield": 0.0045,
+   "dividendCountThisYear": 3,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "0023A0.KS",
@@ -967,7 +1131,9 @@
    "last": "2026-07-31",
    "count": 341,
    "ttmDividend": 25.0,
-   "dividendYield": 0.0011
+   "dividendYield": 0.0011,
+   "dividendCountThisYear": 1,
+   "dividendMonthThisYear": 4
   },
   {
    "symbol": "442580.KS",
@@ -981,7 +1147,9 @@
    "last": "2026-07-31",
    "count": 942,
    "ttmDividend": 100.0,
-   "dividendYield": 0.0012
+   "dividendYield": 0.0012,
+   "dividendCountThisYear": 1,
+   "dividendMonthThisYear": 4
   },
   {
    "symbol": "0180V0.KS",
@@ -995,7 +1163,8 @@
    "last": "2026-07-31",
    "count": 74,
    "ttmDividend": 0.0,
-   "dividendYield": 0.0
+   "dividendYield": 0.0,
+   "dividendCountThisYear": 0
   },
   {
    "symbol": "0207Z0.KS",
@@ -1009,7 +1178,23 @@
    "last": "2026-07-31",
    "count": 33,
    "ttmDividend": 0.0,
-   "dividendYield": 0.0
+   "dividendYield": 0.0,
+   "dividendCountThisYear": 0
+  },
+  {
+   "symbol": "0223R0.KS",
+   "name": "TIGER 미국테크NYSE100액티브",
+   "category": "미국·글로벌 테마 액티브(국내상장)",
+   "region": "미국",
+   "style": "성장",
+   "assetType": "etf",
+   "currency": "KRW",
+   "first": "2026-07-21",
+   "last": "2026-07-31",
+   "count": 9,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0,
+   "dividendCountThisYear": 0
   },
   {
    "symbol": "442570.KS",
@@ -1023,7 +1208,9 @@
    "last": "2026-07-31",
    "count": 942,
    "ttmDividend": 161.0,
-   "dividendYield": 0.0095
+   "dividendYield": 0.0095,
+   "dividendCountThisYear": 1,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "0025N0.KS",
@@ -1037,7 +1224,8 @@
    "last": "2026-07-31",
    "count": 331,
    "ttmDividend": 140.0,
-   "dividendYield": 0.0117
+   "dividendYield": 0.0117,
+   "dividendCountThisYear": 0
   },
   {
    "symbol": "0173Y0.KS",
@@ -1051,7 +1239,9 @@
    "last": "2026-07-31",
    "count": 84,
    "ttmDividend": 5.0,
-   "dividendYield": 0.0006
+   "dividendYield": 0.0006,
+   "dividendCountThisYear": 1,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "0038A0.KS",
@@ -1065,7 +1255,24 @@
    "last": "2026-07-31",
    "count": 316,
    "ttmDividend": 51.0,
-   "dividendYield": 0.0036
+   "dividendYield": 0.0036,
+   "dividendCountThisYear": 3,
+   "dividendMonthThisYear": 7
+  },
+  {
+   "symbol": "465580.KS",
+   "name": "ACE 미국빅테크TOP7 Plus",
+   "category": "미국 테마",
+   "region": "미국",
+   "style": "성장",
+   "assetType": "etf",
+   "currency": "KRW",
+   "first": "2023-09-12",
+   "last": "2026-07-31",
+   "count": 700,
+   "ttmDividend": 54.0,
+   "dividendYield": 0.0023,
+   "dividendCountThisYear": 0
   },
   {
    "symbol": "0104H0.KS",
@@ -1079,7 +1286,8 @@
    "last": "2026-07-31",
    "count": 202,
    "ttmDividend": 33.0,
-   "dividendYield": 0.0029
+   "dividendYield": 0.0029,
+   "dividendCountThisYear": 0
   },
   {
    "symbol": "0019K0.KS",
@@ -1093,7 +1301,8 @@
    "last": "2026-07-31",
    "count": 331,
    "ttmDividend": 21.0,
-   "dividendYield": 0.0017
+   "dividendYield": 0.0017,
+   "dividendCountThisYear": 0
   },
   {
    "symbol": "0144L0.KS",
@@ -1107,7 +1316,9 @@
    "last": "2026-07-31",
    "count": 147,
    "ttmDividend": 695.0,
-   "dividendYield": 0.0739
+   "dividendYield": 0.0739,
+   "dividendCountThisYear": 7,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "459560.KS",
@@ -1121,7 +1332,9 @@
    "last": "2026-07-31",
    "count": 767,
    "ttmDividend": 142.0,
-   "dividendYield": 0.0069
+   "dividendYield": 0.0069,
+   "dividendCountThisYear": 3,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "483340.KS",
@@ -1135,7 +1348,8 @@
    "last": "2026-07-31",
    "count": 521,
    "ttmDividend": 79.0,
-   "dividendYield": 0.0039
+   "dividendYield": 0.0039,
+   "dividendCountThisYear": 0
   },
   {
    "symbol": "0137W0.KS",
@@ -1149,7 +1363,9 @@
    "last": "2026-07-31",
    "count": 157,
    "ttmDividend": 51.0,
-   "dividendYield": 0.005
+   "dividendYield": 0.005,
+   "dividendCountThisYear": 3,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "494340.KS",
@@ -1163,7 +1379,8 @@
    "last": "2026-07-31",
    "count": 433,
    "ttmDividend": 26.0,
-   "dividendYield": 0.0015
+   "dividendYield": 0.0015,
+   "dividendCountThisYear": 0
   },
   {
    "symbol": "0190M0.KS",
@@ -1177,7 +1394,8 @@
    "last": "2026-07-31",
    "count": 56,
    "ttmDividend": 0.0,
-   "dividendYield": 0.0
+   "dividendYield": 0.0,
+   "dividendCountThisYear": 0
   },
   {
    "symbol": "005930.KS",
@@ -1219,7 +1437,8 @@
    "last": "2026-07-31",
    "count": 46,
    "ttmDividend": 0.0,
-   "dividendYield": 0.0
+   "dividendYield": 0.0,
+   "dividendCountThisYear": 0
   },
   {
    "symbol": "0193T0.KS",
@@ -1233,7 +1452,8 @@
    "last": "2026-07-31",
    "count": 46,
    "ttmDividend": 0.0,
-   "dividendYield": 0.0
+   "dividendYield": 0.0,
+   "dividendCountThisYear": 0
   },
   {
    "symbol": "0194R0.KS",
@@ -1247,7 +1467,9 @@
    "last": "2026-07-31",
    "count": 46,
    "ttmDividend": 16.0,
-   "dividendYield": 0.0028
+   "dividendYield": 0.0028,
+   "dividendCountThisYear": 1,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "451060.KS",
@@ -1261,7 +1483,9 @@
    "last": "2026-07-31",
    "count": 854,
    "ttmDividend": 425.0,
-   "dividendYield": 0.0152
+   "dividendYield": 0.0152,
+   "dividendCountThisYear": 3,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "411060.KS",
@@ -1275,7 +1499,8 @@
    "last": "2026-07-31",
    "count": 1131,
    "ttmDividend": 1.0,
-   "dividendYield": 0.0
+   "dividendYield": 0.0,
+   "dividendCountThisYear": 0
   },
   {
    "symbol": "438080.KS",
@@ -1289,7 +1514,23 @@
    "last": "2026-07-31",
    "count": 959,
    "ttmDividend": 334.0,
-   "dividendYield": 0.0234
+   "dividendYield": 0.0234,
+   "dividendCountThisYear": 0
+  },
+  {
+   "symbol": "0218J0.KS",
+   "name": "RISE 미국우주&로봇TOP2미국채혼합50",
+   "category": "채권혼합",
+   "region": "미국",
+   "style": "안전",
+   "assetType": "etf",
+   "currency": "KRW",
+   "first": "2026-07-14",
+   "last": "2026-07-31",
+   "count": 13,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0,
+   "dividendCountThisYear": 0
   },
   {
    "symbol": "486290.KS",
@@ -1303,7 +1544,9 @@
    "last": "2026-07-31",
    "count": 511,
    "ttmDividend": 1631.0,
-   "dividendYield": 0.1586
+   "dividendYield": 0.1586,
+   "dividendCountThisYear": 7,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "0199C0.KS",
@@ -1317,7 +1560,9 @@
    "last": "2026-07-31",
    "count": 42,
    "ttmDividend": 343.0,
-   "dividendYield": 0.0388
+   "dividendYield": 0.0388,
+   "dividendCountThisYear": 2,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "0046A0.KS",
@@ -1331,7 +1576,9 @@
    "last": "2026-07-31",
    "count": 306,
    "ttmDividend": 350.0,
-   "dividendYield": 0.0352
+   "dividendYield": 0.0352,
+   "dividendCountThisYear": 7,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "0049M0.KS",
@@ -1345,7 +1592,9 @@
    "last": "2026-07-31",
    "count": 299,
    "ttmDividend": 829.0,
-   "dividendYield": 0.0742
+   "dividendYield": 0.0742,
+   "dividendCountThisYear": 7,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "0162Z0.KS",
@@ -1359,7 +1608,9 @@
    "last": "2026-07-31",
    "count": 106,
    "ttmDividend": 37.0,
-   "dividendYield": 0.0032
+   "dividendYield": 0.0032,
+   "dividendCountThisYear": 2,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "0167Z0.KS",
@@ -1373,7 +1624,9 @@
    "last": "2026-07-31",
    "count": 94,
    "ttmDividend": 8.0,
-   "dividendYield": 0.0012
+   "dividendYield": 0.0012,
+   "dividendCountThisYear": 1,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "498410.KS",
@@ -1387,7 +1640,9 @@
    "last": "2026-07-31",
    "count": 393,
    "ttmDividend": 1892.0,
-   "dividendYield": 0.1629
+   "dividendYield": 0.1629,
+   "dividendCountThisYear": 7,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "481060.KS",
@@ -1401,7 +1656,9 @@
    "last": "2026-07-31",
    "count": 547,
    "ttmDividend": 990.0,
-   "dividendYield": 0.1331
+   "dividendYield": 0.1331,
+   "dividendCountThisYear": 7,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "0000D0.KS",
@@ -1415,7 +1672,9 @@
    "last": "2026-07-31",
    "count": 393,
    "ttmDividend": 1210.0,
-   "dividendYield": 0.1327
+   "dividendYield": 0.1327,
+   "dividendCountThisYear": 7,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "0103T0.KS",
@@ -1429,7 +1688,9 @@
    "last": "2026-07-31",
    "count": 202,
    "ttmDividend": 86.0,
-   "dividendYield": 0.0113
+   "dividendYield": 0.0113,
+   "dividendCountThisYear": 2,
+   "dividendMonthThisYear": 4
   },
   {
    "symbol": "412560.KS",
@@ -1443,7 +1704,8 @@
    "last": "2026-07-31",
    "count": 1131,
    "ttmDividend": 9.0,
-   "dividendYield": 0.0059
+   "dividendYield": 0.0059,
+   "dividendCountThisYear": 0
   },
   {
    "symbol": "315270.KS",
@@ -1457,7 +1719,9 @@
    "last": "2026-07-31",
    "count": 1852,
    "ttmDividend": 310.0,
-   "dividendYield": 0.0162
+   "dividendYield": 0.0162,
+   "dividendCountThisYear": 2,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "0105D0.KS",
@@ -1471,7 +1735,9 @@
    "last": "2026-07-31",
    "count": 207,
    "ttmDividend": 59.0,
-   "dividendYield": 0.0069
+   "dividendYield": 0.0069,
+   "dividendCountThisYear": 1,
+   "dividendMonthThisYear": 4
   },
   {
    "symbol": "157490.KS",
@@ -1485,7 +1751,9 @@
    "last": "2026-07-31",
    "count": 3490,
    "ttmDividend": 62.0,
-   "dividendYield": 0.0078
+   "dividendYield": 0.0078,
+   "dividendCountThisYear": 1,
+   "dividendMonthThisYear": 4
   },
   {
    "symbol": "266360.KS",
@@ -1499,7 +1767,9 @@
    "last": "2026-07-31",
    "count": 2290,
    "ttmDividend": 32.0,
-   "dividendYield": 0.0033
+   "dividendYield": 0.0033,
+   "dividendCountThisYear": 1,
+   "dividendMonthThisYear": 4
   },
   {
    "symbol": "117700.KS",
@@ -1513,7 +1783,9 @@
    "last": "2026-07-31",
    "count": 4124,
    "ttmDividend": 34.0,
-   "dividendYield": 0.0067
+   "dividendYield": 0.0067,
+   "dividendCountThisYear": 2,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "427120.KS",
@@ -1527,7 +1799,9 @@
    "last": "2026-07-31",
    "count": 1029,
    "ttmDividend": 105.0,
-   "dividendYield": 0.0231
+   "dividendYield": 0.0231,
+   "dividendCountThisYear": 1,
+   "dividendMonthThisYear": 4
   },
   {
    "symbol": "365000.KS",
@@ -1541,7 +1815,9 @@
    "last": "2026-07-31",
    "count": 1426,
    "ttmDividend": 25.0,
-   "dividendYield": 0.0075
+   "dividendYield": 0.0075,
+   "dividendCountThisYear": 1,
+   "dividendMonthThisYear": 4
   },
   {
    "symbol": "496770.KS",
@@ -1555,7 +1831,9 @@
    "last": "2026-07-31",
    "count": 418,
    "ttmDividend": 180.0,
-   "dividendYield": 0.0098
+   "dividendYield": 0.0098,
+   "dividendCountThisYear": 1,
+   "dividendMonthThisYear": 4
   },
   {
    "symbol": "475300.KS",
@@ -1569,7 +1847,9 @@
    "last": "2026-07-31",
    "count": 599,
    "ttmDividend": 40.0,
-   "dividendYield": 0.0028
+   "dividendYield": 0.0028,
+   "dividendCountThisYear": 1,
+   "dividendMonthThisYear": 4
   },
   {
    "symbol": "476260.KS",
@@ -1583,7 +1863,8 @@
    "last": "2026-07-31",
    "count": 590,
    "ttmDividend": 0.0,
-   "dividendYield": 0.0
+   "dividendYield": 0.0,
+   "dividendCountThisYear": 0
   },
   {
    "symbol": "0220B0.KS",
@@ -1597,7 +1878,8 @@
    "last": "2026-07-31",
    "count": 13,
    "ttmDividend": 0.0,
-   "dividendYield": 0.0
+   "dividendYield": 0.0,
+   "dividendCountThisYear": 0
   },
   {
    "symbol": "455850.KS",
@@ -1611,7 +1893,9 @@
    "last": "2026-07-31",
    "count": 795,
    "ttmDividend": 12.0,
-   "dividendYield": 0.0007
+   "dividendYield": 0.0007,
+   "dividendCountThisYear": 1,
+   "dividendMonthThisYear": 4
   },
   {
    "symbol": "471990.KS",
@@ -1625,7 +1909,9 @@
    "last": "2026-07-31",
    "count": 655,
    "ttmDividend": 29.0,
-   "dividendYield": 0.0019
+   "dividendYield": 0.0019,
+   "dividendCountThisYear": 2,
+   "dividendMonthThisYear": 7
   },
   {
    "symbol": "0191B0.KS",
@@ -1639,7 +1925,8 @@
    "last": "2026-07-31",
    "count": 51,
    "ttmDividend": 0.0,
-   "dividendYield": 0.0
+   "dividendYield": 0.0,
+   "dividendCountThisYear": 0
   },
   {
    "symbol": "0100K0.KS",
@@ -1653,7 +1940,8 @@
    "last": "2026-07-31",
    "count": 212,
    "ttmDividend": 0.0,
-   "dividendYield": 0.0
+   "dividendYield": 0.0,
+   "dividendCountThisYear": 0
   },
   {
    "symbol": "494310.KS",
@@ -1667,7 +1955,8 @@
    "last": "2026-07-31",
    "count": 433,
    "ttmDividend": 0.0,
-   "dividendYield": 0.0
+   "dividendYield": 0.0,
+   "dividendCountThisYear": 0
   },
   {
    "symbol": "488080.KS",
@@ -1681,7 +1970,8 @@
    "last": "2026-07-31",
    "count": 491,
    "ttmDividend": 6.0,
-   "dividendYield": 0.0003
+   "dividendYield": 0.0003,
+   "dividendCountThisYear": 0
   },
   {
    "symbol": "0204S0.KS",
@@ -1695,7 +1985,129 @@
    "last": "2026-07-31",
    "count": 42,
    "ttmDividend": 0.0,
+   "dividendYield": 0.0,
+   "dividendCountThisYear": 0
+  },
+  {
+   "symbol": "009150.KS",
+   "name": "삼성전기",
+   "category": "개별주(비ETF)",
+   "region": "한국",
+   "style": "개별주",
+   "assetType": "stock",
+   "currency": "KRW",
+   "first": "1990-01-03",
+   "last": "2026-07-31",
+   "count": 9439,
+   "ttmDividend": 0.0,
    "dividendYield": 0.0
+  },
+  {
+   "symbol": "402340.KS",
+   "name": "SK스퀘어",
+   "category": "개별주(비ETF)",
+   "region": "한국",
+   "style": "개별주",
+   "assetType": "stock",
+   "currency": "KRW",
+   "first": "2021-11-29",
+   "last": "2026-07-31",
+   "count": 1143,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
+  },
+  {
+   "symbol": "028260.KS",
+   "name": "삼성물산",
+   "category": "개별주(비ETF)",
+   "region": "한국",
+   "style": "개별주",
+   "assetType": "stock",
+   "currency": "KRW",
+   "first": "2014-12-18",
+   "last": "2026-07-31",
+   "count": 2850,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
+  },
+  {
+   "symbol": "243880.KS",
+   "name": "TIGER 200IT레버리지",
+   "category": "단일종목 레버리지",
+   "region": "한국",
+   "style": "성장",
+   "assetType": "etf",
+   "currency": "KRW",
+   "first": "2016-05-13",
+   "last": "2026-07-31",
+   "count": 2507,
+   "ttmDividend": 453.0,
+   "dividendYield": 0.0023,
+   "dividendCountThisYear": 0
+  },
+  {
+   "symbol": "395160.KS",
+   "name": "KODEX AI반도체TOP2플러스",
+   "category": "국내 반도체·로봇 테마",
+   "region": "한국",
+   "style": "성장",
+   "assetType": "etf",
+   "currency": "KRW",
+   "first": "2021-07-30",
+   "last": "2026-07-31",
+   "count": 1223,
+   "ttmDividend": 35.0,
+   "dividendYield": 0.0012,
+   "dividendCountThisYear": 1,
+   "dividendMonthThisYear": 4
+  },
+  {
+   "symbol": "395270.KS",
+   "name": "HANARO Fn K-반도체",
+   "category": "국내 반도체·로봇 테마",
+   "region": "한국",
+   "style": "성장",
+   "assetType": "etf",
+   "currency": "KRW",
+   "first": "2021-07-30",
+   "last": "2026-07-31",
+   "count": 1223,
+   "ttmDividend": 75.0,
+   "dividendYield": 0.0018,
+   "dividendCountThisYear": 1,
+   "dividendMonthThisYear": 4
+  },
+  {
+   "symbol": "396500.KS",
+   "name": "TIGER 반도체TOP10",
+   "category": "국내 반도체·로봇 테마",
+   "region": "한국",
+   "style": "성장",
+   "assetType": "etf",
+   "currency": "KRW",
+   "first": "2021-08-10",
+   "last": "2026-07-31",
+   "count": 1216,
+   "ttmDividend": 75.0,
+   "dividendYield": 0.0028,
+   "dividendCountThisYear": 1,
+   "dividendMonthThisYear": 4
+  },
+  {
+   "symbol": "475310.KS",
+   "name": "SOL 반도체후공정",
+   "category": "국내 반도체·로봇 테마",
+   "region": "한국",
+   "style": "성장",
+   "assetType": "etf",
+   "currency": "KRW",
+   "first": "2024-02-14",
+   "last": "2026-07-31",
+   "count": 599,
+   "ttmDividend": 5.0,
+   "dividendYield": 0.0003,
+   "dividendCountThisYear": 1,
+   "dividendMonthThisYear": 4
   }
  ]
 }

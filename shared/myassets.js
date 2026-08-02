@@ -217,6 +217,7 @@ function serializeMyAssets() {
       return manwon > 0 ? Math.round(manwon * 10000) : "";
     })(),
     expectedReturn: document.getElementById("myExpectedReturn").value,
+    expectedDivYield: (document.getElementById("myExpectedDivYield") || {}).value || "",
     returnMode: document.getElementById("myReturnMode").value,
     livingExpense: parseFloat(document.getElementById("myLivingExpense").value) || 0,
     inflationOn: document.getElementById("myInflationOn") ? document.getElementById("myInflationOn").checked : false,
@@ -311,6 +312,7 @@ function applyMyAssets(data) {
   // 저장값은 원 단위 — 입력칸엔 만원 단위로 환산해서 채운다
   document.getElementById("myGoalAmount").value = data.goalAmount > 0 ? Math.round(Number(data.goalAmount) / 10000) : "";
   document.getElementById("myExpectedReturn").value = data.expectedReturn || "";
+  { const el = document.getElementById("myExpectedDivYield"); if (el) el.value = data.expectedDivYield || ""; }
   document.getElementById("myReturnMode").value = data.returnMode || "manual";
   document.getElementById("myLivingExpense").value = data.livingExpense || "";
   if (document.getElementById("myInflationOn")) document.getElementById("myInflationOn").checked = !!data.inflationOn;
@@ -851,15 +853,19 @@ function buildDailyAssetHTML(dailyHistory) {
       <td>${h.date}</td><td>${fmtW(h.value)}</td>
       <td style="color:${diff == null ? "var(--text-muted)" : diff >= 0 ? "var(--good)" : "var(--critical)"}">${diff == null ? "—" : (diff >= 0 ? "+" : "") + fmtW(diff)}</td>
       <td>${h.monthlyDiv > 0 ? fmtW(h.monthlyDiv) : "—"}</td>
+      <td><button type="button" class="my-daily-del" data-date="${h.date}" title="이 날 기록 삭제"
+        style="border:none; background:none; color:var(--critical); cursor:pointer; font-size:15px; padding:2px 6px;">🗑</button></td>
     </tr>`;
   }).join("");
   return `<div style="overflow-x:auto;">
     <table class="account-summary-table">
-      <thead><tr><th>날짜</th><th>평가액</th><th>전일 대비</th><th>월배당(그 시점)</th></tr></thead>
+      <thead><tr><th>날짜</th><th>평가액</th><th>전일 대비</th><th>월배당(그 시점)</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
     </div>
-    <p class="stat-sub" style="margin-top:6px;">최근 ${sorted.length}일 기록(총 ${dailyHistory.length}일 캡처됨).</p>`;
+    <p class="stat-sub" style="margin-top:6px;">최근 ${sorted.length}일 기록(총 ${dailyHistory.length}일 캡처됨).
+    A36: 잘못 쌓인 기록은 🗑으로 지웁니다 — 오염된 스냅샷(반영 사고 중에 저장된 값 등)이 남아 있으면
+    추이·주간·월별 계산이 전부 그 값을 물고 갑니다.</p>`;
 }
 
 /* ISO 주(월요일 시작) 기준 "YYYY-Www" 키로 일별 이력을 묶어 주간 평균 변동을 보여줌 */
@@ -994,6 +1000,79 @@ function divRecordNoteHTML(p) {
 }
 
 const CHANGE_TYPE_LABEL = { added: "🆕 신규", removed: "🗑️ 삭제", "qty-changed": "🔁 수량변경" };
+
+/* ---------- A37: 계좌 반영 전/후 변동 리포트 ----------
+   changelog 항목은 화면 표에만 있어서, "이번 반영으로 뭐가 바뀌었나"를 남에게 보내거나
+   에이전트에게 넘기려면 사람이 다시 옮겨 적어야 했다. 이 함수는 그 한 건을 그대로
+   읽을 수 있는 텍스트로 만든다.
+
+   **편입/편출을 맨 위에 따로 뽑는다** — 수량 증감은 자동매수로 설명되지만, 내 자산에
+   새로 들어오거나 빠진 종목은 판단이 필요한 사건이고 3protv ETF 리포트와 대조할
+   대상이기도 하다(그쪽도 🆕신규편입/🚪편출로 같은 축을 쓴다).
+
+   계좌명은 목적지에 따라 가린다 — buildReportText와 같은 규칙(opts.mask===false면 원문). */
+function buildChangeReportText(entry, opts) {
+  if (!entry) return null;
+  const maskAcc = (opts && opts.mask === false) ? ((s) => s || "계좌 미지정") : ((s) => maskAccountLabel(s || "계좌 미지정"));
+  const fmtW = (v) => fmtPrice(v, "KRW");
+  const nameOf = (sym) => {
+    const m = state.metaBySymbol && state.metaBySymbol.get(sym);
+    return m && m.name ? `${m.name}(${sym})` : sym;
+  };
+  const L = [];
+  L.push("🔄 계좌 반영 변동 리포트");
+  L.push(`${entry.ts} · ${CHANGE_SOURCE_LABEL[entry.source] || entry.source}`);
+  L.push("");
+
+  const dv = entry.afterValue - entry.beforeValue;
+  L.push(`총 평가액 ${fmtW(entry.beforeValue)} → ${fmtW(entry.afterValue)}`);
+  L.push(`  ${dv >= 0 ? "+" : ""}${fmtW(dv)}${entry.beforeValue > 0 ? ` (${dv >= 0 ? "+" : ""}${((dv / entry.beforeValue) * 100).toFixed(1)}%)` : ""}`);
+  if (entry.beforeMdd != null && entry.afterMdd != null) {
+    L.push(`계좌 전체 MDD ${(entry.beforeMdd * 100).toFixed(1)}% → ${(entry.afterMdd * 100).toFixed(1)}%`);
+  }
+  L.push("");
+
+  const added = entry.changes.filter((c) => c.type === "added");
+  const removed = entry.changes.filter((c) => c.type === "removed");
+  const changed = entry.changes.filter((c) => c.type === "qty-changed");
+
+  if (added.length) {
+    L.push(`🆕 편입 ${added.length}건`);
+    for (const c of added) L.push(`· ${maskAcc(c.account)} ${nameOf(c.symbol)} ${c.newQty}주`);
+    L.push("");
+  }
+  if (removed.length) {
+    L.push(`🚪 편출 ${removed.length}건`);
+    for (const c of removed) L.push(`· ${maskAcc(c.account)} ${nameOf(c.symbol)} ${c.oldQty}주 → 0`);
+    L.push("");
+  }
+  if (changed.length) {
+    L.push(`🔁 수량변경 ${changed.length}건`);
+    for (const c of changed) {
+      const d = (c.newQty || 0) - (c.oldQty || 0);
+      L.push(`· ${maskAcc(c.account)} ${nameOf(c.symbol)} ${c.oldQty}→${c.newQty} (${d >= 0 ? "+" : ""}${d})`);
+    }
+    L.push("");
+  }
+
+  // 계좌별 전후 — 어느 계좌에서 벌어진 일인지 한눈에
+  const accs = new Set([...Object.keys(entry.beforeByAccount || {}), ...Object.keys(entry.afterByAccount || {})]);
+  const accRows = [...accs].map((a) => ({
+    a, b: (entry.beforeByAccount || {})[a] || 0, f: (entry.afterByAccount || {})[a] || 0,
+  })).filter((r) => Math.abs(r.f - r.b) > 0).sort((x, y) => Math.abs(y.f - y.b) - Math.abs(x.f - x.b));
+  if (accRows.length) {
+    L.push("🏦 계좌별 변동");
+    for (const r of accRows) {
+      const d = r.f - r.b;
+      L.push(`· ${maskAcc(r.a)} ${fmtW(r.b)} → ${fmtW(r.f)} (${d >= 0 ? "+" : ""}${fmtW(d)})`);
+    }
+    L.push("");
+  }
+
+  L.push("※ 편입·편출은 자동매수로 설명되지 않는 사건이라 매도이력 대장 확인이 필요합니다.");
+  L.push("※ 보유 ETF의 내부 구성변화는 3protv ETF 리포트(🆕신규편입/🚪편출)와 대조하세요.");
+  return L.join("\n");
+}
 
 /* A24b: 변동이력 가독성 — 종목변동 수십 건이 쉼표로 이어진 한 문단이라 읽기 어려웠다.
    ① 계좌별로 묶고 ② 종목코드에 등록 종목명을 붙이며 ③ 8건을 넘으면 나머지를 접는다. */
@@ -1282,6 +1361,56 @@ function buildMDDBreakdownHTML(perRow, groupBy) {
     </table></div>`;
 }
 
+/* ---------- A32e: 내 포트폴리오 vs VOO·QQQ·SCHD MDD 동일기준 비교 ----------
+   buildMDDBreakdownHTML의 "공통 구간 정렬"과 같은 원리 — 벤치마크는 대개 포트폴리오보다
+   상장이 훨씬 오래돼(예: QQQ 1999년) 그대로 각자 전체기간 MDD를 병기하면 비교가 안 된다.
+   내 포트폴리오 + 세 벤치마크의 시작일 중 가장 늦은 날 ~ 종료일 중 가장 이른 날로 전부
+   맞춘 뒤 같은 calcMDD로 계산한다. 데이터가 없는 벤치마크만 조용히 빠진다(값을 지어내지 않음). */
+const MDD_BENCHMARK_SYMBOLS = ["VOO", "QQQ", "SCHD"];
+
+async function computeBenchmarkMDDCompare(perRow) {
+  const full = portfolioNavSeries(perRow);
+  if (!full) return null;
+  const benchData = [];
+  for (const symbol of MDD_BENCHMARK_SYMBOLS) {
+    try {
+      const d = await loadSymbol(symbol);
+      if (d && d.dates && d.dates.length >= 2 && d.closes) benchData.push({ symbol, dates: d.dates, closes: d.closes });
+    } catch (err) { /* 해당 벤치마크만 제외 */ }
+  }
+  if (!benchData.length) return null;
+
+  const since = [full.dates[0], ...benchData.map((b) => b.dates[0])].reduce((a, b) => (b > a ? b : a));
+  const until = [full.dates[full.dates.length - 1], ...benchData.map((b) => b.dates[b.dates.length - 1])].reduce((a, b) => (b < a ? b : a));
+
+  const mddCommon = (dates, values) => {
+    const si = dates.findIndex((d) => d >= since);
+    let ei = -1;
+    for (let i = 0; i < dates.length; i++) { if (dates[i] <= until) ei = i; else break; }
+    if (si < 0 || ei < si + 1) return null;
+    const ds = dates.slice(si, ei + 1), vs = values.slice(si, ei + 1);
+    const r = calcMDD(ds, vs);
+    return { mdd: r.mdd, peakDate: ds[r.peakIdx], troughDate: ds[r.troughIdx], recoveredDate: r.recoveryIdx >= 0 ? ds[r.recoveryIdx] : null };
+  };
+
+  const rows = [{ name: "내 포트폴리오", m: mddCommon(full.dates, full.navs) }];
+  for (const b of benchData) rows.push({ name: b.symbol, m: mddCommon(b.dates, b.closes) });
+  return { since, until, rows };
+}
+
+function buildBenchmarkMDDHTML(cmp) {
+  if (!cmp) return `<p class="compare-empty">벤치마크 가격 이력이 부족해 비교할 수 없습니다.</p>`;
+  const pct = (v) => `${(v * 100).toFixed(1)}%`;
+  const body = cmp.rows.map(({ name, m }) => m
+    ? `<tr><td>${name}</td><td style="color:var(--critical)">${pct(m.mdd)}</td><td>${m.peakDate} → ${m.troughDate}</td><td style="color:${m.recoveredDate ? "var(--good)" : "var(--critical)"}">${m.recoveredDate ? "회복" : "미회복"}</td></tr>`
+    : `<tr><td>${name}</td><td colspan="3" class="stat-sub">데이터 부족</td></tr>`).join("");
+  return `<p class="stat-sub" style="margin:4px 0;">공통 구간 <b>${cmp.since} ~ ${cmp.until}</b>으로 맞춰 계산했습니다(내 포트폴리오와 VOO·QQQ·SCHD 중 가장 늦게 시작한 시점부터).</p>
+    <div style="overflow-x:auto;"><table class="account-summary-table">
+      <thead><tr><th>구분</th><th>MDD</th><th>최대낙폭 구간</th><th>회복</th></tr></thead>
+      <tbody>${body}</tbody>
+    </table></div>`;
+}
+
 /* A29: 계좌별 월별 손익 차트를 실제로 그린다 — 환율 이력(loadFx)을 매번 새로 불러오지
    않도록 fetchJSON 자체 캐시(state.cache의 "fx:USDKRW" 키)에 의존한다. accountKey="__all__"
    이면 전체 계좌(perRow 전체)를 하나로 합쳐서 계산한다. */
@@ -1410,6 +1539,11 @@ function buildGoalPlanTableHTML(d, basis) {
     return `${actual - plan >= 0 ? "+" : ""}${fmtW(actual - plan)}`;
   };
   const achieveCell = (plan) => plan > 0 ? `${((d.actualNow / plan) * 100).toFixed(0)}%` : "—";
+  // A32a: 수기입력 목표액(#myGoalAmount)은 계좌별이 아니라 종합 하나뿐이라 __all__ 스코프에서만 붙인다.
+  const gi = state.myAssetsGoalInfo;
+  const goalLine = (d.scope === "__all__" && gi)
+    ? `<p class="stat-sub">🎯 수기입력 목표 ${fmtManwon(gi.goalAmount)} 도달까지 <b>${gi.goalLabel}</b> (연 ${(gi.goalRate * 100).toFixed(1)}% 가정 — 통합 탭 「🎯 목표 도달」 카드와 동일 계산)</p>`
+    : "";
   const rows = [
     ["총자산", d.actualNow, null],
     [`계획(${(d.rate1 * 100).toFixed(1)}%)${d.rate1IsDefault ? " · S&P500" : ""}`, d.plan1Now, d.plan1Now],
@@ -1428,7 +1562,8 @@ function buildGoalPlanTableHTML(d, basis) {
       <tr><td>달성률</td>${achRow}</tr>
     </tbody>
   </table></div>
-  <p class="stat-sub" style="margin-top:6px;">${d.t0Month}(이 앱으로 추적을 시작한 첫 달)부터 지금까지 ${d.elapsed}개월, 월 재투자액 ${fmtW(d.monthly)} 가정. 달성률 = 총자산 ÷ 계획금액.</p>`;
+  <p class="stat-sub" style="margin-top:6px;">${d.t0Month}(이 앱으로 추적을 시작한 첫 달)부터 지금까지 ${d.elapsed}개월, 월 재투자액 ${fmtW(d.monthly)} 가정. 달성률 = 총자산 ÷ 계획금액.</p>
+  ${goalLine}`;
 }
 
 /* 실제총자산·계획A·계획B·원금 네 선을 buildCompareChart로 겹쳐 그린다(원래 %전용이던
@@ -1485,9 +1620,13 @@ async function renderGoalPlanCompact() {
   }
   const fmtW = (v) => fmtPrice(v, "KRW");
   const ach1 = d.plan1Now > 0 ? (d.actualNow / d.plan1Now) * 100 : null;
+  // A32a: 통합 탭 "🎯 목표 도달" 카드가 쓰는 수기입력 목표액(#myGoalAmount) 도달 시점을 같이 보여준다.
+  const gi = state.myAssetsGoalInfo;
+  const goalLine = gi ? `<p class="stat-sub">🎯 수기입력 목표 ${fmtManwon(gi.goalAmount)} 도달까지 <b>${gi.goalLabel}</b> (연 ${(gi.goalRate * 100).toFixed(1)}% 가정)</p>` : "";
   wrap.innerHTML = `<p class="stat-label">📐 계획 달성현황 (계획 ${(d.rate1 * 100).toFixed(1)}%${d.rate1IsDefault ? " · S&P500" : ""} 대비)</p>
     <p class="stat-value" style="font-size:16px; color:${ach1 != null && ach1 >= 100 ? "var(--good)" : "var(--critical)"}">${ach1 != null ? ach1.toFixed(0) + "%" : "—"}</p>
-    <p class="stat-sub">실제 ${fmtW(d.actualNow)} vs 계획 ${fmtW(d.plan1Now)} — 「추이」 탭에서 전체 표·차트 확인</p>`;
+    <p class="stat-sub">실제 ${fmtW(d.actualNow)} vs 계획 ${fmtW(d.plan1Now)} — 「추이」 탭에서 전체 표·차트 확인</p>
+    ${goalLine}`;
 }
 
 /* 추이 탭의 전체 섹션 — 종합/계좌 select + 금액/수익률 토글, 바뀔 때마다 다시 그린다. */
@@ -1647,26 +1786,38 @@ function reportSection(title) {
 // 비중이 이 값 미만인 계좌는 "기타 N개"로 접는다 — 0.3%짜리가 45%짜리와 같은 무게로 나열되면
 // 스캔 비용만 늘어난다(실측: 9개 계좌 중 4개가 1% 미만).
 const REPORT_MINOR_ACCOUNT_PCT = 1.0;
-// 종목명은 이 폭에서 잘라 한 줄을 유지한다 — "TIGER 배당커버드콜액티브"는 그대로 두면 줄이 접힌다.
-// 16이면 앞의 등락률·금액과 합쳐 31컬럼 안쪽이라 실측상 접히지 않는다.
-const REPORT_NAME_WIDTH = 16;
 const REPORT_ACCOUNT_WIDTH = 9;
 // 텔레그램 sendMessage 한 통의 상한. 종목이 크게 늘어도 400이 나지 않게 마지막에 자른다.
 const REPORT_MAX_CHARS = 4000;
+// A32d: 하락 WORST5는 평가액이 작은 종목(단가 변동이 커도 실제 손실액은 미미)이 순위를 흐리지
+// 않게, 이 평가액 이상인 종목만 대상으로 한다. 상승 TOP5는 그대로(작은 급등도 관심 대상이라).
+const REPORT_WORST_MIN_VALUE = 1000000;
+// A32c: 종목명을 등락률·금액(또는 월배당액)과 같은 줄에 욱여넣으면(예전 REPORT_NAME_WIDTH=16)
+// "TIGER 배당커버드콜액티브" 같은 긴 이름이 "…배당커버드콜…"처럼 알아보기 어렵게 잘렸다
+// (실사용 텔레그램 리포트에서 확인됨). 상승·하락·월배당 TOP5 전부 이름을 별도 줄로 내려 폭을 넓힌다.
+const REPORT_NAME_WIDTH_WIDE = 28;
 
 /* ---------- A28: 종합 탭 "리포트 생성" (A31에서 가독성·등락 보강) ----------
    종합(계좌별 요약)·비중(성향별)·추이(MDD)·등락(상승·하락 TOP5)·배당(TOP5) 정보를 한 텍스트로
    모아 다운로드·클립보드·텔레그램·옵시디안, 그리고 buildAiAnalysisPrompt(LLM 입력)에 공통으로
-   쓴다. 계좌명은 maskAccountLabel로 가린다 — 텔레그램·클립보드로 이 텍스트가 그대로 밖에 나갈
-   수 있는 경로이기 때문(A26a와 같은 이유).
+   쓴다. 계좌명은 기본적으로 maskAccountLabel로 가린다 — 텔레그램·클립보드로 이 텍스트가 그대로
+   밖에 나갈 수 있는 경로이기 때문(A26a와 같은 이유).
+
+   A34: 다만 **옵시디안 목적지는 예외**다. 옵시디안 볼트는 기기 안(폐쇄망)에만 있고 노션·텔레그램처럼
+   밖으로 나가지 않으므로, 마스킹된 계좌명으로 저장하면 나중에 어느 계좌인지 대조가 안 돼 백업의
+   목적을 잃는다. opts.mask === false 로 부르면 원문 계좌명을 그대로 쓴다.
+   ⚠️ 이 옵션은 **로컬 저장 경로에만** 쓸 것 — 텔레그램·클립보드·다운로드는 반드시 기본값(마스킹)을
+   유지한다(클립보드는 다른 앱이 읽을 수 있고, 다운로드 파일은 공유될 수 있다).
 
    A31 레이아웃 원칙(모바일 텔레그램 실측 기준):
    ① 값과 라벨이 줄바꿈으로 찢어지지 않게 한 줄을 30컬럼 안쪽으로 유지하고, 넘칠 것은
       "라벨 줄 + 들여쓴 값 줄"로 미리 쪼갠다(종전에는 계좌 9줄 중 4줄이 제멋대로 접혔다).
    ② 면책·기준 설명은 본문에서 빼 notes로 모아 맨 아래 각주로 붙인다 — 숫자보다 문장이
       커 보이던 문제(MDD 2줄 면책)를 없앤다. */
-function buildReportText(csv, history) {
+async function buildReportText(csv, history, opts) {
   if (!csv || !csv.perRow || !csv.perRow.length) return null;
+  // A34: 목적지별 계좌명 마스킹 분기. 기본은 마스킹(밖으로 나가는 경로), 옵시디안만 원문.
+  const maskAcc = (opts && opts.mask === false) ? ((s) => s || "") : maskAccountLabel;
   const fmtW = (v) => fmtPrice(v, "KRW");
   const lines = [];
   const notes = [];
@@ -1719,7 +1870,7 @@ function buildReportText(csv, history) {
 
   lines.push(reportSection("계좌별"));
   for (const a of majors) {
-    lines.push(`${maskAccountLabel(a.acc)} ${a.pct.toFixed(1)}%`);
+    lines.push(`${maskAcc(a.acc)} ${a.pct.toFixed(1)}%`);
     lines.push(`  ${pctBar(a.pct)}`);
     const bits = [fmtKrwShort(a.g.value)];
     if (a.g.monthlyDiv > 0) bits.push(`월 ${fmtKrwShort(a.g.monthlyDiv)}`);
@@ -1760,6 +1911,17 @@ function buildReportText(csv, history) {
   } else {
     lines.push("가격 이력이 부족해 MDD를 계산할 수 없습니다.");
   }
+  // A32e: VOO·QQQ·SCHD와 같은 기준(공통 구간 정렬)으로 MDD를 나란히 보여준다.
+  try {
+    const benchCmp = await computeBenchmarkMDDCompare(csv.perRow);
+    if (benchCmp) {
+      lines.push(`MDD 비교 (VOO·QQQ·SCHD 동일기준, ${benchCmp.since}~${benchCmp.until})`);
+      for (const { name, m } of benchCmp.rows) {
+        lines.push(m ? `  ${name} ${changeMark(m.mdd)} ${signedPct(m.mdd * 100, 1)}` : `  ${name} 데이터 부족`);
+      }
+      notes.push("※ MDD 비교는 내 포트폴리오와 세 벤치마크 중 가장 늦게 시작한 시점부터 공통 구간으로 맞춘 값입니다.");
+    }
+  } catch (err) { /* 벤치마크 조회 실패해도 리포트 나머지는 계속 생성 */ }
   if (history && history.length >= 2) {
     const sorted = history.slice().sort((a, b) => a.month.localeCompare(b.month));
     const first = sorted[0], last = sorted[sorted.length - 1];
@@ -1785,28 +1947,34 @@ function buildReportText(csv, history) {
     e.amount += amt; e.value += p.value; e.accounts += 1;
   }
   const ranked = [...bySymbol.values()].sort((a, b) => b.chg - a.chg);
-  const rankLine = (e) =>
-    `${changeMark(e.chg)}${signedPct(e.chg * 100, 1)} ${signedKrwShort(e.amount)} ${truncWidth(e.name, REPORT_NAME_WIDTH)}`;
+  const pushRankLine = (e) => {
+    lines.push(`${changeMark(e.chg)}${signedPct(e.chg * 100, 1)} ${signedKrwShort(e.amount)}`);
+    lines.push(`  ${truncWidth(e.name, REPORT_NAME_WIDTH_WIDE)}`);
+  };
 
   const gainers = ranked.filter((e) => e.chg > 0).slice(0, 5);
-  const losers = ranked.filter((e) => e.chg < 0).slice(-5).reverse();
+  const losers = ranked.filter((e) => e.chg < 0 && e.value >= REPORT_WORST_MIN_VALUE).slice(-5).reverse();
   lines.push(reportSection("상승 TOP5"));
-  if (gainers.length) for (const e of gainers) lines.push(rankLine(e));
+  if (gainers.length) for (const e of gainers) pushRankLine(e);
   else lines.push("상승 종목이 없습니다.");
   lines.push("");
-  lines.push(reportSection("하락 TOP5"));
-  if (losers.length) for (const e of losers) lines.push(rankLine(e));
+  lines.push(reportSection("하락 WORST5"));
+  if (losers.length) for (const e of losers) pushRankLine(e);
   else lines.push("하락 종목이 없습니다.");
-  if (ranked.length) notes.push(`※ 등락 기준: ${basis}. 주가 수집이 주 1회라 항상 "전일대비"는 아닙니다.`);
+  if (ranked.length) {
+    notes.push(`※ 등락 기준: ${basis}. 주가 수집이 주 1회라 항상 "전일대비"는 아닙니다.`);
+    notes.push(`※ 하락 WORST5는 평가액 ${fmtKrwShort(REPORT_WORST_MIN_VALUE)} 이상 종목 기준입니다.`);
+  }
   lines.push("");
 
   const top5 = csv.perRow.filter((p) => p.monthlyDiv > 0).sort((a, b) => b.monthlyDiv - a.monthlyDiv).slice(0, 5);
   lines.push(reportSection("월배당 TOP5"));
   if (top5.length) {
     for (const p of top5) {
-      const name = truncWidth((p.meta && p.meta.name) || p.symbol, REPORT_NAME_WIDTH);
-      const acc = truncWidth(maskAccountLabel(p.account || "계좌 미지정"), REPORT_ACCOUNT_WIDTH);
-      lines.push(`${fmtKrwShort(p.monthlyDiv)}/월 ${name}`);
+      const name = truncWidth((p.meta && p.meta.name) || p.symbol, REPORT_NAME_WIDTH_WIDE);
+      const acc = truncWidth(maskAcc(p.account || "계좌 미지정"), REPORT_ACCOUNT_WIDTH);
+      lines.push(`${fmtKrwShort(p.monthlyDiv)}/월`);
+      lines.push(`  ${name}`);
       lines.push(`  ${acc}`);
     }
   } else {
@@ -1953,7 +2121,150 @@ ${dailyRows || "| — | | 기록 없음 |"}
     monthlySnapshots: monthly,
   }, null, 2) });
 
+  // ── 4) 에이전트 브리핑 (A35) ──
+  // 볼트에는 파일이 여러 개라 에이전트에게 전부 넘기기 번거롭다. 이 한 파일만 읽으면
+  // 현재 상태·최근 변동·데이터 신선도·자가진단을 다 알 수 있게 모아둔다.
+  // 계좌명은 **마스킹하지 않는다** — 볼트는 기기 안에만 있는 폐쇄 저장소이고, 가려두면
+  // 나중에 어느 계좌인지 대조가 안 돼 백업의 목적을 잃는다(2계층 데이터 정책, A34와 같은 근거).
+  notes.push({ name: "00_에이전트-브리핑.md", text: buildAgentBriefingNote(csv, changelog, now, won) });
+
   return notes;
+}
+
+/* ---------- A35: 에이전트 브리핑 노트 ----------
+   "내자산" 스킬을 든 에이전트가 이 파일 하나로 맥락을 잡게 만드는 것이 목적이다.
+   숫자를 나열하는 데 그치지 않고 **자가진단 결과를 함께 적는다** — 앱은 divRate 누락이나
+   (계좌,종목) 중복 같은 걸 이미 알고 있는데, 지금까지는 그걸 아무 데도 안 남겨서
+   에이전트가 매번 처음부터 다시 찾아야 했다(2026-08-02 배당 과대계상이 그렇게 늦게 발견됐다).
+   순수 함수라 웹에서도 검증 가능하다 — 파일 기록은 native-files.js가 맡는다. */
+function buildAgentBriefingNote(csv, changelog, now, won) {
+  const L = [];
+  L.push("# 🤖 에이전트 브리핑 — 14fiance 자산");
+  L.push(`> 자동 생성 ${now} · **이 볼트는 기기 안에만 있는 폐쇄 저장소라 계좌명을 가리지 않았다.**`);
+  L.push("> 여기 내용을 노션·텔레그램·저장소로 옮길 때는 반드시 계좌번호를 마스킹할 것.");
+  L.push("");
+
+  if (!csv || !csv.perRow || !csv.perRow.length) {
+    L.push("보유 종목이 없어 브리핑할 내용이 없습니다.");
+    return L.join("\n");
+  }
+
+  // ── 현재 상태 ──
+  L.push("## 현재 상태");
+  L.push(`- 총 평가액: **₩${won(csv.totalValue)}**`);
+  L.push(`- 예상 월배당: **₩${won(csv.totalMonthlyDiv)}** (연환산 ₩${won(csv.totalMonthlyDiv * 12)})`);
+  const annualYield = csv.totalValue > 0 ? (csv.totalMonthlyDiv * 12) / csv.totalValue * 100 : 0;
+  L.push(`- 연환산 배당률: **${annualYield.toFixed(2)}%**`);
+  L.push(`- 보유 종목 수: ${csv.perRow.length}행`);
+  L.push("");
+
+  // ── 계좌별 ──
+  const accMap = new Map();
+  for (const p of csv.perRow) {
+    const k = p.account || "계좌 미지정";
+    if (!accMap.has(k)) accMap.set(k, { value: 0, div: 0, n: 0 });
+    const g = accMap.get(k);
+    g.value += p.value || 0; g.div += p.monthlyDiv || 0; g.n += 1;
+  }
+  L.push("## 계좌별");
+  L.push("| 계좌 | 평가액 | 월배당 | 종목수 |");
+  L.push("| --- | --- | --- | --- |");
+  for (const [acc, g] of [...accMap.entries()].sort((a, b) => b[1].value - a[1].value)) {
+    L.push(`| ${acc} | ₩${won(g.value)} | ₩${won(g.div)} | ${g.n} |`);
+  }
+  L.push("");
+
+  // ── 자가진단 ──
+  // 에이전트가 "이상감지 체크리스트"를 처음부터 돌리지 않아도 되게 앱이 미리 검사해 남긴다.
+  const flags = [];
+
+  // (1) divRate 누락 — 등록 분배율이 없어 확정DPS 역산으로 떨어진 종목.
+  //     확정DPS는 과거 기준주가로 산정된 값이라 주가가 빠졌으면 분배율이 부풀어 오른다.
+  const derived = csv.perRow.filter((p) => p.divBasis === "derived" && p.monthlyDiv > 0);
+  if (derived.length) {
+    const amt = derived.reduce((a, b) => a + b.monthlyDiv, 0);
+    flags.push(`⚠️ **divRate 미등록 ${derived.length}종목** — 확정DPS 역산으로 계산 중(월배당 ₩${won(amt)} 해당). ` +
+      "노션 배당기준 마스터의 분배율이 import JSON의 divRate로 실려 나갔는지 확인할 것. " +
+      "역산은 주가가 빠진 종목일수록 분배율이 부풀어 오른다.");
+  }
+
+  // (2) 확정DPS 대비 괴리 — **경로에 따라 뜻이 정반대다.**
+  //   · divBasis "rate"(등록 분배율 사용): 괴리는 정상이다. 확정DPS는 과거 기준주가로 산정된
+  //     스냅샷이고 분배율×현재가가 최신값이므로, 주가가 빠진 만큼 음수 괴리가 나는 게 맞다.
+  //     경고가 아니라 "노션 배당기준 마스터의 확정DPS가 낡았다"는 정보로 표시한다.
+  //     (2026-08-02: 이걸 경고로 냈다가 divRate 수정이 잘 먹은 종목들이 전부 ⚠️로 떠 오탐이 됐다.)
+  //   · divBasis "derived"(확정DPS 역산): 이건 진짜 경고다. 등록 분배율이 없어 역산에 의존하는데
+  //     그 역산값이 확정DPS와 어긋난다는 뜻이라 어느 쪽도 믿기 어렵다.
+  const gapLabel = (p) => `${p.meta ? p.meta.name : p.symbol}[${p.account || "미지정"}] ` +
+    `${p.dpsGapPct >= 0 ? "+" : ""}${(p.dpsGapPct * 100).toFixed(0)}%`;
+  const byGap = (a, b) => Math.abs(b.dpsGapPct) - Math.abs(a.dpsGapPct);
+  const gapped = csv.perRow.filter((p) => p.dpsGapPct != null && Math.abs(p.dpsGapPct) > 0.15);
+
+  const gapDerived = gapped.filter((p) => p.divBasis === "derived").sort(byGap);
+  if (gapDerived.length) {
+    flags.push(`⚠️ **역산 분배율이 확정DPS와 15%↑ 어긋남 ${gapDerived.length}건** — 등록 분배율이 없어 ` +
+      `역산 중인데 그 값도 확정DPS와 맞지 않는다(어느 쪽도 신뢰하기 어려움): ` +
+      gapDerived.slice(0, 5).map(gapLabel).join(", ") + (gapDerived.length > 5 ? ` 외 ${gapDerived.length - 5}건` : ""));
+  }
+
+  const gapRate = gapped.filter((p) => p.divBasis === "rate").sort(byGap);
+  if (gapRate.length) {
+    flags.push(`ℹ️ **확정DPS가 낡음 ${gapRate.length}건**(이상 아님) — 등록 분배율×현재가로 정상 계산 중이고, ` +
+      `확정DPS는 과거 기준주가로 산정된 값이라 주가가 움직인 만큼 차이가 난다. ` +
+      `노션 배당기준 마스터의 DPS를 최신 기준주가로 갱신하면 사라진다: ` +
+      gapRate.slice(0, 5).map(gapLabel).join(", ") + (gapRate.length > 5 ? ` 외 ${gapRate.length - 5}건` : ""));
+  }
+
+  // (3) 같은 (계좌,종목) 중복 — 하류 집계가 경고 없이 합산하므로 평가액·배당이 부풀어 오른다.
+  const seen = new Map();
+  for (const p of csv.perRow) {
+    const k = `${p.account || ""}|${p.symbol}`;
+    seen.set(k, (seen.get(k) || 0) + 1);
+  }
+  const dups = [...seen.entries()].filter(([, n]) => n > 1);
+  if (dups.length) {
+    flags.push(`🔴 **(계좌,종목) 중복 ${dups.length}건** — 집계가 합산되어 평가액·배당이 부풀어 있다: ` +
+      dups.slice(0, 5).map(([k, n]) => `${k.replace("|", " / ")} ×${n}`).join(", "));
+  }
+
+  // (4) 연환산 배당률 상식 범위 — 커버드콜 비중이 높아도 15%를 넘으면 입력 데이터를 의심한다.
+  if (annualYield > 15) {
+    flags.push(`⚠️ **연환산 배당률 ${annualYield.toFixed(1)}%** — 커버드콜 비중을 감안해도 높다. 위 divRate 항목부터 확인.`);
+  }
+
+  L.push("## 자가진단");
+  L.push(flags.length ? flags.map((f) => `- ${f}`).join("\n") : "- 걸리는 항목 없음.");
+  L.push("");
+
+  // ── 최근 변동 ──
+  L.push("## 최근 변동 (최신 10건)");
+  if (changelog && changelog.length) {
+    for (const e of changelog.slice(0, 10)) {
+      const src = CHANGE_SOURCE_LABEL[e.source] || e.source;
+      const items = e.changes.slice(0, 6)
+        .map((c) => `${c.symbol} ${c.oldQty}→${c.newQty}`).join(", ");
+      const more = e.changes.length > 6 ? ` 외 ${e.changes.length - 6}건` : "";
+      L.push(`- \`${e.ts}\` **${src}** · ₩${won(e.beforeValue)} → ₩${won(e.afterValue)} · ${items}${more}`);
+    }
+    L.push("");
+    L.push("> `source`가 `capture-account-reset`이면 계좌 전체가 교체된 것이라, 수량 급변이");
+    L.push("> 실제 매매가 아니라 반영 사고일 수 있다(2026-08-02 실사례).");
+  } else {
+    L.push("- 기록 없음.");
+  }
+  L.push("");
+
+  // ── 보유 전체 ──
+  L.push("## 보유 종목 전체");
+  L.push("| 계좌 | 종목 | 코드 | 수량 | 평가액 | 월배당 | 배당근거 |");
+  L.push("| --- | --- | --- | --- | --- | --- | --- |");
+  const BASIS_LABEL = { rate: "등록 분배율", derived: "확정DPS 역산", ttm: "TTM 추정" };
+  for (const p of [...csv.perRow].sort((a, b) => (b.value || 0) - (a.value || 0))) {
+    L.push(`| ${p.account || "미지정"} | ${p.meta ? p.meta.name : p.symbol} | ${p.symbol} | ` +
+      `${(p.qty || 0).toLocaleString()} | ₩${won(p.value)} | ₩${won(p.monthlyDiv)} | ${BASIS_LABEL[p.divBasis] || "—"} |`);
+  }
+
+  return L.join("\n");
 }
 
 /* ---------- A6: 📊 지수비교 탭 — 내 수익률 vs 벤치마크 ----------
@@ -2441,7 +2752,19 @@ async function renderMyAssets() {
   const livingExpenseUsed = Math.min(cfg.livingExpense || 0, totalMonthlyDiv);
   const reinvestedDiv = totalMonthlyDiv - livingExpenseUsed;
   const wDivYield = totalValue > 0 ? (reinvestedDiv * 12) / totalValue : 0;
-  const goalRate = (expReturn != null ? expReturn : 0) + wDivYield;
+  /* A38: 직접입력값은 **배당을 포함한 총수익률**이다(2026-08-02 사용자 확정).
+     종전에는 이 값을 주가 상승률로 보고 배당수익률을 더해서, 15%를 넣으면 22.7%로
+     계산됐다 — 사용자가 총수익률로 입력했으므로 배당이 이중계산된 것이다.
+     이제 직접입력 모드에서는 그 값을 그대로 goalRate로 쓴다.
+     종목별 실적 모드(returnMode≠manual)는 가격 등락률만 나오므로 종전대로 배당을 더한다. */
+  const expDivInput = cfg.expectedDivYield !== "" && cfg.expectedDivYield != null
+    ? Number(cfg.expectedDivYield) / 100 : null;
+  const goalRate = cfg.returnMode !== "manual"
+    ? (expReturn != null ? expReturn : 0) + wDivYield
+    : (expReturn != null ? expReturn : wDivYield);
+  // 목표를 구성요소로 쪼갠 값(표시용) — 기대 배당수익률은 입력값 우선, 없으면 현재 실적
+  const goalDivPart = expDivInput != null ? expDivInput : wDivYield;
+  const goalPricePart = goalRate - goalDivPart;
   // 월 재투자액 = 월매수총액(ETF 매수) + 월적립투자금액(계좌별 월 납입금, 연금저축 등) — 둘 다 매달 잔고에 더해져 복리로 불어남
   const totalContributions = Object.values(cfg.contributions || {}).reduce((a, b) => a + b, 0);
   const totalMonthlyInvest = totalMonthlyBuy + totalContributions;
@@ -2463,6 +2786,10 @@ async function renderMyAssets() {
       : realGoal.months === 0 ? "이미 달성"
       : `${Math.floor(realGoal.months / 12) > 0 ? `${Math.floor(realGoal.months / 12)}년 ` : ""}${realGoal.months % 12 > 0 ? `${realGoal.months % 12}개월` : ""}`.trim()
     : null;
+  // A32a: 📐 계획 달성현황(컴팩트 카드·추이탭)에서도 "수기입력 목표액 도달까지"를 같이 보여주기
+  // 위해 저장 — 계산은 위 goal/goalLabel과 완전히 동일(같은 #myGoalAmount·#myExpectedReturn 참조),
+  // 여기서는 새 계산 없이 재사용만 한다.
+  state.myAssetsGoalInfo = goal ? { goalAmount, goalLabel, goalRate } : null;
 
   const rowsHTML = perRow.map((p) => {
     const ttm = p.meta && p.meta.ttmDividend ? p.meta.ttmDividend : 0;
@@ -2663,6 +2990,42 @@ async function renderMyAssets() {
           cfg.returnMode !== "manual" ? ` (종목별 최근 ${cfg.returnMode}개월 실적 가중평균${weightedTrailReturn == null ? ", 가격데이터 부족 시 0% 처리" : ""} + 배당수익률)`
           : expReturn == null ? " (기대수익률 미입력 — 배당만 반영)" : ""
         }</p>
+        ${/* A36: 이 수치가 어디서 왔는지 화면에 밝힌다. 종전에는 "연 22.7% 가정"만 보여서
+             근거를 물어봐야 알 수 있었고, 배당이 바뀌면 이 값도 따라 움직이는데 그 사실이
+             드러나지 않았다(실제로 배당 과대계상이 고쳐지자 27.4%→22.7%로 내려갔다). */""}
+        ${/* A38: 목표를 총/종목/배당 세 항으로 쪼개 보여주고, 각 항을 현재 실적과 나란히 둔다.
+             "22.7%가 어디서 왔나"를 물어봐야 알던 것을 화면에서 바로 읽게 하려는 것. */""}
+        <div style="overflow-x:auto; margin-top:6px;">
+        <table class="account-summary-table" style="font-size:12px;">
+          <thead><tr><th>구분</th><th>목표</th><th>현재</th><th>차이</th></tr></thead>
+          <tbody>
+            ${[
+              ["총수익률", goalRate, (weightedTrailReturn != null ? weightedTrailReturn : null) == null ? null : weightedTrailReturn + wDivYield],
+              ["└ 종목수익률", goalPricePart, weightedTrailReturn],
+              ["└ 배당수익률", goalDivPart, wDivYield],
+            ].map(([label, want, now]) => {
+              const gap = now == null ? null : now - want;
+              return `<tr>
+                <td style="text-align:left;">${label}</td>
+                <td>${(want * 100).toFixed(2)}%</td>
+                <td>${now == null ? "—" : (now * 100).toFixed(2) + "%"}</td>
+                <td style="color:${gap == null ? "var(--text-muted)" : gap >= 0 ? "var(--good)" : "var(--critical)"}">${
+                  gap == null ? "—" : (gap >= 0 ? "+" : "") + (gap * 100).toFixed(2) + "%p"}</td>
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table>
+        </div>
+        <p class="stat-sub" style="color:var(--text-muted);">${
+          cfg.returnMode === "manual"
+            ? `직접입력값은 <b>배당을 포함한 총수익률</b>로 씁니다 — 배당수익률을 따로 더하지 않습니다.${
+                expReturn == null ? " (미입력 — 현재 배당수익률만 가정)" : ""}`
+            : `종목별 최근 ${cfg.returnMode}개월 실적(가격 등락률) + 배당수익률로 계산합니다.`
+        } 현재 배당수익률은 재투자분 ${fmtW(reinvestedDiv)}/월 ÷ 평가액 기준이라 <b>배당이 바뀌면 자동으로 갱신</b>됩니다.${
+          weightedTrailReturn == null && cfg.returnMode === "manual"
+            ? " 현재 종목수익률은 「종목별 실적 반영」 모드로 바꾸면 계산됩니다."
+            : ""
+        }</p>
         <p class="stat-sub">월 재투자액 ${fmtW(totalMonthlyInvest)}${totalContributions > 0 ? ` (월매수 ${fmtW(totalMonthlyBuy)} + 월적립 ${fmtW(totalContributions)})` : ""} 반영${livingExpenseUsed > 0 ? ` · 배당은 재투자분(${fmtW(reinvestedDiv)}/월)만 복리 반영, 생활비 사용분 제외` : ""}</p>
         ${realGoalLabel ? `<p class="stat-sub" style="color:var(--text-muted);">물가상승률 ${(inflationRate * 100).toFixed(1)}%/년 반영(오늘 구매력 기준): <b>${realGoalLabel}</b></p>` : ""}
       </div>` : ""}
@@ -2750,6 +3113,9 @@ async function renderMyAssets() {
 
       <p class="chart-title" style="margin-top:24px;">🎯 성향별 MDD</p>
       ${buildMDDBreakdownHTML(perRow, "style")}
+
+      <p class="chart-title" style="margin-top:24px;">📐 VOO·QQQ·SCHD MDD 비교</p>
+      <div id="myBenchMddWrap"><p class="compare-empty">불러오는 중…</p></div>
 
       <p class="chart-title" style="margin-top:24px;">💵 계좌별 월별 손익</p>
       <p class="stat-sub">선택한 계좌의 <b>현재 보유 수량을 그 기간 내내 갖고 있었다고 가정</b>하고 월말 평가액 변화를 손익으로 계산합니다 — 실제 입출금·매매 내역은 반영하지 않으므로 추가 매수·환매가 있었던 달은 실제 손익과 다르게 보일 수 있습니다.</p>
@@ -2994,7 +3360,9 @@ async function renderMyAssets() {
           <option value="monthly">월별</option>
           <option value="yearly">연간</option>
         </select>
+        <button type="button" id="myChangelogReportBtn" class="btn-action">🔄 최근 변동 리포트</button>
         <button type="button" id="myChangelogClearBtn" class="btn-action">🗑️ 이력 지우기</button>
+        <span id="myChangelogStatus" class="action-status"></span>
       </div>
       <div id="myChangelogBody"></div>
     </div>
@@ -3005,6 +3373,7 @@ async function renderMyAssets() {
       <div class="action-row" style="margin:8px 0;">
         <button type="button" id="myAiAnalyzeBtn" class="btn-action">🔍 AI 분석 시작</button>
         <button type="button" id="myAiPromptCopyBtn" class="btn-action">📋 프롬프트만 복사</button>
+        <button type="button" id="myAiTelegramBtn" class="btn-action">📨 텔레그램으로 보내기</button>
         <span id="myAiStatus" class="action-status"></span>
       </div>
       <div id="myAiResult"></div>
@@ -3050,6 +3419,17 @@ async function renderMyAssets() {
         <span id="myTelegramStatus" class="action-status"></span>
       </div>
       <p class="stat-sub">봇 토큰은 텔레그램에서 <b>@BotFather</b>에게 <code>/newbot</code>을 보내면 발급됩니다. chat_id는 그 봇과 대화를 한 번 시작한 뒤 브라우저로 <code>https://api.telegram.org/bot&lt;토큰&gt;/getUpdates</code>를 열면 <code>"chat":{"id":...}</code> 값으로 확인할 수 있습니다. 저장해두면 「📋 종합」 탭의 "📤 리포트 생성"에서 텔레그램으로 바로 보낼 수 있습니다.</p>
+
+      <p class="chart-title" style="margin-top:20px;" id="myAutoReportTitle">📤 평일 장마감 자동 리포트 (앱 전용)</p>
+      <p class="stat-sub">매일 <b>평일 16:05경(국내 장마감 후)</b> 앱을 직접 켜지 않아도 자동으로 실행돼 텔레그램 리포트를 보내고, 「추이」 탭의 오늘 자산 스냅샷도 함께 저장합니다. 위 텔레그램 봇 토큰·chat_id가 저장돼 있어야 동작합니다.</p>
+      <div class="action-row" style="margin:8px 0;">
+        <label style="display:inline-flex; align-items:center; gap:6px;">
+          <input type="checkbox" id="myAutoReportToggle">
+          자동 발신 켜기
+        </label>
+        <span id="myAutoReportStatus" class="action-status"></span>
+      </div>
+      <p class="stat-sub">알람 시각에 앱이 잠깐 자동으로 열렸다 닫힙니다(정상 동작). 기기 제조사의 강한 배터리 최적화(일부 삼성·샤오미 기기)가 걸려 있으면 지연되거나 건너뛸 수 있습니다 — 계속 안 오면 설정 &gt; 배터리에서 이 앱의 배터리 최적화를 "제한 없음"으로 바꿔보세요.</p>
       <div class="action-row" style="margin:8px 0;">
         <button type="button" id="myKeysExportBtn" class="btn-action">🔑 키 내보내기</button>
         <button type="button" id="myKeysImportBtn" class="btn-action">🔑 키 불러오기</button>
@@ -3157,6 +3537,25 @@ async function renderMyAssets() {
       : g === "weekly" ? buildWeeklyAssetHTML(dailyHistory)
       : g === "monthly" ? buildMonthlyAssetHTML(history)
       : buildYearlyAssetHTML(history);
+    /* A36: 일별 스냅샷 개별 삭제 — 반영 사고 중에 저장된 오염 스냅샷이 남아 있으면
+       추이 차트·주간·월별 계산이 전부 그 값을 물고 간다. 자동 판별은 하지 않는다
+       (어느 값이 오염인지는 사람만 안다) — 삭제는 확인 다이얼로그를 거친다. */
+    body.querySelectorAll(".my-daily-del").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const date = btn.dataset.date;
+        const hist = JSON.parse(localStorage.getItem(MY_ASSETS_DAILY_HISTORY_KEY) || "[]");
+        const target = hist.find((h) => h.date === date);
+        if (!target) return;
+        if (!window.confirm(`${date} 스냅샷을 삭제합니다.\n\n평가액 ${fmtPrice(target.value, "KRW")}\n\n되돌릴 수 없습니다. 계속하시겠습니까?`)) return;
+        const next = hist.filter((h) => h.date !== date);
+        localStorage.setItem(MY_ASSETS_DAILY_HISTORY_KEY, JSON.stringify(next));
+        // 2026-08-01 실사례와 같은 이유로 saveMyAssets()까지 해야 앱 재시작 때
+        // MY_ASSETS_KEY 안의 박제 사본이 삭제분을 되살리지 않는다.
+        saveMyAssets();
+        flashStatus("myDailySnapshotStatus", `${date} 스냅샷 삭제됨`);
+        renderMyAssets();
+      });
+    });
   };
   if (state.myAssetChangeGranularity) changeSel.value = state.myAssetChangeGranularity;
   changeSel.addEventListener("change", () => { state.myAssetChangeGranularity = changeSel.value; renderAssetChange(); });
@@ -3210,6 +3609,25 @@ async function renderMyAssets() {
       flashStatus("myTelegramStatus", r.ok ? "성공 — 텔레그램에서 확인하세요 ✓" : `실패: ${r.error}`, 5000);
     });
   }
+
+  // A32f: 평일 장마감 자동 리포트 토글 — app/src/auto-report.js(앱 전용)가 정의하는
+  // window.setAutoReportEnabled/getAutoReportEnabled가 있을 때만 동작(웹에는 자동 실행 개념이
+  // 없으므로 이 섹션 자체를 숨긴다) — 옵시디안 섹션과 같은 네이티브 감지 패턴.
+  const autoReportToggle = document.getElementById("myAutoReportToggle");
+  if (autoReportToggle) {
+    if (typeof window.getAutoReportEnabled === "function" && typeof window.setAutoReportEnabled === "function") {
+      autoReportToggle.checked = window.getAutoReportEnabled();
+      autoReportToggle.addEventListener("change", async () => {
+        await window.setAutoReportEnabled(autoReportToggle.checked);
+        flashStatus("myAutoReportStatus", autoReportToggle.checked ? "켜짐 — 다음 평일 16:05경 자동 실행됩니다" : "꺼짐");
+      });
+    } else {
+      const titleEl = document.getElementById("myAutoReportTitle");
+      if (titleEl && titleEl.nextElementSibling) titleEl.nextElementSibling.textContent = "이 기능은 앱(APK)에서만 동작합니다 — 웹 브라우저에서는 자동 실행이 불가능합니다.";
+      autoReportToggle.disabled = true;
+    }
+  }
+
   // A28: 키 내보내기/불러오기 — 보유 종목 백업(📤 내보내기)과 완전히 분리된 별도 파일.
   // 키는 serializeMyAssets()에 절대 섞지 않는다 — 그 파일은 "🤖 클로드에 복사"로 AI 채팅
   // 텍스트에도 그대로 들어가는데, 거기에 시크릿이 실려 나가면 안 되기 때문.
@@ -3254,7 +3672,7 @@ async function renderMyAssets() {
     }
     reportBtn.addEventListener("click", async () => {
       const csv = state.myAssetsCsvData;
-      const text = csv ? buildReportText(csv, history) : null;
+      const text = csv ? await buildReportText(csv, history) : null;
       if (!text) { flashStatus("myReportStatus", "먼저 보유 종목을 입력하세요"); return; }
       const dests = [...document.querySelectorAll(".my-report-dest:checked")].map((el) => el.value);
       if (!dests.length) { flashStatus("myReportStatus", "내보낼 곳을 하나 이상 선택하세요"); return; }
@@ -3268,8 +3686,11 @@ async function renderMyAssets() {
         results.push(ok ? "클립보드 복사됨" : "클립보드 복사 실패");
       }
       if (dests.includes("obsidian")) {
+        // A34: 옵시디안은 기기 안 폐쇄 저장소라 마스킹하지 않은 원문으로 다시 만든다.
+        // (웹 폴백은 클립보드로 가므로 마스킹된 text를 그대로 쓴다 — 밖으로 나갈 수 있는 경로)
         if (typeof window.exportReportNote === "function") {
-          const ok = await window.exportReportNote(text);
+          const rawText = await buildReportText(csv, history, { mask: false });
+          const ok = await window.exportReportNote(rawText || text);
           results.push(ok ? "옵시디안 저장됨" : "옵시디안 저장 실패(볼트 경로 확인)");
         } else {
           const ok = await copyTextToClipboard(text);
@@ -3289,14 +3710,14 @@ async function renderMyAssets() {
   // A28: AI 분석 탭 — 제미나이 키가 있으면 자동 호출, 없으면 프롬프트 복사로 폴백.
   const aiAnalyzeBtn = document.getElementById("myAiAnalyzeBtn");
   if (aiAnalyzeBtn) {
-    const buildPromptOrWarn = () => {
+    const buildPromptOrWarn = async () => {
       const csv = state.myAssetsCsvData;
-      const text = csv ? buildReportText(csv, history) : null;
+      const text = csv ? await buildReportText(csv, history) : null;
       if (!text) { flashStatus("myAiStatus", "먼저 보유 종목을 입력하세요"); return null; }
       return buildAiAnalysisPrompt(text);
     };
     aiAnalyzeBtn.addEventListener("click", async () => {
-      const prompt = buildPromptOrWarn();
+      const prompt = await buildPromptOrWarn();
       if (!prompt) return;
       const key = geminiApiKey();
       const resultEl = document.getElementById("myAiResult");
@@ -3315,10 +3736,22 @@ async function renderMyAssets() {
       }
     });
     document.getElementById("myAiPromptCopyBtn").addEventListener("click", async () => {
-      const prompt = buildPromptOrWarn();
+      const prompt = await buildPromptOrWarn();
       if (!prompt) return;
       const ok = await copyTextToClipboard(prompt);
       flashStatus("myAiStatus", ok ? "프롬프트 복사됨 — AI 채팅에 붙여넣으세요" : "복사 실패");
+    });
+    // AI 분석 결과 텔레그램 발송 — #myAiResult에 이미 렌더된 결과 텍스트를 그대로 보낸다
+    // (다시 분석을 돌리지 않음). 프롬프트 복사만 한 경우(제미나이 키 없음)는 결과가 없으므로
+    // 안내만 하고 끝낸다 — 그 경우 보낼 "분석 결과"가 애초에 없기 때문.
+    document.getElementById("myAiTelegramBtn").addEventListener("click", async () => {
+      const resultEl = document.getElementById("myAiResult");
+      const text = resultEl && resultEl.textContent.trim();
+      if (!text) { flashStatus("myAiStatus", "먼저 「AI 분석 시작」으로 분석 결과를 받으세요(제미나이 키 필요)"); return; }
+      flashStatus("myAiStatus", "텔레그램 전송 중…");
+      const tgText = text.length > 4000 ? text.slice(0, 3900) + "\n…(길이 제한으로 이하 생략)" : text;
+      const r = await sendTelegramMessage(`🤖 AI 분석 결과 (${todayStr()})\n\n${tgText}`);
+      flashStatus("myAiStatus", r.ok ? "텔레그램 전송됨 ✓" : `텔레그램 실패: ${r.error}`, 6000);
     });
   }
 
@@ -3365,6 +3798,14 @@ async function renderMyAssets() {
   }
   renderGoalPlanCompact(); // 통합 탭 상단 헤더 카드 — 탭과 무관하게 항상 갱신
 
+  // A32e: VOO·QQQ·SCHD MDD 비교 — 벤치마크 가격을 fetch해야 해서(비동기) 패널 템플릿과
+  // 별도로 채운다(다른 MDD 섹션들처럼 동기 계산이 안 됨).
+  const benchMddWrap = document.getElementById("myBenchMddWrap");
+  if (benchMddWrap) {
+    computeBenchmarkMDDCompare(perRow).then((cmp) => { benchMddWrap.innerHTML = buildBenchmarkMDDHTML(cmp); })
+      .catch((err) => { benchMddWrap.innerHTML = `<p class="compare-empty" style="color:var(--critical)">벤치마크 MDD 계산 실패: ${err.message}</p>`; });
+  }
+
   // A25b: 월별 비중 변화 — 그룹 기준 전환(계좌별/카테고리별), 선택은 state에 보존.
   // A26c: 같은 표가 비중분석 탭과 추이 탭 두 곳에 붙는다. state.myWeightHistGroup 하나를
   // 공유해 한쪽에서 바꾸면 다른 쪽 select 값과 본문도 같이 따라오게 한다(선택 어긋남 방지).
@@ -3391,6 +3832,30 @@ async function renderMyAssets() {
   };
   if (state.myChangelogGranularity) changelogSel.value = state.myChangelogGranularity;
   changelogSel.addEventListener("change", () => { state.myChangelogGranularity = changelogSel.value; renderChangelog(); });
+  /* A37: 최근 변동 1건을 리포트로 뽑아 목적지별로 내보낸다. 목적지 규칙은 종합 탭
+     "리포트 생성"과 동일 — 옵시디안만 계좌명 원문(폐쇄 저장소), 나머지는 마스킹. */
+  const changelogReportBtn = document.getElementById("myChangelogReportBtn");
+  if (changelogReportBtn) changelogReportBtn.addEventListener("click", async () => {
+    const log = loadAssetChangelog();
+    if (!log.length) { flashStatus("myChangelogStatus", "기록된 변동이 없습니다"); return; }
+    const entry = log[0];
+    const masked = buildChangeReportText(entry, { mask: true });
+    const results = [];
+    const ok = await copyTextToClipboard(masked);
+    results.push(ok ? "클립보드 복사됨(계좌명 마스킹)" : "클립보드 실패");
+    if (typeof window.exportReportNote === "function") {
+      // 볼트는 기기 안 폐쇄 저장소라 원문으로 남긴다(A34와 같은 근거).
+      const raw = buildChangeReportText(entry, { mask: false });
+      const done = await window.exportReportNote(raw);
+      results.push(done ? "옵시디안 저장됨(원문)" : "옵시디안 저장 실패");
+    }
+    if (telegramBotToken() && telegramChatId()) {
+      const tg = masked.length > 4000 ? masked.slice(0, 3900) + "\n…(길이 제한으로 생략)" : masked;
+      const r = await sendTelegramMessage(tg);
+      results.push(r.ok ? "텔레그램 전송됨" : `텔레그램 실패: ${r.error}`);
+    }
+    flashStatus("myChangelogStatus", results.join(" · "));
+  });
   document.getElementById("myChangelogClearBtn").addEventListener("click", () => {
     localStorage.removeItem(MY_ASSETS_CHANGELOG_KEY);
     renderChangelog();

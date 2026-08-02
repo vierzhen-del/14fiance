@@ -290,6 +290,69 @@
       "region": "미국",
       "style": "배당",
       "assetType": "stock"
+    },
+    {
+      "symbol": "SNDK",
+      "name": "SNDK (샌디스크)",
+      "category": "개별주(비ETF)",
+      "region": "미국",
+      "style": "개별주",
+      "assetType": "stock"
+    },
+    {
+      "symbol": "SKHY",
+      "name": "SKHY (SK하이닉스 ADR)",
+      "category": "개별주(비ETF)",
+      "region": "미국",
+      "style": "개별주",
+      "assetType": "stock"
+    },
+    {
+      "symbol": "INTC",
+      "name": "INTC (인텔)",
+      "category": "개별주(비ETF)",
+      "region": "미국",
+      "style": "개별주",
+      "assetType": "stock"
+    },
+    {
+      "symbol": "MU",
+      "name": "MU (마이크론)",
+      "category": "개별주(비ETF)",
+      "region": "미국",
+      "style": "개별주",
+      "assetType": "stock"
+    },
+    {
+      "symbol": "AMD",
+      "name": "AMD (AMD)",
+      "category": "개별주(비ETF)",
+      "region": "미국",
+      "style": "개별주",
+      "assetType": "stock"
+    },
+    {
+      "symbol": "SMCI",
+      "name": "SMCI (슈퍼마이크로컴퓨터)",
+      "category": "개별주(비ETF)",
+      "region": "미국",
+      "style": "개별주",
+      "assetType": "stock"
+    },
+    {
+      "symbol": "DISK",
+      "name": "DISK (TEMA MEMORY)",
+      "category": "메모리 배당",
+      "region": "미국",
+      "style": "성장"
+    },
+    {
+      "symbol": "NOK",
+      "name": "NOK (노키아 ADR)",
+      "category": "개별주(비ETF)",
+      "region": "미국",
+      "style": "개별주",
+      "assetType": "stock"
     }
   ],
   "kr": [
@@ -518,6 +581,13 @@
       "style": "성장"
     },
     {
+      "symbol": "0223R0.KS",
+      "name": "TIGER 미국테크NYSE100액티브",
+      "category": "미국·글로벌 테마 액티브(국내상장)",
+      "region": "미국",
+      "style": "성장"
+    },
+    {
       "symbol": "442570.KS",
       "name": "RISE TDF2050액티브",
       "category": "TDF·자산배분",
@@ -541,6 +611,13 @@
     {
       "symbol": "0038A0.KS",
       "name": "KODEX 미국휴머노이드로봇",
+      "category": "미국 테마",
+      "region": "미국",
+      "style": "성장"
+    },
+    {
+      "symbol": "465580.KS",
+      "name": "ACE 미국빅테크TOP7 Plus",
       "category": "미국 테마",
       "region": "미국",
       "style": "성장"
@@ -655,6 +732,13 @@
     {
       "symbol": "438080.KS",
       "name": "ACE 미국S&P500미국채혼합50액티브",
+      "category": "채권혼합",
+      "region": "미국",
+      "style": "안전"
+    },
+    {
+      "symbol": "0218J0.KS",
+      "name": "RISE 미국우주&로봇TOP2미국채혼합50",
       "category": "채권혼합",
       "region": "미국",
       "style": "안전"
@@ -859,6 +943,65 @@
       "symbol": "0204S0.KS",
       "name": "TIGER 코스닥액티브",
       "category": "국내 테마·섹터 (3protv 등락 상하위)",
+      "region": "한국",
+      "style": "성장"
+    },
+    {
+      "symbol": "009150.KS",
+      "name": "삼성전기",
+      "category": "개별주(비ETF)",
+      "region": "한국",
+      "style": "개별주",
+      "assetType": "stock"
+    },
+    {
+      "symbol": "402340.KS",
+      "name": "SK스퀘어",
+      "category": "개별주(비ETF)",
+      "region": "한국",
+      "style": "개별주",
+      "assetType": "stock"
+    },
+    {
+      "symbol": "028260.KS",
+      "name": "삼성물산",
+      "category": "개별주(비ETF)",
+      "region": "한국",
+      "style": "개별주",
+      "assetType": "stock"
+    },
+    {
+      "symbol": "243880.KS",
+      "name": "TIGER 200IT레버리지",
+      "category": "단일종목 레버리지",
+      "region": "한국",
+      "style": "성장"
+    },
+    {
+      "symbol": "395160.KS",
+      "name": "KODEX AI반도체TOP2플러스",
+      "category": "국내 반도체·로봇 테마",
+      "region": "한국",
+      "style": "성장"
+    },
+    {
+      "symbol": "395270.KS",
+      "name": "HANARO Fn K-반도체",
+      "category": "국내 반도체·로봇 테마",
+      "region": "한국",
+      "style": "성장"
+    },
+    {
+      "symbol": "396500.KS",
+      "name": "TIGER 반도체TOP10",
+      "category": "국내 반도체·로봇 테마",
+      "region": "한국",
+      "style": "성장"
+    },
+    {
+      "symbol": "475310.KS",
+      "name": "SOL 반도체후공정",
+      "category": "국내 반도체·로봇 테마",
       "region": "한국",
       "style": "성장"
     }
