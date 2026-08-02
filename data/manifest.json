@@ -1,5 +1,5 @@
 {
- "updated": "2026-08-02 13:40 UTC",
+ "updated": "2026-08-02 21:33 UTC",
  "us": [
   {
    "symbol": "SPY",
@@ -656,6 +656,20 @@
    "first": "2026-07-01",
    "last": "2026-07-31",
    "count": 22,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0
+  },
+  {
+   "symbol": "NOK",
+   "name": "NOK (노키아 ADR)",
+   "category": "개별주(비ETF)",
+   "region": "미국",
+   "style": "개별주",
+   "assetType": "stock",
+   "currency": "USD",
+   "first": "2006-09-14",
+   "last": "2026-07-31",
+   "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   }
