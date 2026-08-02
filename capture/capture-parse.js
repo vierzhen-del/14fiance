@@ -505,6 +505,46 @@ function crossCheckBadgeHTML(crossCheck) {
   return `<span style="color:var(--critical); font-size:11px;">⚠️ ${label} 불일치(${crossCheck.otherQty})</span>`;
 }
 
+/* ---------- A33: 중복 (계좌+종목) 그룹 탐지 ----------
+   프롬프트가 제미나이에게 "같은 종목이 여러 장에 걸쳐 보이면 병합하지 말고 각각 별도 행으로
+   보고하라"고 지시하므로(같은 계좌가 여러 화면종류에 나뉘어 보이는 정상 케이스 보존 목적),
+   같은 (계좌,종목)이 여러 행으로 오는 것은 정상 출력이다. 병합 책임은 앱에 있는데 그게
+   없어서 resetAccountHoldings가 중복 DOM 행을 만들고 하류 집계가 전부 합산해버렸다
+   (2026-08-02 실사례: 총평가액 835M → 1,192M 오염). 여기서 그룹을 찾아 화면에 보여주고
+   반영 직전에 걸러낸다.
+
+   keyFn이 null을 반환하면(계좌 미선택·미매칭 등 키를 만들 수 없는 행) 중복 판정에서 빼되
+   deduped에는 그대로 남긴다. dedup 규칙은 upsertAccountHolding과 같은 "마지막 항목이 이긴다"
+   — 합산·평균은 하지 않는다(추측한 값을 만들지 않는다는 이 앱의 원칙). */
+function findDuplicateGroups(items, keyFn) {
+  const indicesByKey = new Map();
+  items.forEach((item, i) => {
+    const key = keyFn(item, i);
+    if (key == null) return;
+    if (!indicesByKey.has(key)) indicesByKey.set(key, []);
+    indicesByKey.get(key).push(i);
+  });
+  const lastIndexForKey = new Map();
+  const duplicateGroups = [];
+  for (const [key, indices] of indicesByKey) {
+    lastIndexForKey.set(key, indices[indices.length - 1]);
+    if (indices.length >= 2) duplicateGroups.push({ key, indices, entries: indices.map((i) => items[i]) });
+  }
+  const deduped = items.filter((item, i) => {
+    const key = keyFn(item, i);
+    return key == null || lastIndexForKey.get(key) === i;
+  });
+  return { deduped, duplicateGroups };
+}
+
+/* holdingsInGroup: 같은 (계좌,종목) 키를 공유하는 홀딩 배열(2개 이상). issueBadgeHTML·
+   crossCheckBadgeHTML과 같은 인라인 배지 스타일을 재사용한다. */
+function duplicateBadgeHTML(holdingsInGroup) {
+  if (!holdingsInGroup || holdingsInGroup.length < 2) return "";
+  const qtyList = holdingsInGroup.map((h) => `${h.qty ?? "?"}주`).join("/");
+  return `<span style="display:inline-block; color:var(--critical); font-size:12px; background:rgba(220,53,69,.12); border-radius:6px; padding:2px 6px; margin:2px 4px 2px 0;" title="같은 계좌·종목이 캡처 결과에 ${holdingsInGroup.length}회 나타났습니다 — 반영 시 마지막 값만 쓰고 나머지는 버립니다(합산 아님).">🔁 ${holdingsInGroup.length}회 중복(${qtyList})</span>`;
+}
+
 /* ---------- 노션 SOP 갱신용 요약 텍스트 (앱은 이 텍스트만 만들고, 실제 노션 반영은
    계속 사람이 붙여넣는 AI 세션이 담당 — CLAUDE.md/계획서의 역할분리 원칙).
    대상 AI(클로드/제미나이/ChatGPT)는 설정탭에서 고른 값을 localStorage에서 읽어
