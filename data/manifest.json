@@ -1,5 +1,5 @@
 {
- "updated": "2026-08-02 21:33 UTC",
+ "updated": "2026-08-02 22:23 UTC",
  "us": [
   {
    "symbol": "SPY",
@@ -1893,7 +1893,7 @@
    "last": "2026-07-31",
    "count": 795,
    "ttmDividend": 12.0,
-   "dividendYield": 0.0007,
+   "dividendYield": 0.0006,
    "dividendCountThisYear": 1,
    "dividendMonthThisYear": 4
   },
@@ -1909,7 +1909,7 @@
    "last": "2026-07-31",
    "count": 655,
    "ttmDividend": 29.0,
-   "dividendYield": 0.0019,
+   "dividendYield": 0.0015,
    "dividendCountThisYear": 2,
    "dividendMonthThisYear": 7
   },
@@ -1970,7 +1970,7 @@
    "last": "2026-07-31",
    "count": 491,
    "ttmDividend": 6.0,
-   "dividendYield": 0.0003,
+   "dividendYield": 0.0002,
    "dividendCountThisYear": 0
   },
   {
@@ -2057,7 +2057,7 @@
    "last": "2026-07-31",
    "count": 1223,
    "ttmDividend": 35.0,
-   "dividendYield": 0.0012,
+   "dividendYield": 0.0009,
    "dividendCountThisYear": 1,
    "dividendMonthThisYear": 4
   },
@@ -2105,7 +2105,7 @@
    "last": "2026-07-31",
    "count": 599,
    "ttmDividend": 5.0,
-   "dividendYield": 0.0003,
+   "dividendYield": 0.0002,
    "dividendCountThisYear": 1,
    "dividendMonthThisYear": 4
   }
