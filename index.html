@@ -4172,7 +4172,131 @@ ${dailyRows || "| — | | 기록 없음 |"}
     monthlySnapshots: monthly,
   }, null, 2) });
 
+  // ── 4) 에이전트 브리핑 (A35) ──
+  // 볼트에는 파일이 여러 개라 에이전트에게 전부 넘기기 번거롭다. 이 한 파일만 읽으면
+  // 현재 상태·최근 변동·데이터 신선도·자가진단을 다 알 수 있게 모아둔다.
+  // 계좌명은 **마스킹하지 않는다** — 볼트는 기기 안에만 있는 폐쇄 저장소이고, 가려두면
+  // 나중에 어느 계좌인지 대조가 안 돼 백업의 목적을 잃는다(2계층 데이터 정책, A34와 같은 근거).
+  notes.push({ name: "00_에이전트-브리핑.md", text: buildAgentBriefingNote(csv, changelog, now, won) });
+
   return notes;
+}
+
+/* ---------- A35: 에이전트 브리핑 노트 ----------
+   "내자산" 스킬을 든 에이전트가 이 파일 하나로 맥락을 잡게 만드는 것이 목적이다.
+   숫자를 나열하는 데 그치지 않고 **자가진단 결과를 함께 적는다** — 앱은 divRate 누락이나
+   (계좌,종목) 중복 같은 걸 이미 알고 있는데, 지금까지는 그걸 아무 데도 안 남겨서
+   에이전트가 매번 처음부터 다시 찾아야 했다(2026-08-02 배당 과대계상이 그렇게 늦게 발견됐다).
+   순수 함수라 웹에서도 검증 가능하다 — 파일 기록은 native-files.js가 맡는다. */
+function buildAgentBriefingNote(csv, changelog, now, won) {
+  const L = [];
+  L.push("# 🤖 에이전트 브리핑 — 14fiance 자산");
+  L.push(`> 자동 생성 ${now} · **이 볼트는 기기 안에만 있는 폐쇄 저장소라 계좌명을 가리지 않았다.**`);
+  L.push("> 여기 내용을 노션·텔레그램·저장소로 옮길 때는 반드시 계좌번호를 마스킹할 것.");
+  L.push("");
+
+  if (!csv || !csv.perRow || !csv.perRow.length) {
+    L.push("보유 종목이 없어 브리핑할 내용이 없습니다.");
+    return L.join("\n");
+  }
+
+  // ── 현재 상태 ──
+  L.push("## 현재 상태");
+  L.push(`- 총 평가액: **₩${won(csv.totalValue)}**`);
+  L.push(`- 예상 월배당: **₩${won(csv.totalMonthlyDiv)}** (연환산 ₩${won(csv.totalMonthlyDiv * 12)})`);
+  const annualYield = csv.totalValue > 0 ? (csv.totalMonthlyDiv * 12) / csv.totalValue * 100 : 0;
+  L.push(`- 연환산 배당률: **${annualYield.toFixed(2)}%**`);
+  L.push(`- 보유 종목 수: ${csv.perRow.length}행`);
+  L.push("");
+
+  // ── 계좌별 ──
+  const accMap = new Map();
+  for (const p of csv.perRow) {
+    const k = p.account || "계좌 미지정";
+    if (!accMap.has(k)) accMap.set(k, { value: 0, div: 0, n: 0 });
+    const g = accMap.get(k);
+    g.value += p.value || 0; g.div += p.monthlyDiv || 0; g.n += 1;
+  }
+  L.push("## 계좌별");
+  L.push("| 계좌 | 평가액 | 월배당 | 종목수 |");
+  L.push("| --- | --- | --- | --- |");
+  for (const [acc, g] of [...accMap.entries()].sort((a, b) => b[1].value - a[1].value)) {
+    L.push(`| ${acc} | ₩${won(g.value)} | ₩${won(g.div)} | ${g.n} |`);
+  }
+  L.push("");
+
+  // ── 자가진단 ──
+  // 에이전트가 "이상감지 체크리스트"를 처음부터 돌리지 않아도 되게 앱이 미리 검사해 남긴다.
+  const flags = [];
+
+  // (1) divRate 누락 — 등록 분배율이 없어 확정DPS 역산으로 떨어진 종목.
+  //     확정DPS는 과거 기준주가로 산정된 값이라 주가가 빠졌으면 분배율이 부풀어 오른다.
+  const derived = csv.perRow.filter((p) => p.divBasis === "derived" && p.monthlyDiv > 0);
+  if (derived.length) {
+    const amt = derived.reduce((a, b) => a + b.monthlyDiv, 0);
+    flags.push(`⚠️ **divRate 미등록 ${derived.length}종목** — 확정DPS 역산으로 계산 중(월배당 ₩${won(amt)} 해당). ` +
+      "노션 배당기준 마스터의 분배율이 import JSON의 divRate로 실려 나갔는지 확인할 것. " +
+      "역산은 주가가 빠진 종목일수록 분배율이 부풀어 오른다.");
+  }
+
+  // (2) 확정DPS 대비 괴리가 큰 종목 — 위 (1)이 실제로 얼마나 어긋났는지 보여준다.
+  const gapped = csv.perRow.filter((p) => p.dpsGapPct != null && Math.abs(p.dpsGapPct) > 0.15)
+    .sort((a, b) => Math.abs(b.dpsGapPct) - Math.abs(a.dpsGapPct));
+  if (gapped.length) {
+    flags.push(`⚠️ **분배율 괴리 15%↑ ${gapped.length}종목**: ` +
+      gapped.slice(0, 5).map((p) => `${p.meta ? p.meta.name : p.symbol}(${p.dpsGapPct >= 0 ? "+" : ""}${(p.dpsGapPct * 100).toFixed(0)}%)`).join(", "));
+  }
+
+  // (3) 같은 (계좌,종목) 중복 — 하류 집계가 경고 없이 합산하므로 평가액·배당이 부풀어 오른다.
+  const seen = new Map();
+  for (const p of csv.perRow) {
+    const k = `${p.account || ""}|${p.symbol}`;
+    seen.set(k, (seen.get(k) || 0) + 1);
+  }
+  const dups = [...seen.entries()].filter(([, n]) => n > 1);
+  if (dups.length) {
+    flags.push(`🔴 **(계좌,종목) 중복 ${dups.length}건** — 집계가 합산되어 평가액·배당이 부풀어 있다: ` +
+      dups.slice(0, 5).map(([k, n]) => `${k.replace("|", " / ")} ×${n}`).join(", "));
+  }
+
+  // (4) 연환산 배당률 상식 범위 — 커버드콜 비중이 높아도 15%를 넘으면 입력 데이터를 의심한다.
+  if (annualYield > 15) {
+    flags.push(`⚠️ **연환산 배당률 ${annualYield.toFixed(1)}%** — 커버드콜 비중을 감안해도 높다. 위 divRate 항목부터 확인.`);
+  }
+
+  L.push("## 자가진단");
+  L.push(flags.length ? flags.map((f) => `- ${f}`).join("\n") : "- 걸리는 항목 없음.");
+  L.push("");
+
+  // ── 최근 변동 ──
+  L.push("## 최근 변동 (최신 10건)");
+  if (changelog && changelog.length) {
+    for (const e of changelog.slice(0, 10)) {
+      const src = CHANGE_SOURCE_LABEL[e.source] || e.source;
+      const items = e.changes.slice(0, 6)
+        .map((c) => `${c.symbol} ${c.oldQty}→${c.newQty}`).join(", ");
+      const more = e.changes.length > 6 ? ` 외 ${e.changes.length - 6}건` : "";
+      L.push(`- \`${e.ts}\` **${src}** · ₩${won(e.beforeValue)} → ₩${won(e.afterValue)} · ${items}${more}`);
+    }
+    L.push("");
+    L.push("> `source`가 `capture-account-reset`이면 계좌 전체가 교체된 것이라, 수량 급변이");
+    L.push("> 실제 매매가 아니라 반영 사고일 수 있다(2026-08-02 실사례).");
+  } else {
+    L.push("- 기록 없음.");
+  }
+  L.push("");
+
+  // ── 보유 전체 ──
+  L.push("## 보유 종목 전체");
+  L.push("| 계좌 | 종목 | 코드 | 수량 | 평가액 | 월배당 | 배당근거 |");
+  L.push("| --- | --- | --- | --- | --- | --- | --- |");
+  const BASIS_LABEL = { rate: "등록 분배율", derived: "확정DPS 역산", ttm: "TTM 추정" };
+  for (const p of [...csv.perRow].sort((a, b) => (b.value || 0) - (a.value || 0))) {
+    L.push(`| ${p.account || "미지정"} | ${p.meta ? p.meta.name : p.symbol} | ${p.symbol} | ` +
+      `${(p.qty || 0).toLocaleString()} | ₩${won(p.value)} | ₩${won(p.monthlyDiv)} | ${BASIS_LABEL[p.divBasis] || "—"} |`);
+  }
+
+  return L.join("\n");
 }
 
 /* ---------- A6: 📊 지수비교 탭 — 내 수익률 vs 벤치마크 ----------
