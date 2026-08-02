@@ -345,6 +345,14 @@
       "category": "메모리 배당",
       "region": "미국",
       "style": "성장"
+    },
+    {
+      "symbol": "NOK",
+      "name": "NOK (노키아 ADR)",
+      "category": "개별주(비ETF)",
+      "region": "미국",
+      "style": "개별주",
+      "assetType": "stock"
     }
   ],
   "kr": [
