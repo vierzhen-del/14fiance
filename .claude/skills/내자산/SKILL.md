@@ -21,7 +21,7 @@ description: 14RAE 자산 전담 — 보유현황·배당 질답, 이상감지·
 | `vierzhen-del/3tv-reports` | **private** | 3protv 일자별 시황 — **급변 판정의 근거** |
 | `vierzhen-del/3tv` | public | 3protv 리포트 생성 로직 (형식·필드 이해용) |
 | `vierzhen-del/second-brain` | **private** | 옵시디안 볼트 git 사본. `14rae_work/00_지침/`에 운영규칙, `14rae_work/10_주식/10_계좌/`에 포트폴리오 노트 |
-| `vierzhen-del/14fiance_asset` | **private (등록 예정)** | 자산 전용 볼트 — 아래 참조 |
+| `vierzhen-del/14fiance_asset` | **private** ✅ | 자산 전용 볼트 (2026-08-02 생성, visibility=private 확인) — 아래 참조 |
 
 세션에 없으면 `add_repo`로 붙인다. 나머지 20여 개는 남의 프로젝트 fork라 자산 작업과 무관하니 붙이지 않는다.
 
@@ -31,6 +31,23 @@ description: 14RAE 자산 전담 — 보유현황·배당 질답, 이상감지·
 > 알고 등록하기로 결정했다(`second-brain`도 같은 방식으로 이미 운영 중). 대신 **얻는 것**은
 > 에이전트가 파일 첨부 없이 볼트를 상시 읽을 수 있다는 점이다.
 > 등록 후에는 이 레포를 붙여 `00_에이전트-브리핑.md`를 직접 읽으면 된다.
+>
+> **레포를 만졌다면 visibility가 private인지 매번 확인할 것.** public으로 바뀌면 계좌번호와
+> 실제 금액이 그대로 공개된다. `list_repos`로 확인하면 `visibility` 필드가 나온다.
+
+**볼트 → 레포 반영 경로**(s26 기기 쪽 작업이라 이 세션이 대신 못 한다):
+`Documents/14fiance_asset/` 이 곧 레포 작업트리가 되게 하고, 앱이 백업할 때마다 커밋·푸시한다.
+옵시디안 Git 플러그인을 쓰거나, Tab S9의 n8n이 Tailscale로 받아 푸시하는 방식 둘 다 가능하다.
+푸시되면 레포 트리는 이렇게 된다:
+
+```
+14fiance/
+  00_에이전트-브리핑.md   ← 이것만 읽으면 맥락이 잡힌다
+  배당-이력.md / .json
+  종목변동-이력.md / .json
+  일별-종합결과.md / .json
+  종합-리포트.md
+```
 
 ## 데이터 지도 (어디를 보고 어디를 고치는가)
 
