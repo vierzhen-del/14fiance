@@ -1334,6 +1334,7 @@ function renderCaptureAccountResult(validated, apiResult) {
       <button type="button" id="captureAccountFillBtn" class="btn-action">📥 선택 항목 폼에 채우기</button>
       <button type="button" id="captureAccountResetBtn" class="btn-action" style="color:var(--critical);">🆕 완전 신규 업데이트</button>
       <button type="button" id="captureAccountSummaryBtn" class="btn-action">📋 노션 SOP 요약 복사</button>
+      <button type="button" id="captureAccountConfirmBtn" class="btn-action" style="font-weight:600; border-color:var(--positive);">✅ 확정(반영+SOP요약)</button>
     </div>`;
   wireThumbHighlight(el);
   el.querySelectorAll("tbody tr").forEach((tr) => {
@@ -1375,6 +1376,37 @@ function renderCaptureAccountResult(validated, apiResult) {
   document.getElementById("captureAccountSummaryBtn").addEventListener("click", () => {
     const divStatus = document.getElementById("captureDivStatus").value;
     copyToClipboard(buildAccountCaptureSummaryText(validated, divStatus), "captureAccountStatus", `요약 복사됨 — ${sopTargetLabel()}에 붙여넣어 노션 SOP 갱신을 요청하세요`);
+  });
+  // A29: "확정" = 체크(선택)된 행만 폼에 반영 + 그 확정된 행만으로 SOP 요약을 만든다.
+  // 기존 "노션 SOP 요약 복사"는 파싱된 전체 목록을 그대로 요약해 체크 해제한(교차검증 불일치 등)
+  // 항목까지 SOP 반영 요청에 섞이는 문제가 있었다 — 이 버튼은 실제 반영한 행만 SOP 요약에 넣는다.
+  document.getElementById("captureAccountConfirmBtn").addEventListener("click", async () => {
+    const beforeHoldings = snapshotHoldingsMap();
+    const beforeSnap = snapshotAccountValues();
+    let added = 0, updated = 0;
+    const confirmedHoldings = [];
+    el.querySelectorAll("tbody tr").forEach((tr) => {
+      const h = validated.holdings[Number(tr.dataset.idx)];
+      const check = tr.querySelector(".capture-row-check");
+      if (!check || !check.checked || !h.matchedSymbol) return;
+      const accSel = tr.querySelector(".capture-account-select");
+      const accountValue = accSel ? accSel.value : (h.matchedAccount || "");
+      const result = upsertAccountHolding(accountValue, h.matchedSymbol, h.qty || 0, h.avgPrice || 0);
+      if (result === "updated") updated++; else added++;
+      confirmedHoldings.push({ ...h, matchedAccount: accountValue });
+    });
+    if (!confirmedHoldings.length) {
+      flashStatus("captureAccountStatus", "확정할 항목을 선택하세요(매칭된 종목만 가능)");
+      return;
+    }
+    saveMyAssets();
+    await renderMyAssets();
+    updateMyRowsCollapseUI();
+    pushAssetChangelog("capture-account-confirm", beforeHoldings, beforeSnap, snapshotHoldingsMap(), snapshotAccountValues());
+    const divStatus = document.getElementById("captureDivStatus").value;
+    const confirmedValidated = { ...validated, holdings: confirmedHoldings };
+    const summaryText = `✅ 확정된 ${confirmedHoldings.length}건만 반영(체크 해제 항목 제외)\n` + buildAccountCaptureSummaryText(confirmedValidated, divStatus);
+    copyToClipboard(summaryText, "captureAccountStatus", `${added}건 추가, ${updated}건 갱신 + 확정 ${confirmedHoldings.length}건 SOP 요약 복사됨 — ${sopTargetLabel()}에 붙여넣으세요`);
   });
   document.getElementById("captureAccountResetBtn").addEventListener("click", async () => {
     // A3b의 upsert(대조 후 병합)와 달리 diff 없이 완전 치환 — 체크 여부 무관하게 매칭+계좌배정된
