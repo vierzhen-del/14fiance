@@ -2983,15 +2983,19 @@ function buildDailyAssetHTML(dailyHistory) {
       <td>${h.date}</td><td>${fmtW(h.value)}</td>
       <td style="color:${diff == null ? "var(--text-muted)" : diff >= 0 ? "var(--good)" : "var(--critical)"}">${diff == null ? "—" : (diff >= 0 ? "+" : "") + fmtW(diff)}</td>
       <td>${h.monthlyDiv > 0 ? fmtW(h.monthlyDiv) : "—"}</td>
+      <td><button type="button" class="my-daily-del" data-date="${h.date}" title="이 날 기록 삭제"
+        style="border:none; background:none; color:var(--critical); cursor:pointer; font-size:15px; padding:2px 6px;">🗑</button></td>
     </tr>`;
   }).join("");
   return `<div style="overflow-x:auto;">
     <table class="account-summary-table">
-      <thead><tr><th>날짜</th><th>평가액</th><th>전일 대비</th><th>월배당(그 시점)</th></tr></thead>
+      <thead><tr><th>날짜</th><th>평가액</th><th>전일 대비</th><th>월배당(그 시점)</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
     </div>
-    <p class="stat-sub" style="margin-top:6px;">최근 ${sorted.length}일 기록(총 ${dailyHistory.length}일 캡처됨).</p>`;
+    <p class="stat-sub" style="margin-top:6px;">최근 ${sorted.length}일 기록(총 ${dailyHistory.length}일 캡처됨).
+    A36: 잘못 쌓인 기록은 🗑으로 지웁니다 — 오염된 스냅샷(반영 사고 중에 저장된 값 등)이 남아 있으면
+    추이·주간·월별 계산이 전부 그 값을 물고 갑니다.</p>`;
 }
 
 /* ISO 주(월요일 시작) 기준 "YYYY-Www" 키로 일별 이력을 묶어 주간 평균 변동을 보여줌 */
@@ -5028,6 +5032,18 @@ async function renderMyAssets() {
           cfg.returnMode !== "manual" ? ` (종목별 최근 ${cfg.returnMode}개월 실적 가중평균${weightedTrailReturn == null ? ", 가격데이터 부족 시 0% 처리" : ""} + 배당수익률)`
           : expReturn == null ? " (기대수익률 미입력 — 배당만 반영)" : ""
         }</p>
+        ${/* A36: 이 수치가 어디서 왔는지 화면에 밝힌다. 종전에는 "연 22.7% 가정"만 보여서
+             근거를 물어봐야 알 수 있었고, 배당이 바뀌면 이 값도 따라 움직이는데 그 사실이
+             드러나지 않았다(실제로 배당 과대계상이 고쳐지자 27.4%→22.7%로 내려갔다). */""}
+        <p class="stat-sub" style="color:var(--text-muted);">└ 산출 근거: ${
+          cfg.returnMode !== "manual" ? "종목별 실적" : "기대수익률(직접입력)"
+        } <b>${expReturn == null ? "0.0" : (expReturn * 100).toFixed(1)}%</b> + 배당수익률 <b>${(wDivYield * 100).toFixed(2)}%</b>${
+          livingExpenseUsed > 0 ? `(재투자 ${fmtW(reinvestedDiv)}/월 ÷ 평가액 기준)` : ""
+        }. <b>배당이 바뀌면 이 수치도 자동으로 바뀝니다.</b>${
+          cfg.returnMode === "manual" && expReturn != null
+            ? " ⚠️ 직접입력값은 <b>주가 상승률</b>로 취급돼 배당수익률이 더해집니다 — 총수익률을 넣으셨다면 배당이 이중계산됩니다."
+            : ""
+        }</p>
         <p class="stat-sub">월 재투자액 ${fmtW(totalMonthlyInvest)}${totalContributions > 0 ? ` (월매수 ${fmtW(totalMonthlyBuy)} + 월적립 ${fmtW(totalContributions)})` : ""} 반영${livingExpenseUsed > 0 ? ` · 배당은 재투자분(${fmtW(reinvestedDiv)}/월)만 복리 반영, 생활비 사용분 제외` : ""}</p>
         ${realGoalLabel ? `<p class="stat-sub" style="color:var(--text-muted);">물가상승률 ${(inflationRate * 100).toFixed(1)}%/년 반영(오늘 구매력 기준): <b>${realGoalLabel}</b></p>` : ""}
       </div>` : ""}
@@ -5537,6 +5553,25 @@ async function renderMyAssets() {
       : g === "weekly" ? buildWeeklyAssetHTML(dailyHistory)
       : g === "monthly" ? buildMonthlyAssetHTML(history)
       : buildYearlyAssetHTML(history);
+    /* A36: 일별 스냅샷 개별 삭제 — 반영 사고 중에 저장된 오염 스냅샷이 남아 있으면
+       추이 차트·주간·월별 계산이 전부 그 값을 물고 간다. 자동 판별은 하지 않는다
+       (어느 값이 오염인지는 사람만 안다) — 삭제는 확인 다이얼로그를 거친다. */
+    body.querySelectorAll(".my-daily-del").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const date = btn.dataset.date;
+        const hist = JSON.parse(localStorage.getItem(MY_ASSETS_DAILY_HISTORY_KEY) || "[]");
+        const target = hist.find((h) => h.date === date);
+        if (!target) return;
+        if (!window.confirm(`${date} 스냅샷을 삭제합니다.\n\n평가액 ${fmtPrice(target.value, "KRW")}\n\n되돌릴 수 없습니다. 계속하시겠습니까?`)) return;
+        const next = hist.filter((h) => h.date !== date);
+        localStorage.setItem(MY_ASSETS_DAILY_HISTORY_KEY, JSON.stringify(next));
+        // 2026-08-01 실사례와 같은 이유로 saveMyAssets()까지 해야 앱 재시작 때
+        // MY_ASSETS_KEY 안의 박제 사본이 삭제분을 되살리지 않는다.
+        saveMyAssets();
+        flashStatus("myDailySnapshotStatus", `${date} 스냅샷 삭제됨`);
+        renderMyAssets();
+      });
+    });
   };
   if (state.myAssetChangeGranularity) changeSel.value = state.myAssetChangeGranularity;
   changeSel.addEventListener("change", () => { state.myAssetChangeGranularity = changeSel.value; renderAssetChange(); });
