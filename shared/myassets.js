@@ -2107,12 +2107,31 @@ function buildAgentBriefingNote(csv, changelog, now, won) {
       "역산은 주가가 빠진 종목일수록 분배율이 부풀어 오른다.");
   }
 
-  // (2) 확정DPS 대비 괴리가 큰 종목 — 위 (1)이 실제로 얼마나 어긋났는지 보여준다.
-  const gapped = csv.perRow.filter((p) => p.dpsGapPct != null && Math.abs(p.dpsGapPct) > 0.15)
-    .sort((a, b) => Math.abs(b.dpsGapPct) - Math.abs(a.dpsGapPct));
-  if (gapped.length) {
-    flags.push(`⚠️ **분배율 괴리 15%↑ ${gapped.length}종목**: ` +
-      gapped.slice(0, 5).map((p) => `${p.meta ? p.meta.name : p.symbol}(${p.dpsGapPct >= 0 ? "+" : ""}${(p.dpsGapPct * 100).toFixed(0)}%)`).join(", "));
+  // (2) 확정DPS 대비 괴리 — **경로에 따라 뜻이 정반대다.**
+  //   · divBasis "rate"(등록 분배율 사용): 괴리는 정상이다. 확정DPS는 과거 기준주가로 산정된
+  //     스냅샷이고 분배율×현재가가 최신값이므로, 주가가 빠진 만큼 음수 괴리가 나는 게 맞다.
+  //     경고가 아니라 "노션 배당기준 마스터의 확정DPS가 낡았다"는 정보로 표시한다.
+  //     (2026-08-02: 이걸 경고로 냈다가 divRate 수정이 잘 먹은 종목들이 전부 ⚠️로 떠 오탐이 됐다.)
+  //   · divBasis "derived"(확정DPS 역산): 이건 진짜 경고다. 등록 분배율이 없어 역산에 의존하는데
+  //     그 역산값이 확정DPS와 어긋난다는 뜻이라 어느 쪽도 믿기 어렵다.
+  const gapLabel = (p) => `${p.meta ? p.meta.name : p.symbol}[${p.account || "미지정"}] ` +
+    `${p.dpsGapPct >= 0 ? "+" : ""}${(p.dpsGapPct * 100).toFixed(0)}%`;
+  const byGap = (a, b) => Math.abs(b.dpsGapPct) - Math.abs(a.dpsGapPct);
+  const gapped = csv.perRow.filter((p) => p.dpsGapPct != null && Math.abs(p.dpsGapPct) > 0.15);
+
+  const gapDerived = gapped.filter((p) => p.divBasis === "derived").sort(byGap);
+  if (gapDerived.length) {
+    flags.push(`⚠️ **역산 분배율이 확정DPS와 15%↑ 어긋남 ${gapDerived.length}건** — 등록 분배율이 없어 ` +
+      `역산 중인데 그 값도 확정DPS와 맞지 않는다(어느 쪽도 신뢰하기 어려움): ` +
+      gapDerived.slice(0, 5).map(gapLabel).join(", ") + (gapDerived.length > 5 ? ` 외 ${gapDerived.length - 5}건` : ""));
+  }
+
+  const gapRate = gapped.filter((p) => p.divBasis === "rate").sort(byGap);
+  if (gapRate.length) {
+    flags.push(`ℹ️ **확정DPS가 낡음 ${gapRate.length}건**(이상 아님) — 등록 분배율×현재가로 정상 계산 중이고, ` +
+      `확정DPS는 과거 기준주가로 산정된 값이라 주가가 움직인 만큼 차이가 난다. ` +
+      `노션 배당기준 마스터의 DPS를 최신 기준주가로 갱신하면 사라진다: ` +
+      gapRate.slice(0, 5).map(gapLabel).join(", ") + (gapRate.length > 5 ? ` 외 ${gapRate.length - 5}건` : ""));
   }
 
   // (3) 같은 (계좌,종목) 중복 — 하류 집계가 경고 없이 합산하므로 평가액·배당이 부풀어 오른다.
