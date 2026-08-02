@@ -290,6 +290,61 @@
       "region": "미국",
       "style": "배당",
       "assetType": "stock"
+    },
+    {
+      "symbol": "SNDK",
+      "name": "SNDK (샌디스크)",
+      "category": "개별주(비ETF)",
+      "region": "미국",
+      "style": "개별주",
+      "assetType": "stock"
+    },
+    {
+      "symbol": "SKHY",
+      "name": "SKHY (SK하이닉스 ADR)",
+      "category": "개별주(비ETF)",
+      "region": "미국",
+      "style": "개별주",
+      "assetType": "stock"
+    },
+    {
+      "symbol": "INTC",
+      "name": "INTC (인텔)",
+      "category": "개별주(비ETF)",
+      "region": "미국",
+      "style": "개별주",
+      "assetType": "stock"
+    },
+    {
+      "symbol": "MU",
+      "name": "MU (마이크론)",
+      "category": "개별주(비ETF)",
+      "region": "미국",
+      "style": "개별주",
+      "assetType": "stock"
+    },
+    {
+      "symbol": "AMD",
+      "name": "AMD (AMD)",
+      "category": "개별주(비ETF)",
+      "region": "미국",
+      "style": "개별주",
+      "assetType": "stock"
+    },
+    {
+      "symbol": "SMCI",
+      "name": "SMCI (슈퍼마이크로컴퓨터)",
+      "category": "개별주(비ETF)",
+      "region": "미국",
+      "style": "개별주",
+      "assetType": "stock"
+    },
+    {
+      "symbol": "DISK",
+      "name": "DISK (TEMA MEMORY)",
+      "category": "메모리 배당",
+      "region": "미국",
+      "style": "성장"
     }
   ],
   "kr": [
@@ -880,6 +935,65 @@
       "symbol": "0204S0.KS",
       "name": "TIGER 코스닥액티브",
       "category": "국내 테마·섹터 (3protv 등락 상하위)",
+      "region": "한국",
+      "style": "성장"
+    },
+    {
+      "symbol": "009150.KS",
+      "name": "삼성전기",
+      "category": "개별주(비ETF)",
+      "region": "한국",
+      "style": "개별주",
+      "assetType": "stock"
+    },
+    {
+      "symbol": "402340.KS",
+      "name": "SK스퀘어",
+      "category": "개별주(비ETF)",
+      "region": "한국",
+      "style": "개별주",
+      "assetType": "stock"
+    },
+    {
+      "symbol": "028260.KS",
+      "name": "삼성물산",
+      "category": "개별주(비ETF)",
+      "region": "한국",
+      "style": "개별주",
+      "assetType": "stock"
+    },
+    {
+      "symbol": "243880.KS",
+      "name": "TIGER 200IT레버리지",
+      "category": "단일종목 레버리지",
+      "region": "한국",
+      "style": "성장"
+    },
+    {
+      "symbol": "395160.KS",
+      "name": "KODEX AI반도체TOP2플러스",
+      "category": "국내 반도체·로봇 테마",
+      "region": "한국",
+      "style": "성장"
+    },
+    {
+      "symbol": "395270.KS",
+      "name": "HANARO Fn K-반도체",
+      "category": "국내 반도체·로봇 테마",
+      "region": "한국",
+      "style": "성장"
+    },
+    {
+      "symbol": "396500.KS",
+      "name": "TIGER 반도체TOP10",
+      "category": "국내 반도체·로봇 테마",
+      "region": "한국",
+      "style": "성장"
+    },
+    {
+      "symbol": "475310.KS",
+      "name": "SOL 반도체후공정",
+      "category": "국내 반도체·로봇 테마",
       "region": "한국",
       "style": "성장"
     }
