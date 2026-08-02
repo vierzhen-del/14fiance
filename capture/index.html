@@ -91,8 +91,10 @@
             <option value="12">종목별 최근 12개월 실적 반영</option>
           </select>
           <div class="portfolio-weight-wrap" id="myExpectedReturnWrap">
-            <input type="number" id="myExpectedReturn" class="portfolio-weight" style="width:110px" step="1" placeholder="기대수익률(선택)" aria-label="기대 연 수익률">
-            <span style="font-size:12.5px; color:var(--text-muted);">%/년</span>
+            <input type="number" id="myExpectedReturn" class="portfolio-weight" style="width:130px" step="0.1" placeholder="기대 총수익률" aria-label="기대 연 총수익률(배당 포함)" title="배당을 포함한 연 총수익률. 여기에 배당수익률을 따로 더하지 않습니다.">
+            <span style="font-size:12.5px; color:var(--text-muted);">%/년(총)</span>
+            <input type="number" id="myExpectedDivYield" class="portfolio-weight" style="width:130px" step="0.1" placeholder="기대 배당수익률" aria-label="기대 연 배당수익률" title="총수익률 중 배당이 차지할 몫. 비워두면 현재 실제 배당수익률을 씁니다.">
+            <span style="font-size:12.5px; color:var(--text-muted);">%/년(배당)</span>
           </div>
           <div class="portfolio-weight-wrap">
             <input type="number" id="myLivingExpense" class="portfolio-weight" style="width:140px" min="0" step="10000" placeholder="월 생활비 사용액(선택, 원)" aria-label="월배당 중 생활비로 쓰는 금액">

@@ -588,8 +588,10 @@
             <option value="12">종목별 최근 12개월 실적 반영</option>
           </select>
           <div class="portfolio-weight-wrap" id="myExpectedReturnWrap">
-            <input type="number" id="myExpectedReturn" class="portfolio-weight" style="width:110px" step="1" placeholder="기대수익률(선택)" aria-label="기대 연 수익률">
-            <span style="font-size:12.5px; color:var(--text-muted);">%/년</span>
+            <input type="number" id="myExpectedReturn" class="portfolio-weight" style="width:130px" step="0.1" placeholder="기대 총수익률" aria-label="기대 연 총수익률(배당 포함)" title="배당을 포함한 연 총수익률. 여기에 배당수익률을 따로 더하지 않습니다.">
+            <span style="font-size:12.5px; color:var(--text-muted);">%/년(총)</span>
+            <input type="number" id="myExpectedDivYield" class="portfolio-weight" style="width:130px" step="0.1" placeholder="기대 배당수익률" aria-label="기대 연 배당수익률" title="총수익률 중 배당이 차지할 몫. 비워두면 현재 실제 배당수익률을 씁니다.">
+            <span style="font-size:12.5px; color:var(--text-muted);">%/년(배당)</span>
           </div>
           <div class="portfolio-weight-wrap">
             <input type="number" id="myLivingExpense" class="portfolio-weight" style="width:140px" min="0" step="10000" placeholder="월 생활비 사용액(선택, 원)" aria-label="월배당 중 생활비로 쓰는 금액">
@@ -2351,6 +2353,7 @@ function serializeMyAssets() {
       return manwon > 0 ? Math.round(manwon * 10000) : "";
     })(),
     expectedReturn: document.getElementById("myExpectedReturn").value,
+    expectedDivYield: (document.getElementById("myExpectedDivYield") || {}).value || "",
     returnMode: document.getElementById("myReturnMode").value,
     livingExpense: parseFloat(document.getElementById("myLivingExpense").value) || 0,
     inflationOn: document.getElementById("myInflationOn") ? document.getElementById("myInflationOn").checked : false,
@@ -2445,6 +2448,7 @@ function applyMyAssets(data) {
   // 저장값은 원 단위 — 입력칸엔 만원 단위로 환산해서 채운다
   document.getElementById("myGoalAmount").value = data.goalAmount > 0 ? Math.round(Number(data.goalAmount) / 10000) : "";
   document.getElementById("myExpectedReturn").value = data.expectedReturn || "";
+  { const el = document.getElementById("myExpectedDivYield"); if (el) el.value = data.expectedDivYield || ""; }
   document.getElementById("myReturnMode").value = data.returnMode || "manual";
   document.getElementById("myLivingExpense").value = data.livingExpense || "";
   if (document.getElementById("myInflationOn")) document.getElementById("myInflationOn").checked = !!data.inflationOn;
@@ -4879,7 +4883,19 @@ async function renderMyAssets() {
   const livingExpenseUsed = Math.min(cfg.livingExpense || 0, totalMonthlyDiv);
   const reinvestedDiv = totalMonthlyDiv - livingExpenseUsed;
   const wDivYield = totalValue > 0 ? (reinvestedDiv * 12) / totalValue : 0;
-  const goalRate = (expReturn != null ? expReturn : 0) + wDivYield;
+  /* A38: 직접입력값은 **배당을 포함한 총수익률**이다(2026-08-02 사용자 확정).
+     종전에는 이 값을 주가 상승률로 보고 배당수익률을 더해서, 15%를 넣으면 22.7%로
+     계산됐다 — 사용자가 총수익률로 입력했으므로 배당이 이중계산된 것이다.
+     이제 직접입력 모드에서는 그 값을 그대로 goalRate로 쓴다.
+     종목별 실적 모드(returnMode≠manual)는 가격 등락률만 나오므로 종전대로 배당을 더한다. */
+  const expDivInput = cfg.expectedDivYield !== "" && cfg.expectedDivYield != null
+    ? Number(cfg.expectedDivYield) / 100 : null;
+  const goalRate = cfg.returnMode !== "manual"
+    ? (expReturn != null ? expReturn : 0) + wDivYield
+    : (expReturn != null ? expReturn : wDivYield);
+  // 목표를 구성요소로 쪼갠 값(표시용) — 기대 배당수익률은 입력값 우선, 없으면 현재 실적
+  const goalDivPart = expDivInput != null ? expDivInput : wDivYield;
+  const goalPricePart = goalRate - goalDivPart;
   // 월 재투자액 = 월매수총액(ETF 매수) + 월적립투자금액(계좌별 월 납입금, 연금저축 등) — 둘 다 매달 잔고에 더해져 복리로 불어남
   const totalContributions = Object.values(cfg.contributions || {}).reduce((a, b) => a + b, 0);
   const totalMonthlyInvest = totalMonthlyBuy + totalContributions;
@@ -5108,13 +5124,37 @@ async function renderMyAssets() {
         ${/* A36: 이 수치가 어디서 왔는지 화면에 밝힌다. 종전에는 "연 22.7% 가정"만 보여서
              근거를 물어봐야 알 수 있었고, 배당이 바뀌면 이 값도 따라 움직이는데 그 사실이
              드러나지 않았다(실제로 배당 과대계상이 고쳐지자 27.4%→22.7%로 내려갔다). */""}
-        <p class="stat-sub" style="color:var(--text-muted);">└ 산출 근거: ${
-          cfg.returnMode !== "manual" ? "종목별 실적" : "기대수익률(직접입력)"
-        } <b>${expReturn == null ? "0.0" : (expReturn * 100).toFixed(1)}%</b> + 배당수익률 <b>${(wDivYield * 100).toFixed(2)}%</b>${
-          livingExpenseUsed > 0 ? `(재투자 ${fmtW(reinvestedDiv)}/월 ÷ 평가액 기준)` : ""
-        }. <b>배당이 바뀌면 이 수치도 자동으로 바뀝니다.</b>${
-          cfg.returnMode === "manual" && expReturn != null
-            ? " ⚠️ 직접입력값은 <b>주가 상승률</b>로 취급돼 배당수익률이 더해집니다 — 총수익률을 넣으셨다면 배당이 이중계산됩니다."
+        ${/* A38: 목표를 총/종목/배당 세 항으로 쪼개 보여주고, 각 항을 현재 실적과 나란히 둔다.
+             "22.7%가 어디서 왔나"를 물어봐야 알던 것을 화면에서 바로 읽게 하려는 것. */""}
+        <div style="overflow-x:auto; margin-top:6px;">
+        <table class="account-summary-table" style="font-size:12px;">
+          <thead><tr><th>구분</th><th>목표</th><th>현재</th><th>차이</th></tr></thead>
+          <tbody>
+            ${[
+              ["총수익률", goalRate, (weightedTrailReturn != null ? weightedTrailReturn : null) == null ? null : weightedTrailReturn + wDivYield],
+              ["└ 종목수익률", goalPricePart, weightedTrailReturn],
+              ["└ 배당수익률", goalDivPart, wDivYield],
+            ].map(([label, want, now]) => {
+              const gap = now == null ? null : now - want;
+              return `<tr>
+                <td style="text-align:left;">${label}</td>
+                <td>${(want * 100).toFixed(2)}%</td>
+                <td>${now == null ? "—" : (now * 100).toFixed(2) + "%"}</td>
+                <td style="color:${gap == null ? "var(--text-muted)" : gap >= 0 ? "var(--good)" : "var(--critical)"}">${
+                  gap == null ? "—" : (gap >= 0 ? "+" : "") + (gap * 100).toFixed(2) + "%p"}</td>
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table>
+        </div>
+        <p class="stat-sub" style="color:var(--text-muted);">${
+          cfg.returnMode === "manual"
+            ? `직접입력값은 <b>배당을 포함한 총수익률</b>로 씁니다 — 배당수익률을 따로 더하지 않습니다.${
+                expReturn == null ? " (미입력 — 현재 배당수익률만 가정)" : ""}`
+            : `종목별 최근 ${cfg.returnMode}개월 실적(가격 등락률) + 배당수익률로 계산합니다.`
+        } 현재 배당수익률은 재투자분 ${fmtW(reinvestedDiv)}/월 ÷ 평가액 기준이라 <b>배당이 바뀌면 자동으로 갱신</b>됩니다.${
+          weightedTrailReturn == null && cfg.returnMode === "manual"
+            ? " 현재 종목수익률은 「종목별 실적 반영」 모드로 바꾸면 계산됩니다."
             : ""
         }</p>
         <p class="stat-sub">월 재투자액 ${fmtW(totalMonthlyInvest)}${totalContributions > 0 ? ` (월매수 ${fmtW(totalMonthlyBuy)} + 월적립 ${fmtW(totalContributions)})` : ""} 반영${livingExpenseUsed > 0 ? ` · 배당은 재투자분(${fmtW(reinvestedDiv)}/월)만 복리 반영, 생활비 사용분 제외` : ""}</p>
