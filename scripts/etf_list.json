@@ -518,6 +518,13 @@
       "style": "성장"
     },
     {
+      "symbol": "0223R0.KS",
+      "name": "TIGER 미국테크NYSE100액티브",
+      "category": "미국·글로벌 테마 액티브(국내상장)",
+      "region": "미국",
+      "style": "성장"
+    },
+    {
       "symbol": "442570.KS",
       "name": "RISE TDF2050액티브",
       "category": "TDF·자산배분",
@@ -541,6 +548,13 @@
     {
       "symbol": "0038A0.KS",
       "name": "KODEX 미국휴머노이드로봇",
+      "category": "미국 테마",
+      "region": "미국",
+      "style": "성장"
+    },
+    {
+      "symbol": "465580.KS",
+      "name": "ACE 미국빅테크TOP7 Plus",
       "category": "미국 테마",
       "region": "미국",
       "style": "성장"
