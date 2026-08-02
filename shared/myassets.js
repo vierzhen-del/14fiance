@@ -2786,6 +2786,7 @@ async function renderMyAssets() {
       <div class="action-row" style="margin:8px 0;">
         <button type="button" id="myAiAnalyzeBtn" class="btn-action">🔍 AI 분석 시작</button>
         <button type="button" id="myAiPromptCopyBtn" class="btn-action">📋 프롬프트만 복사</button>
+        <button type="button" id="myAiTelegramBtn" class="btn-action">📨 텔레그램으로 보내기</button>
         <span id="myAiStatus" class="action-status"></span>
       </div>
       <div id="myAiResult"></div>
@@ -3100,6 +3101,18 @@ async function renderMyAssets() {
       if (!prompt) return;
       const ok = await copyTextToClipboard(prompt);
       flashStatus("myAiStatus", ok ? "프롬프트 복사됨 — AI 채팅에 붙여넣으세요" : "복사 실패");
+    });
+    // AI 분석 결과 텔레그램 발송 — #myAiResult에 이미 렌더된 결과 텍스트를 그대로 보낸다
+    // (다시 분석을 돌리지 않음). 프롬프트 복사만 한 경우(제미나이 키 없음)는 결과가 없으므로
+    // 안내만 하고 끝낸다 — 그 경우 보낼 "분석 결과"가 애초에 없기 때문.
+    document.getElementById("myAiTelegramBtn").addEventListener("click", async () => {
+      const resultEl = document.getElementById("myAiResult");
+      const text = resultEl && resultEl.textContent.trim();
+      if (!text) { flashStatus("myAiStatus", "먼저 「AI 분석 시작」으로 분석 결과를 받으세요(제미나이 키 필요)"); return; }
+      flashStatus("myAiStatus", "텔레그램 전송 중…");
+      const tgText = text.length > 4000 ? text.slice(0, 3900) + "\n…(길이 제한으로 이하 생략)" : text;
+      const r = await sendTelegramMessage(`🤖 AI 분석 결과 (${todayStr()})\n\n${tgText}`);
+      flashStatus("myAiStatus", r.ok ? "텔레그램 전송됨 ✓" : `텔레그램 실패: ${r.error}`, 6000);
     });
   }
 
