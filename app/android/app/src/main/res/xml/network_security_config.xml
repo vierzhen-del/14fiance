@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  A39: Tailscale 사설망 안의 n8n(Tab S9)에만 평문 HTTP를 허용한다.
+
+  Android 9(API 28)부터 평문 HTTP는 기본 차단이라, 이 파일이 없으면 앱이
+  http://100.112.74.84:5678/webhook/... 을 호출하지 못한다(CapacitorHttp로
+  네이티브 호출을 해도 OS 레벨에서 막힌다).
+
+  usesCleartextTraffic="true"로 전체를 열지 않는 이유: 그러면 앱의 모든 평문
+  통신이 허용돼 중간자 공격 표면이 넓어진다. Tailscale은 WireGuard로 이미
+  암호화되므로 그 대역만 예외로 두는 것이 맞다.
+
+  ⚠️ Tailscale IP는 기기를 재설치하면 바뀐다. 바뀌면 아래 domain을 고치고
+  APK를 다시 빌드해야 한다. MagicDNS 이름(<기기>.<tailnet>.ts.net)을 쓰면
+  IP 변경에 영향받지 않으므로, tailnet 이름이 확정되면 그쪽으로 옮기는 편이 낫다.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <!-- Tab S9 (galaxy-tab-s9-ultra-5g) — n8n 호스트 -->
+        <domain includeSubdomains="false">100.112.74.84</domain>
+        <!-- sm-ut -->
+        <domain includeSubdomains="false">100.76.98.117</domain>
+    </domain-config>
+</network-security-config>
