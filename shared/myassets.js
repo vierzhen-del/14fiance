@@ -2032,6 +2032,48 @@ ${reportText}`;
    웹에서도 검증 가능) 실제 파일 기록은 APK 전용 app/src/native-files.js가 담당한다.
    md는 옵시디안에서 바로 읽는 표, json은 재가공·복원용으로 쌍으로 남긴다. */
 const OBSIDIAN_PATH_KEY = "my_assets_obsidian_path_v1";
+const AGENT_WEBHOOK_KEY = "my_assets_agent_webhook_v1";
+function agentWebhookUrl() { return (localStorage.getItem(AGENT_WEBHOOK_KEY) || "").trim(); }
+
+/* ---------- A40: n8n 에이전트 웹훅 전송 ----------
+   보내는 것은 두 가지다:
+   - state: serializeMyAssets() 그대로 = import JSON과 **같은 형식**(Tab S9 세션 합의).
+     n8n이 전체 상태를 알아야 노션 표와 대조할 수 있다.
+   - change: 최근 변동 1건의 요약 텍스트. 노션에 append할 때 전체 상태(88행)를 매번
+     쌓으면 페이지가 금방 비대해지므로, 기록용으로는 이 delta를 쓰는 편이 낫다.
+
+   ⚠️ 계좌명은 드롭다운 값이라 계좌번호가 없지만 **수량·매입단가는 원문**이다.
+   Tailscale 폐쇄망 안이라 2계층 정책상 허용되지만, n8n이 이걸 그대로 노션(클라우드)에
+   옮기지 않도록 워크플로 쪽에서 걸러야 한다.
+
+   앱(APK)에서만 동작한다 — 웹 브라우저는 CORS로 막히고, Tailscale IP에도 닿지 않는다. */
+async function sendToAgentWebhook() {
+  const url = agentWebhookUrl();
+  if (!url) return { ok: false, error: "웹훅 주소를 먼저 저장하세요" };
+  if (!/^https?:\/\//.test(url)) return { ok: false, error: "주소는 http:// 또는 https:// 로 시작해야 합니다" };
+  const log = typeof loadAssetChangelog === "function" ? loadAssetChangelog() : [];
+  const body = {
+    sentAt: nowDateTimeStr(),
+    source: "14fiance-app",
+    // import JSON과 동일 형식 — n8n이 별도 변환 없이 그대로 쓸 수 있다
+    state: serializeMyAssets(),
+    // 노션 append용 delta. 계좌명 마스킹 적용(노션은 클라우드)
+    change: log.length && typeof buildChangeReportText === "function"
+      ? buildChangeReportText(log[0], { mask: true }) : null,
+  };
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+    return { ok: true, rows: body.state.rows.length };
+  } catch (err) {
+    // Tailscale이 꺼져 있거나 Tab S9가 잠들면 여기로 온다 — 원인을 구분해 알린다.
+    return { ok: false, error: `${err.message} — Tailscale 연결과 Tab S9 n8n 실행 상태를 확인하세요` };
+  }
+}
 function obsidianVaultPath() { return (localStorage.getItem(OBSIDIAN_PATH_KEY) || "").trim(); }
 
 function buildObsidianNotes() {
@@ -3397,6 +3439,16 @@ async function renderMyAssets() {
       <p class="chart-title" style="margin-top:20px;">🏢 일반종목(개별주) 반영 상태</p>
       <p class="stat-sub">현재: <b>${includeStocks ? "포함" : "제외"}</b> — 위쪽 "일반종목: 포함/제외" 버튼으로 전환할 수 있습니다.</p>
 
+      <p class="chart-title" style="margin-top:20px;" id="myAgentWebhookTitle">🤖 에이전트 웹훅 (앱 전용 · Tailscale)</p>
+      <p class="stat-sub">Tab S9의 n8n으로 <b>확정된 보유 상태와 변동 요약</b>을 보냅니다. n8n이 노션 SOP에 기록하고 텔레그램으로 회신합니다. 주소는 <b>Tailscale 내부 IP</b>라 외부에 노출되지 않습니다(예: <code>http://100.112.74.84:5678/webhook/14fiance-agent</code>). 노션·텔레그램 토큰은 n8n 자격증명에만 두고 이 앱에는 저장하지 않습니다.</p>
+      <div class="controls" style="margin:8px 0;">
+        <input type="text" id="myAgentWebhookUrl" placeholder="http://100.112.74.84:5678/webhook/14fiance-agent" style="min-width:260px;" aria-label="n8n 웹훅 주소">
+        <button type="button" id="myAgentWebhookSaveBtn" class="btn-action">저장</button>
+        <button type="button" id="myAgentWebhookSendBtn" class="btn-action">🤖 지금 보내기</button>
+        <span id="myAgentWebhookStatus" class="action-status"></span>
+      </div>
+      <p class="stat-sub">⚠️ 계좌명은 <b>드롭다운 값</b>(삼성_DC 등)이라 계좌번호가 들어가지 않지만, <b>보유 수량과 매입단가는 원문</b>으로 나갑니다. Tailscale 폐쇄망 안에서만 오가므로 2계층 데이터 정책상 허용되지만, n8n이 이걸 노션(클라우드)에 그대로 옮기지 않도록 워크플로에서 걸러야 합니다.</p>
+
       <p class="chart-title" style="margin-top:20px;">🗂️ 옵시디안 폰 백업 (앱 전용)</p>
       <p class="stat-sub">노션(온라인) 말고 <b>폰 안에도</b> 배당·종목변동·일별 종합결과를 남깁니다. 아래에 옵시디안 볼트 경로를 넣으면 데이터가 바뀔 때마다 그 폴더에 <b>마크다운(.md)과 JSON</b>이 함께 저장돼, 옵시디안에서 바로 열어 보거나 검색할 수 있습니다.</p>
       <div class="action-row" style="margin:8px 0;">
@@ -3560,6 +3612,30 @@ async function renderMyAssets() {
   if (state.myAssetChangeGranularity) changeSel.value = state.myAssetChangeGranularity;
   changeSel.addEventListener("change", () => { state.myAssetChangeGranularity = changeSel.value; renderAssetChange(); });
   renderAssetChange();
+
+  // A40: n8n 에이전트 웹훅 — 주소 저장 + 수동 전송
+  const agentUrlInput = document.getElementById("myAgentWebhookUrl");
+  const agentSaveBtn = document.getElementById("myAgentWebhookSaveBtn");
+  const agentSendBtn = document.getElementById("myAgentWebhookSendBtn");
+  if (agentUrlInput && agentSaveBtn && agentSendBtn) {
+    agentUrlInput.value = agentWebhookUrl();
+    agentSaveBtn.addEventListener("click", () => {
+      const v = agentUrlInput.value.trim();
+      localStorage.setItem(AGENT_WEBHOOK_KEY, v);
+      flashStatus("myAgentWebhookStatus", v ? "저장됨" : "주소를 비웠습니다(전송 안 함)");
+    });
+    // 웹에서는 CORS와 Tailscale 미접속으로 항상 실패한다 — 눌러보고 실패하느니 미리 알린다.
+    const isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+    if (!isNative) {
+      agentSendBtn.disabled = true;
+      agentSendBtn.title = "웹 브라우저에서는 Tailscale 내부 주소에 닿을 수 없습니다 — 앱(APK)에서만 동작합니다";
+    }
+    agentSendBtn.addEventListener("click", async () => {
+      flashStatus("myAgentWebhookStatus", "전송 중…");
+      const r = await sendToAgentWebhook();
+      flashStatus("myAgentWebhookStatus", r.ok ? `전송됨 (${r.rows}행)` : `실패: ${r.error}`);
+    });
+  }
 
   // A25d: 옵시디안 볼트 경로 저장 + 수동 백업(네이티브에서만 버튼 노출)
   const obsInput = document.getElementById("myObsidianPath");
