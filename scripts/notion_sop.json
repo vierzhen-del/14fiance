@@ -1,0 +1,63 @@
+{
+  "_comment": "14RAE 자산 SOP 노션 페이지 레지스트리. n8n·에이전트가 페이지 ID를 하드코딩하지 않고 여기서 읽는다. 페이지를 옮기거나 새로 만들어도 이 파일만 고치면 모든 소비자가 따라온다.",
+  "_raw_url": "https://raw.githubusercontent.com/vierzhen-del/14fiance/claude/us-etf-mdd-calculator-gdwui7/scripts/notion_sop.json",
+  "_updated": "2026-08-03",
+  "pages": {
+    "account_holdings": {
+      "id": "3955efd0-e462-81da-b7f3-cbd905a15dfd",
+      "url": "https://www.notion.so/3955efd0e46281dab7f3cbd905a15dfd",
+      "title": "📊 14RAE 계좌 종목 현황 SOP",
+      "role": "계좌×종목×수량 SSOT",
+      "update_marker": "최종 갱신:",
+      "append_table": "🗓️ 갱신 이력",
+      "required": true
+    },
+    "dividend_master": {
+      "id": "3865efd0-e462-81c4-9a72-c9bbc70dcea0",
+      "url": "https://www.notion.so/3865efd0e46281c49a72c9bbc70dcea0",
+      "title": "💹 14RAE 배당기준 마스터",
+      "role": "확정 DPS·분배율·지급시기 SSOT. divRate 출처",
+      "update_marker": "최종 갱신:",
+      "required": true
+    },
+    "monthly_buy": {
+      "id": "38f5efd0-e462-81e8-a1a0-e35bfb864dc6",
+      "url": "https://www.notion.so/38f5efd0e46281e8a1a0e35bfb864dc6",
+      "title": "📈 월자동매수 현황 & 월배당 비교",
+      "role": "ETF모으기 매수계획·월매수 금액 SSOT",
+      "update_marker": "최종 갱신:",
+      "required": true
+    },
+    "sell_ledger": {
+      "id": "38d5efd0-e462-81ff-a961-cb9ce0f22f4f",
+      "url": "https://www.notion.so/38d5efd0e46281ffa961cb9ce0f22f4f",
+      "title": "🚫 14RAE 매도이력 & 계좌최신화 SOP",
+      "role": "매도이력 대장. 어떤 계산보다 먼저 조회",
+      "update_marker": "최종 갱신:",
+      "append_table": "🚫 매도이력 대장",
+      "required": true,
+      "check_first": true
+    },
+    "handover": {
+      "id": "3b05efd0-e462-81a5-ba52-d0ef6a810fea",
+      "url": "https://www.notion.so/3b05efd0e46281a5ba52d0ef6a810fea",
+      "title": "🔄 s26→Tab S9 인수인계",
+      "role": "세션 간 인수인계",
+      "required": false
+    },
+    "prompt_lab": {
+      "id": "3a15efd0-e462-81fa-81dd-e2dabdcdf2e7",
+      "url": "https://www.notion.so/3a15efd0e46281fa81dde2dabdcdf2e7",
+      "title": "🧪 계좌 캡처 AI 파싱 프롬프트 검증",
+      "role": "파싱 프롬프트 이력·비교테스트",
+      "required": false
+    }
+  },
+  "staleness": {
+    "_comment": "각 SOP의 '최종 갱신' 날짜가 아래 일수를 넘기면 에이전트가 경고한다. 노션 last_edited_time이 아니라 본문에 적힌 날짜를 본다 — 오탈자 수정 같은 사소한 편집으로 last_edited_time만 갱신돼 신선해 보이는 것을 막기 위함.",
+    "account_holdings_days": 14,
+    "dividend_master_days": 35,
+    "monthly_buy_days": 35,
+    "sell_ledger_days": 30
+  }
+}
