@@ -115,6 +115,8 @@
           <button type="button" id="myExportBtn" class="btn-action">📤 내보내기</button>
           <button type="button" id="myImportBtn" class="btn-action">📂 가져오기</button>
           <button type="button" id="myBackupRestoreBtn" class="btn-action" style="display:none;">📂 백업 폴더에서 복원</button>
+          <button type="button" id="myAgentWebhookSendBtn" class="btn-action" title="현재 계좌 상태를 n8n 웹훅으로 전송해 노션 SOP를 갱신합니다(Tailscale 필요, 주소는 설정 탭에서 저장)">🔄 서버 업데이트</button>
+          <span id="myAgentWebhookStatus" class="action-status"></span>
           <button type="button" id="myClaudeBtn" class="btn-action">🤖 클로드에 복사</button>
           <select id="myCsvSheet" aria-label="저장할 시트 선택" style="min-width:130px;">
             <option value="__all__">전체(통합 1개 파일)</option>
