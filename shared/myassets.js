@@ -3439,13 +3439,11 @@ async function renderMyAssets() {
       <p class="chart-title" style="margin-top:20px;">🏢 일반종목(개별주) 반영 상태</p>
       <p class="stat-sub">현재: <b>${includeStocks ? "포함" : "제외"}</b> — 위쪽 "일반종목: 포함/제외" 버튼으로 전환할 수 있습니다.</p>
 
-      <p class="chart-title" style="margin-top:20px;" id="myAgentWebhookTitle">🤖 에이전트 웹훅 (앱 전용 · Tailscale)</p>
-      <p class="stat-sub">Tab S9의 n8n으로 <b>확정된 보유 상태와 변동 요약</b>을 보냅니다. n8n이 노션 SOP에 기록하고 텔레그램으로 회신합니다. 주소는 <b>Tailscale 내부 IP</b>라 외부에 노출되지 않습니다(예: <code>http://100.112.74.84:5678/webhook/14fiance-agent</code>). 노션·텔레그램 토큰은 n8n 자격증명에만 두고 이 앱에는 저장하지 않습니다.</p>
+      <p class="chart-title" style="margin-top:20px;" id="myAgentWebhookTitle">🤖 에이전트 웹훅 주소 (앱 전용 · Tailscale)</p>
+      <p class="stat-sub">Tab S9의 n8n으로 <b>확정된 보유 상태와 변동 요약</b>을 보냅니다. n8n이 노션 SOP에 기록하고 텔레그램으로 회신합니다. 주소는 <b>Tailscale 내부 IP</b>라 외부에 노출되지 않습니다(예: <code>http://100.112.74.84:5678/webhook/14fiance-agent</code>). 노션·텔레그램 토큰은 n8n 자격증명에만 두고 이 앱에는 저장하지 않습니다. 전송 버튼은 위쪽 "🔄 서버 업데이트"로 옮겼습니다 — 여기서는 주소만 저장하세요.</p>
       <div class="controls" style="margin:8px 0;">
         <input type="text" id="myAgentWebhookUrl" placeholder="http://100.112.74.84:5678/webhook/14fiance-agent" style="min-width:260px;" aria-label="n8n 웹훅 주소">
         <button type="button" id="myAgentWebhookSaveBtn" class="btn-action">저장</button>
-        <button type="button" id="myAgentWebhookSendBtn" class="btn-action">🤖 지금 보내기</button>
-        <span id="myAgentWebhookStatus" class="action-status"></span>
       </div>
       <p class="stat-sub">⚠️ 계좌명은 <b>드롭다운 값</b>(삼성_DC 등)이라 계좌번호가 들어가지 않지만, <b>보유 수량과 매입단가는 원문</b>으로 나갑니다. Tailscale 폐쇄망 안에서만 오가므로 2계층 데이터 정책상 허용되지만, n8n이 이걸 노션(클라우드)에 그대로 옮기지 않도록 워크플로에서 걸러야 합니다.</p>
 
