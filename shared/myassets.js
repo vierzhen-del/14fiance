@@ -769,16 +769,21 @@ function buildYearlyDivHTML(divHistory, expectedMonthly, snapshotHistory) {
   const fmtW = (v) => fmtPrice(v, "KRW");
   const years = [...new Set(keys.map((k) => k.slice(0, 4)))].sort();
   const nowMonth = todayStr().slice(0, 7);
+  const yearTotals = new Map(); // 연도 → { sum, months } — months는 그 해 중 확정치가 있는 달 수(YoY 동기간 비교용)
   const rows = years.map((y) => {
     const cells = [];
+    let sum = 0, months = 0;
     for (let m = 1; m <= 12; m++) {
       const key = `${y}-${String(m).padStart(2, "0")}`;
       const v = divHistory[key];
-      if (v > 0) cells.push(`<td style="font-weight:600;">${fmtW(v)}</td>`);
-      else if (key > nowMonth) cells.push(`<td style="color:var(--text-muted);">예정</td>`);
+      if (v > 0) {
+        cells.push(`<td style="font-weight:600;">${fmtW(v)}</td>`);
+        sum += v; months++;
+      } else if (key > nowMonth) cells.push(`<td style="color:var(--text-muted);">예정</td>`);
       else cells.push(`<td style="color:var(--text-muted);">—</td>`);
     }
-    return `<tr><td>${y}</td>${cells.join("")}</tr>`;
+    yearTotals.set(y, { sum, months });
+    return `<tr><td>${y}</td>${cells.join("")}<td style="font-weight:700; border-left:1px solid var(--border);">${sum > 0 ? fmtW(sum) : "—"}</td></tr>`;
   }).join("");
   // 전월 대비(확정치가 연속 2개 이상일 때)
   const sorted = keys.sort();
@@ -789,13 +794,31 @@ function buildYearlyDivHTML(divHistory, expectedMonthly, snapshotHistory) {
     const pct = (diff / divHistory[prev]) * 100;
     momHTML = `<p class="stat-sub" style="margin-top:6px;">최근 확정 ${last}: <b>${fmtW(divHistory[last])}</b> (직전 ${prev} 대비 <span style="color:${diff >= 0 ? "var(--good)" : "var(--critical)"}">${diff >= 0 ? "+" : ""}${fmtW(diff)}, ${pct.toFixed(1)}%</span>)</p>`;
   }
+  // 연간 배당성장률(YoY) — 최근 두 해를 "확정치가 있는 같은 개월 수"로 맞춰 비교(연도 중간이라 12개월이 안 채워진 해도 공정 비교)
+  let yoyHTML = "";
+  if (years.length >= 2) {
+    const y1 = years[years.length - 1], y0 = years[years.length - 2];
+    const t1 = yearTotals.get(y1), t0 = yearTotals.get(y0);
+    if (t1.months > 0 && t0.months > 0) {
+      // 동기간 비교: y0의 같은 개월 수(1월부터)만 합산
+      let y0Partial = 0;
+      for (let m = 1; m <= t1.months; m++) {
+        const v = divHistory[`${y0}-${String(m).padStart(2, "0")}`];
+        if (v > 0) y0Partial += v;
+      }
+      if (y0Partial > 0) {
+        const growth = (t1.sum - y0Partial) / y0Partial;
+        yoyHTML = `<p class="stat-sub" style="margin-top:4px;">📈 배당성장률(YoY, ${y1} 1~${t1.months}월 vs ${y0} 동기간): <span style="color:${growth >= 0 ? "var(--good)" : "var(--critical)"}; font-weight:600;">${growth >= 0 ? "+" : ""}${(growth * 100).toFixed(1)}%</span> (${fmtW(y0Partial)} → ${fmtW(t1.sum)})</p>`;
+      }
+    }
+  }
   return `<p class="chart-title" style="margin-top:20px;">📅 연도별 확정 월배당 (가져온 이력 기준)</p>
     <div style="overflow-x:auto;">
     <table class="account-summary-table">
-      <thead><tr><th>연도</th><th>1월</th><th>2월</th><th>3월</th><th>4월</th><th>5월</th><th>6월</th><th>7월</th><th>8월</th><th>9월</th><th>10월</th><th>11월</th><th>12월</th></tr></thead>
+      <thead><tr><th>연도</th><th>1월</th><th>2월</th><th>3월</th><th>4월</th><th>5월</th><th>6월</th><th>7월</th><th>8월</th><th>9월</th><th>10월</th><th>11월</th><th>12월</th><th style="border-left:1px solid var(--border);">합계</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
-    </div>${momHTML}${buildDivGapHTML(divHistory, expectedMonthly, snapshotHistory)}`;
+    </div>${momHTML}${yoyHTML}${buildDivGapHTML(divHistory, expectedMonthly, snapshotHistory)}`;
 }
 
 /* ---------- A25c: 확정 배당 vs 실시간 예상 배당 + 괴리율 ----------
