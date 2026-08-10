@@ -1092,6 +1092,10 @@ async function shareResultToApps(data, statusElId) {
 /* 카카오톡 공유 — 카카오 디벨로퍼스에 등록한 JavaScript 키로 초기화한다.
    이 키는 도메인 제한이 걸려 있어 코드에 그대로 노출해도 안전하다(서버 비밀키와 다름). */
 const KAKAO_JS_KEY = "6d122bbe9d926f06ce1d964db6fc4340";
+/* 카카오 공유 링크는 반드시 공개 접속 가능한 주소여야 한다 — location.origin을 쓰면
+   로컬 개발서버(http://localhost:포트)에서 테스트할 때 그 주소가 그대로 카톡에 실려나가
+   나중에 눌러도 열리지 않는다(2026-08-10 실측: "localhost" 네트워크 오류). */
+const SITE_ORIGIN = "https://vierzhen-del.github.io";
 
 function initKakao() {
   if (typeof Kakao === "undefined") return;
@@ -1114,7 +1118,7 @@ function shareToKakao(data, url, statusElId) {
       content: {
         title: data.title,
         description: statLine,
-        imageUrl: `${location.origin}${location.pathname.replace(/[^/]*$/, "")}icons/icon-512.png`,
+        imageUrl: `${SITE_ORIGIN}${location.pathname.replace(/[^/]*$/, "")}icons/icon-512.png`,
         link: { webUrl: url, mobileWebUrl: url },
       },
       buttons: [{ title: "결과 보러가기", link: { webUrl: url, mobileWebUrl: url } }],
@@ -7987,7 +7991,7 @@ function loadSimSettings() {
 
 async function shareSimResult() {
   const cfg = serializeSimConfig();
-  const url = `${location.origin}${location.pathname}#${encodeConfigToHash("sim", cfg)}`;
+  const url = `${SITE_ORIGIN}${location.pathname}#${encodeConfigToHash("sim", cfg)}`;
   try {
     await navigator.clipboard.writeText(url);
     flashStatus("simSaveStatus", "공유 링크가 복사되었습니다 ✓ (붙여넣기 해서 전달하세요)");
@@ -8678,7 +8682,7 @@ async function init() {
   document.getElementById("portfolioKakaoBtn").addEventListener("click", () => {
     if (!state.portfolioSnapshotData) { flashStatus("portfolioExportStatus", "먼저 계산 결과가 나온 뒤 눌러주세요"); return; }
     // 카카오톡 메시지는 10KB 용량 제한이 있어 설정을 통째로 담은 긴 링크 대신 사이트 기본 주소만 보낸다
-    const url = `${location.origin}${location.pathname}`;
+    const url = `${SITE_ORIGIN}${location.pathname}`;
     shareToKakao(state.portfolioSnapshotData, url, "portfolioExportStatus");
   });
   document.getElementById("portfolioClaudeBtn").addEventListener("click", () => {
@@ -8897,7 +8901,7 @@ async function init() {
   document.getElementById("simKakaoBtn").addEventListener("click", () => {
     if (!state.simSnapshotData) { flashStatus("simExportStatus", "먼저 계산 결과가 나온 뒤 눌러주세요"); return; }
     // 카카오톡 메시지는 10KB 용량 제한이 있어 설정을 통째로 담은 긴 링크 대신 사이트 기본 주소만 보낸다
-    const url = `${location.origin}${location.pathname}`;
+    const url = `${SITE_ORIGIN}${location.pathname}`;
     shareToKakao(state.simSnapshotData, url, "simExportStatus");
   });
   document.getElementById("simClaudeBtn").addEventListener("click", () => {
