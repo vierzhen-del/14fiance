@@ -8,6 +8,48 @@
 // listedEtfs/metaBySymbol을 그대로 재사용하고, 이 파일이 추가로 state.allSymbols/
 // marketFilter/compareChecked/simCurrency/simInputMode/simFxMode를 초기화한다.
 
+/* ---------- 카카오톡 공유 ---------- */
+/* index.html(웹사이트)의 shareToKakao와 동일한 기능이지만, 공유 링크는 location.origin/
+   pathname 대신 고정 주소를 쓴다 — 앱(Capacitor WebView) 안에서는 location.origin이
+   실제 배포 주소가 아니라 앱 내부 오리진(androidScheme:"https" 기준 https://localhost)이라
+   그대로 쓰면 카톡에 실려나간 링크가 나중에 열리지 않는다(2026-08-10 실측).
+   카카오 디벨로퍼스 콘솔의 플랫폼(Web) 허용 도메인에 이 앱의 WebView 오리진
+   (https://localhost)도 등록돼 있어야 실제 전송까지 정상 동작한다. */
+const KAKAO_JS_KEY = "6d122bbe9d926f06ce1d964db6fc4340";
+const SITE_ORIGIN = "https://vierzhen-del.github.io";
+const CAPTURE_PAGE_URL = `${SITE_ORIGIN}/14fiance/capture/index.html`;
+
+function initKakao() {
+  if (typeof Kakao === "undefined") return;
+  try {
+    if (!Kakao.isInitialized()) Kakao.init(KAKAO_JS_KEY);
+  } catch (err) {
+    // SDK 로드 실패(오프라인 등) — 카카오 공유 버튼만 조용히 비활성
+  }
+}
+
+function shareToKakao(data, url, statusElId) {
+  if (typeof Kakao === "undefined" || !Kakao.isInitialized || !Kakao.isInitialized()) {
+    flashStatus(statusElId, "카카오톡 공유 기능을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.");
+    return;
+  }
+  const statLine = data.stats.slice(0, 3).map((s) => `${s.label} ${s.value}`).join(" · ");
+  try {
+    Kakao.Share.sendDefault({
+      objectType: "feed",
+      content: {
+        title: data.title,
+        description: statLine,
+        imageUrl: `${SITE_ORIGIN}/14fiance/icons/icon-512.png`,
+        link: { webUrl: url, mobileWebUrl: url },
+      },
+      buttons: [{ title: "결과 보러가기", link: { webUrl: url, mobileWebUrl: url } }],
+    });
+  } catch (err) {
+    flashStatus(statusElId, "카카오톡 공유 중 오류가 발생했습니다.");
+  }
+}
+
 /* ---------- 공용 소품 ---------- */
 const MAX_COMPARE = 5;
 const CAT_COLORS = ["--cat-1", "--cat-2", "--cat-3", "--cat-4", "--cat-5", "--cat-6", "--cat-7", "--cat-8"];
@@ -1338,6 +1380,7 @@ async function renderSimulator() {
    채운 뒤 호출한다. 마켓 필터·MDD 비교 체크리스트·기본 포트폴리오·기본 시뮬레이터 종목까지
    한 번에 구성한다. ---------- */
 function initCalculators() {
+  initKakao();
   state.allSymbols = [...state.listedEtfs.map((e) => e.symbol), ...BLENDS.map((b) => b.id)];
   for (const b of BLENDS) {
     if (!state.metaBySymbol.has(b.id)) state.metaBySymbol.set(b.id, { symbol: b.id, name: b.name, category: b.category });
@@ -1445,6 +1488,10 @@ function initCalculators() {
     if (!state.portfolioSnapshotData) { flashStatus("portfolioExportStatus", "먼저 계산 결과가 나온 뒤 눌러주세요"); return; }
     copyResultSummary(state.portfolioSnapshotData, "portfolioExportStatus");
   });
+  document.getElementById("portfolioKakaoBtn").addEventListener("click", () => {
+    if (!state.portfolioSnapshotData) { flashStatus("portfolioExportStatus", "먼저 계산 결과가 나온 뒤 눌러주세요"); return; }
+    shareToKakao(state.portfolioSnapshotData, CAPTURE_PAGE_URL, "portfolioExportStatus");
+  });
 
   addSimRow("SPY", 100);
   applyInputModeUI();
@@ -1505,6 +1552,10 @@ function initCalculators() {
   document.getElementById("simClaudeBtn").addEventListener("click", () => {
     if (!state.simSnapshotData) { flashStatus("simExportStatus", "먼저 계산 결과가 나온 뒤 눌러주세요"); return; }
     copyResultSummary(state.simSnapshotData, "simExportStatus");
+  });
+  document.getElementById("simKakaoBtn").addEventListener("click", () => {
+    if (!state.simSnapshotData) { flashStatus("simExportStatus", "먼저 계산 결과가 나온 뒤 눌러주세요"); return; }
+    shareToKakao(state.simSnapshotData, CAPTURE_PAGE_URL, "simExportStatus");
   });
 
   renderMdd();
