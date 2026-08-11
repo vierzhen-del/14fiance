@@ -16,6 +16,12 @@ const CAPTURE_USE_CLAUDE_CROSSCHECK_KEY = "capture_use_claude_api_v1";
 // (자동 파싱 primary·교차검증·연결 테스트·인앱 AI 리뷰)를 전부 차단한다. 크레딧 충전 후
 // 다시 쓰려면 false로 바꾸면 나머지 코드는 그대로 원복된다.
 const CAPTURE_CLAUDE_API_DISABLED = true;
+// A44(2026-08-11): 월매수(ETF모으기) 캡처의 Gemini 자동 파싱이 JSON 파싱 실패로 사용불가
+// 판정됨(원본 캡처를 그대로 반환해 "Unexpected token" 오류 발생 실측). 정상화 전까지는
+// 이 카드의 "🤖 자동 파싱 시도" 버튼만 비활성화하고, 스크린샷을 Claude 세션에 직접 전달해
+// import JSON을 수기 반영하는 방식(Claude+JSON update)을 쓴다. 계좌 캡처(자산 현황)는
+// 이 문제와 무관해 그대로 자동 파싱을 쓴다 — 버튼 하나만 막는다.
+const CAPTURE_BUYPLAN_AI_PARSE_DISABLED = true;
 // A20: 대량 이미지를 한 번에 보내면 뒷부분 이미지만 처리되는 멀티이미지 한계가 실측됨
 // (37행 계좌 전체 첨부 → 마지막 화면들의 7행만 반환) — 이 장수 단위로 나눠 순차 호출한다.
 // A20g(2026-07-18): 5장 배치로도 여전히 추출 부족 보고 — 배치 내에서도 같은 종류의 주의

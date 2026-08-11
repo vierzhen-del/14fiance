@@ -2096,6 +2096,7 @@ const MY_INCLUDE_STOCKS_KEY = "my_assets_include_stocks_v1"; // "0"이면 일반
 const MY_ASSETS_CHANGELOG_KEY = "my_assets_changelog_v1";
 const MY_ASSETS_WATCHLIST_KEY = "my_assets_watchlist_v1"; // A10 📡 시그널 탭 워치리스트, 최대 300건, A3b/c: 폼 채우기·가져오기 시 변경 이력
 const MY_SIGNAL_DECISIONS_KEY = "my_signal_decisions_v1"; // A14 트레이드플랜 결정메모(승인/보류/거부), 최대 200건
+const MY_ASSETS_GOALS_KEY = "my_assets_goals_v1"; // A44 🎯 종목별 목표주식수 추적([{symbol, targetQty}])
 const BUY_FREQ_TIMES = { "매월": 1, "매주": 4, "매일": 22 };
 
 /* ---------- A3c: 변동이력(🗂️) — 폼 채우기(캡처 반영)·가져오기 시마다 자동 기록되는 변경 로그.
@@ -2374,6 +2375,7 @@ function serializeMyAssets() {
     changelog: (() => { try { return JSON.parse(localStorage.getItem(MY_ASSETS_CHANGELOG_KEY) || "[]"); } catch (e) { return []; } })(),
     watchlist: (() => { try { return JSON.parse(localStorage.getItem(MY_ASSETS_WATCHLIST_KEY) || "[]"); } catch (e) { return []; } })(),
     signalDecisions: (() => { try { return JSON.parse(localStorage.getItem(MY_SIGNAL_DECISIONS_KEY) || "[]"); } catch (e) { return []; } })(),
+    goals: (() => { try { return JSON.parse(localStorage.getItem(MY_ASSETS_GOALS_KEY) || "[]"); } catch (e) { return []; } })(),
   };
 }
 
@@ -2443,6 +2445,7 @@ function applyMyAssets(data) {
   if (Array.isArray(data.changelog) && data.changelog.length) localStorage.setItem(MY_ASSETS_CHANGELOG_KEY, JSON.stringify(data.changelog.slice(0, 300)));
   if (Array.isArray(data.watchlist) && data.watchlist.length) localStorage.setItem(MY_ASSETS_WATCHLIST_KEY, JSON.stringify(data.watchlist));
   if (Array.isArray(data.signalDecisions) && data.signalDecisions.length) localStorage.setItem(MY_SIGNAL_DECISIONS_KEY, JSON.stringify(data.signalDecisions.slice(0, 200)));
+  if (Array.isArray(data.goals) && data.goals.length) localStorage.setItem(MY_ASSETS_GOALS_KEY, JSON.stringify(data.goals));
   document.getElementById("myAssetRows").innerHTML = "";
   for (const r of data.rows) {
     // 구버전(확정 월배당 총액) 데이터는 주당 DPS로 1회 변환
@@ -2900,6 +2903,94 @@ function buildBuyPlanHTML(perRow) {
     </table>
     </div>`;
   }).join("");
+}
+
+function loadMyGoals() {
+  try { return JSON.parse(localStorage.getItem(MY_ASSETS_GOALS_KEY) || "[]"); } catch (e) { return []; }
+}
+function saveMyGoals(list) {
+  localStorage.setItem(MY_ASSETS_GOALS_KEY, JSON.stringify(list));
+}
+
+/* A44: 🎯 ETF별 목표주식수 추적 — 종목(symbol) 단위로 저장하고, 그 종목을 보유·매수 중인 모든
+   계좌를 합산해 "현재수량 + 월매수 유지 시 도달 시점"과 "도달 시 예상 배당금"을 계산한다.
+   목표를 추가할 종목은 이미 월매수(monthlyQty>0)가 설정된 항목 중에서만 고르게 해
+   오타로 존재하지 않는 종목을 목표로 잡는 실수를 막는다. */
+function buildGoalTrackerHTML(perRow) {
+  const goals = loadMyGoals();
+  const buyPlanSymbols = [...new Map(
+    perRow.filter((p) => p.monthlyQty > 0).map((p) => [p.symbol, p.meta ? p.meta.name : p.symbol])
+  ).entries()];
+  const optionsHTML = buyPlanSymbols
+    .filter(([sym]) => !goals.some((g) => g.symbol === sym))
+    .map(([sym, name]) => `<option value="${sym}">${name} (${sym})</option>`).join("");
+  const pickerHTML = `
+    <div class="controls" style="margin-bottom:10px;">
+      <select id="myGoalSymbolPick" aria-label="목표 추가할 종목 선택">
+        <option value="">월매수 종목에서 선택…</option>
+        ${optionsHTML}
+      </select>
+      <button type="button" id="myGoalAddBtn" class="btn-action">+ 목표 추가</button>
+    </div>`;
+
+  if (!goals.length) {
+    return pickerHTML + `<p class="compare-empty">${buyPlanSymbols.length ? "위에서 종목을 선택해 목표 주식수를 설정하세요." : "월매수 수량을 먼저 입력하면 목표로 고를 수 있는 종목이 여기 나타납니다."}</p>`;
+  }
+
+  const fmtW = (v) => fmtPrice(v, "KRW");
+  const rows = goals.map((g) => {
+    const matched = perRow.filter((p) => p.symbol === g.symbol);
+    const meta = matched.length ? matched[0].meta : state.metaBySymbol.get(g.symbol);
+    const name = meta ? meta.name : g.symbol;
+    const curQty = matched.reduce((s, p) => s + (p.qty || 0), 0);
+    const monthlyShares = matched.reduce((s, p) => s + (p.monthlyQty || 0) * (BUY_FREQ_TIMES[p.buyFreq] || 1), 0);
+    // 단가: 보유 평가액에서 역산(가장 정확) → 없으면 월매수액에서 역산
+    const priceRow = matched.find((p) => p.qty > 0) || matched.find((p) => p.monthlyQty > 0);
+    const priceKrw = priceRow
+      ? (priceRow.qty > 0 ? priceRow.value / priceRow.qty
+        : priceRow.monthlyBuy / (priceRow.monthlyQty * (BUY_FREQ_TIMES[priceRow.buyFreq] || 1)))
+      : null;
+    const rateRow = matched.find((p) => p.effRate > 0);
+    const effRate = rateRow ? rateRow.effRate : 0;
+
+    let etaLabel;
+    if (!(g.targetQty > 0)) {
+      etaLabel = "목표 미입력";
+    } else if (curQty >= g.targetQty) {
+      etaLabel = "✅ 이미 도달";
+    } else if (monthlyShares <= 0) {
+      etaLabel = "⚠️ 월매수 미설정 — 예측 불가";
+    } else {
+      const monthsNeeded = Math.ceil((g.targetQty - curQty) / monthlyShares);
+      const eta = new Date();
+      eta.setMonth(eta.getMonth() + monthsNeeded);
+      const y = Math.floor(monthsNeeded / 12), m = monthsNeeded % 12;
+      const dur = [y > 0 ? `${y}년` : "", m > 0 ? `${m}개월` : ""].filter(Boolean).join(" ") || "1개월 미만";
+      etaLabel = `${dur} 후 (${eta.getFullYear()}-${String(eta.getMonth() + 1).padStart(2, "0")} 예상)`;
+    }
+
+    const divLabel = g.targetQty > 0 && priceKrw != null && effRate > 0
+      ? `월 ${fmtW(g.targetQty * priceKrw * effRate / 12)} (연 ${(effRate * 100).toFixed(2)}%)`
+      : (effRate > 0 ? "단가 확인 불가" : "배당률 미등록");
+
+    return `<tr>
+      <td style="text-align:left;">${name}<br><span style="color:var(--text-muted); font-size:11px;">${g.symbol}</span></td>
+      <td>${curQty.toLocaleString()}주</td>
+      <td>${monthlyShares > 0 ? monthlyShares.toLocaleString(undefined, { maximumFractionDigits: 2 }) + "주" : "—"}</td>
+      <td><input type="number" class="my-goal-target portfolio-weight" style="width:90px" min="0" step="1" value="${g.targetQty || ""}" data-symbol="${g.symbol}" aria-label="목표 주식수"></td>
+      <td>${etaLabel}</td>
+      <td>${divLabel}</td>
+      <td><button type="button" class="my-goal-remove btn-action" data-symbol="${g.symbol}" title="목표 삭제">🗑️</button></td>
+    </tr>`;
+  }).join("");
+
+  return `${pickerHTML}
+    <div id="myGoalTrackerWrap" style="overflow-x:auto;">
+    <table class="account-summary-table">
+      <thead><tr><th>종목</th><th>현재 보유(전계좌)</th><th>월매수(전계좌 합산)</th><th>목표 주식수</th><th>도달 예상</th><th>목표 도달시 예상 배당</th><th></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    </div>`;
 }
 
 /* 연도별 배당추이 — divHistory("YYYY-MM": 원) 확정치를 연도×12개월 표로 */
@@ -5145,6 +5236,7 @@ async function renderMyAssets() {
 
   // 매수계획 상세(ETF모으기)
   const buyPlanHTML = buildBuyPlanHTML(perRow);
+  const goalTrackerHTML = buildGoalTrackerHTML(perRow);
 
   // 계좌 히트맵 탭은 A7에서 트리맵으로 대체 — 패널 컨테이너에 renderMyAssets 끝의
   // 와이어링(renderTreemap)이 buildTreemapHTML 결과를 채운다.
@@ -5434,6 +5526,8 @@ async function renderMyAssets() {
       <p class="chart-title" style="margin-top:24px;">🗓️ 계좌별 매수계획 상세 (ETF모으기)</p>
       ${buyPlanHTML}
       <p class="stat-sub" style="margin-top:8px;"><a href="https://app.notion.com/p/38f5efd0e46281e8a1a0e35bfb864dc6" target="_blank" rel="noopener">📈 월매수(월자동매수 현황) SOP(노션) 확인</a></p>
+      <p class="chart-title" style="margin-top:24px;">🎯 목표 주식수 추적</p>
+      ${goalTrackerHTML}
     </div>
 
     <div class="dash-panel" data-tab="divbasis" hidden>
@@ -5940,6 +6034,34 @@ async function renderMyAssets() {
       flashStatus("myReportStatus", results.join(" · "), 6000);
     });
   }
+
+  // A44: 🎯 목표 주식수 추적 — 종목 선택→추가, 목표수량 입력, 삭제
+  const goalAddBtn = document.getElementById("myGoalAddBtn");
+  if (goalAddBtn) {
+    goalAddBtn.addEventListener("click", () => {
+      const sym = document.getElementById("myGoalSymbolPick").value;
+      if (!sym) return;
+      const goals = loadMyGoals();
+      if (!goals.some((g) => g.symbol === sym)) {
+        goals.push({ symbol: sym, targetQty: 0 });
+        saveMyGoals(goals);
+        renderMyAssets();
+      }
+    });
+  }
+  document.querySelectorAll(".my-goal-target").forEach((el) => {
+    el.addEventListener("change", () => {
+      const goals = loadMyGoals();
+      const g = goals.find((x) => x.symbol === el.dataset.symbol);
+      if (g) { g.targetQty = parseFloat(el.value) || 0; saveMyGoals(goals); renderMyAssets(); }
+    });
+  });
+  document.querySelectorAll(".my-goal-remove").forEach((el) => {
+    el.addEventListener("click", () => {
+      saveMyGoals(loadMyGoals().filter((g) => g.symbol !== el.dataset.symbol));
+      renderMyAssets();
+    });
+  });
 
   // A28: AI 분석 탭 — 제미나이 키가 있으면 자동 호출, 없으면 프롬프트 복사로 폴백.
   const aiAnalyzeBtn = document.getElementById("myAiAnalyzeBtn");
