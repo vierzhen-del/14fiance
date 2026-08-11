@@ -451,9 +451,10 @@
           <button type="button" id="captureBuyPlanFolderBtn" class="btn-action">📁 폴더에서 선택</button>
           <button type="button" id="captureBuyPlanDriveBtn" class="btn-action">☁️ 구글드라이브에서 선택</button>
           <input type="file" id="captureBuyPlanFolderInput" accept="image/*" multiple webkitdirectory style="display:none;">
-          <button type="button" id="captureBuyPlanParseBtn" class="btn-action">🤖 자동 파싱 시도</button>
+          <button type="button" id="captureBuyPlanParseBtn" class="btn-action" disabled>🤖 자동 파싱 시도 (⛔ 비활성화)</button>
           <span id="captureBuyPlanStatus" class="action-status"></span>
         </div>
+        <p class="stat-sub" style="color:var(--critical);">⛔ <b>월매수 자동 파싱은 JSON 오류가 실측돼 비활성화 상태입니다</b>(2026-08-11). 스크린샷을 Claude 세션에 직접 전달해 반영을 요청하세요 — 아래 "붙여넣은 JSON 파싱"은 계속 사용 가능합니다.</p>
         <div class="action-row">
           <button type="button" id="captureBuyPlanCopyPromptBtn" class="btn-action">📋 프롬프트 복사</button>
         </div>
@@ -853,6 +854,11 @@ function initCapture() {
     }
   });
   document.getElementById("captureBuyPlanParseBtn").addEventListener("click", async () => {
+    if (CAPTURE_BUYPLAN_AI_PARSE_DISABLED) {
+      flashStatus("captureBuyPlanStatus",
+        "🛑 월매수 자동 파싱은 JSON 오류로 비활성화됐습니다 — 스크린샷을 Claude 세션에 직접 전달해 반영해주세요", 10000);
+      return;
+    }
     const files = document.getElementById("captureBuyPlanFiles").files;
     if (!files.length) { flashStatus("captureBuyPlanStatus", "스크린샷을 먼저 선택하세요"); return; }
     flashStatus("captureBuyPlanStatus", files.length > CAPTURE_PARSE_BATCH_SIZE
