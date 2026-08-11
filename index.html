@@ -2106,7 +2106,10 @@ function loadAssetChangelog() {
   try { return JSON.parse(localStorage.getItem(MY_ASSETS_CHANGELOG_KEY) || "[]"); } catch (err) { return []; }
 }
 
-/* 현재 폼(#myAssetRows)의 계좌별 보유 수량 스냅샷 — Map(account -> Map(symbol -> qty)) */
+/* 현재 폼(#myAssetRows)의 계좌별 보유 스냅샷 — Map(account -> Map(symbol -> {qty, monthlyQty, buyFreq, buyDay})).
+   A44: 종전엔 qty(보유수량)만 담아서, 매수계획(월매수량·주기·요일)만 바뀐 갱신은 diffHoldingsSnapshots가
+   전혀 감지하지 못해 변동이력에 아무 기록도 안 남았다(2026-08-11 실측: 월매수 8건 정정 반영해도
+   변동이력 탭이 그대로였음). 매수계획도 같이 담아 diff 대상에 넣는다. */
 function snapshotHoldingsMap() {
   const map = new Map();
   document.querySelectorAll("#myAssetRows .portfolio-row").forEach((row) => {
@@ -2114,30 +2117,54 @@ function snapshotHoldingsMap() {
     const symbol = row.querySelector(".my-symbol").value;
     if (!symbol) return;
     const qty = parseFloat(row.querySelector(".my-qty").value) || 0;
+    const monthlyQty = parseFloat(row.querySelector(".my-monthly").value) || 0;
+    const buyFreq = row.querySelector(".my-buy-freq").value;
+    const buyDay = row.querySelector(".my-buy-day").value.trim();
     if (!map.has(account)) map.set(account, new Map());
     const accMap = map.get(account);
-    accMap.set(symbol, (accMap.get(symbol) || 0) + qty);
+    const prev = accMap.get(symbol);
+    // qty는 종전처럼 같은 (계좌,종목) 중복행이면 합산, 매수계획은 마지막 행 값을 쓴다.
+    accMap.set(symbol, { qty: (prev ? prev.qty : 0) + qty, monthlyQty, buyFreq, buyDay });
   });
   return map;
 }
 
-/* 두 시점의 보유 스냅샷을 비교해 종목변동(추가/삭제/수량변경) 목록을 만든다 */
+/* 두 매수계획이 같은지 비교 */
+function samePlan(a, b) { return a.monthlyQty === b.monthlyQty && a.buyFreq === b.buyFreq && a.buyDay === b.buyDay; }
+
+/* 두 시점의 보유 스냅샷을 비교해 종목변동(추가/삭제/수량변경/매수계획변경) 목록을 만든다 */
 function diffHoldingsSnapshots(beforeMap, afterMap) {
   const changes = [];
   const accounts = new Set([...beforeMap.keys(), ...afterMap.keys()]);
+  const empty = { qty: 0, monthlyQty: 0, buyFreq: "", buyDay: "" };
   for (const account of accounts) {
     const before = beforeMap.get(account) || new Map();
     const after = afterMap.get(account) || new Map();
     const symbols = new Set([...before.keys(), ...after.keys()]);
     for (const symbol of symbols) {
-      const oldQty = before.get(symbol) || 0;
-      const newQty = after.get(symbol) || 0;
-      if (oldQty === newQty) continue;
-      const type = oldQty === 0 ? "added" : newQty === 0 ? "removed" : "qty-changed";
-      changes.push({ account, symbol, type, oldQty, newQty });
+      const b = before.get(symbol) || empty;
+      const a = after.get(symbol) || empty;
+      if (b.qty !== a.qty) {
+        const type = b.qty === 0 ? "added" : a.qty === 0 ? "removed" : "qty-changed";
+        changes.push({ account, symbol, type, oldQty: b.qty, newQty: a.qty });
+      }
+      // A44: 보유수량은 그대로인데 매수계획만 바뀐 경우도 별도 항목으로 기록. qty도 신규/삭제된
+      // 행이면(위에서 이미 added/removed로 기록됨) 매수계획 차이는 중복 기록하지 않는다.
+      if (b.qty === a.qty && !samePlan(b, a) && (b.monthlyQty > 0 || a.monthlyQty > 0)) {
+        changes.push({ account, symbol, type: "buyplan-changed", oldPlan: { ...b }, newPlan: { ...a } });
+      }
     }
   }
   return changes;
+}
+
+/* 종목변동 표시용 상세 라벨 — qty 기반 변경은 "8→2058", 매수계획 변경은 "1주×매일→2주×매주/월요일" */
+function changeDetailLabel(c) {
+  if (c.type === "buyplan-changed") {
+    const fmt = (p) => (p.monthlyQty > 0 ? `${p.monthlyQty}주×${p.buyDay ? `${p.buyFreq}/${p.buyDay}` : p.buyFreq}` : "—");
+    return `${fmt(c.oldPlan)}→${fmt(c.newPlan)}`;
+  }
+  return `${c.oldQty}→${c.newQty}`;
 }
 
 /* renderMyAssets()가 채워둔 state.myAssetsCsvData.accountMap 기준 계좌별 평가액 스냅샷(자산변동·비중변동용) */
@@ -3232,7 +3259,7 @@ function changelogPeriodKey(ts, granularity) {
   return `${d.getUTCFullYear()}-W${String(week).padStart(2, "0")}`;
 }
 
-const CHANGE_TYPE_LABEL = { added: "🆕 신규", removed: "🗑️ 삭제", "qty-changed": "🔁 수량변경" };
+const CHANGE_TYPE_LABEL = { added: "🆕 신규", removed: "🗑️ 삭제", "qty-changed": "🔁 수량변경", "buyplan-changed": "📅 매수계획변경" };
 
 /* ---------- A37: 계좌 반영 전/후 변동 리포트 ----------
    changelog 항목은 화면 표에만 있어서, "이번 반영으로 뭐가 바뀌었나"를 남에게 보내거나
@@ -3346,7 +3373,7 @@ function changeItemsHTML(changeList) {
     byAccount.get(acc).push(c);
   }
   return [...byAccount.entries()].map(([acc, list]) => {
-    const li = (c) => `<li>${changeSymbolLabel(c.symbol)} <b>${CHANGE_TYPE_LABEL[c.type] || c.type}</b> <span class="chg-qty">${c.oldQty}→${c.newQty}</span></li>`;
+    const li = (c) => `<li>${changeSymbolLabel(c.symbol)} <b>${CHANGE_TYPE_LABEL[c.type] || c.type}</b> <span class="chg-qty">${changeDetailLabel(c)}</span></li>`;
     const head = list.slice(0, CHANGELOG_VISIBLE_ITEMS).map(li).join("");
     const rest = list.slice(CHANGELOG_VISIBLE_ITEMS);
     return `<div class="chg-account">
@@ -4371,7 +4398,7 @@ ${perSym || "| — | | | | | 보유 없음 |"}
 
   // ── 2) 종목변동 이력 ──
   const clRows = changelog.slice(0, 60).map((e) => {
-    const items = e.changes.map((c) => `${c.account || "미지정"} ${c.symbol} ${CHANGE_TYPE_LABEL[c.type] || c.type}(${c.oldQty}→${c.newQty})`).join(", ");
+    const items = e.changes.map((c) => `${c.account || "미지정"} ${c.symbol} ${CHANGE_TYPE_LABEL[c.type] || c.type}(${changeDetailLabel(c)})`).join(", ");
     return `### ${e.ts} · ${CHANGE_SOURCE_LABEL[e.source] || e.source}\n- 자산: ₩${won(e.beforeValue)} → ₩${won(e.afterValue)}\n- 변동 ${e.changes.length}건: ${items}`;
   }).join("\n\n");
   notes.push({ name: "종목변동-이력.md", text:
