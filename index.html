@@ -2941,27 +2941,28 @@ function saveMyGoals(list) {
 
 /* A44: 🎯 ETF별 목표주식수 추적 — 종목(symbol) 단위로 저장하고, 그 종목을 보유·매수 중인 모든
    계좌를 합산해 "현재수량 + 월매수 유지 시 도달 시점"과 "도달 시 예상 배당금"을 계산한다.
-   목표를 추가할 종목은 이미 월매수(monthlyQty>0)가 설정된 항목 중에서만 고르게 해
-   오타로 존재하지 않는 종목을 목표로 잡는 실수를 막는다. */
+   목표를 추가할 종목은 보유 중(qty>0)이거나 월매수 설정(monthlyQty>0)이거나 배당기준
+   SOP에 등록(divRate>0)된 항목 중에서만 고르게 해, 오타로 존재하지 않는 종목을 목표로
+   잡는 실수를 막는다(2026-08-11: 월매수 항목으로만 한정하던 것을 넓힘). */
 function buildGoalTrackerHTML(perRow) {
   const goals = loadMyGoals();
-  const buyPlanSymbols = [...new Map(
-    perRow.filter((p) => p.monthlyQty > 0).map((p) => [p.symbol, p.meta ? p.meta.name : p.symbol])
+  const candidateSymbols = [...new Map(
+    perRow.filter((p) => p.qty > 0 || p.monthlyQty > 0 || p.divRate > 0).map((p) => [p.symbol, p.meta ? p.meta.name : p.symbol])
   ).entries()];
-  const optionsHTML = buyPlanSymbols
+  const optionsHTML = candidateSymbols
     .filter(([sym]) => !goals.some((g) => g.symbol === sym))
     .map(([sym, name]) => `<option value="${sym}">${name} (${sym})</option>`).join("");
   const pickerHTML = `
     <div class="controls" style="margin-bottom:10px;">
       <select id="myGoalSymbolPick" aria-label="목표 추가할 종목 선택">
-        <option value="">월매수 종목에서 선택…</option>
+        <option value="">보유·매수계획·배당등록 종목에서 선택…</option>
         ${optionsHTML}
       </select>
       <button type="button" id="myGoalAddBtn" class="btn-action">+ 목표 추가</button>
     </div>`;
 
   if (!goals.length) {
-    return pickerHTML + `<p class="compare-empty">${buyPlanSymbols.length ? "위에서 종목을 선택해 목표 주식수를 설정하세요." : "월매수 수량을 먼저 입력하면 목표로 고를 수 있는 종목이 여기 나타납니다."}</p>`;
+    return pickerHTML + `<p class="compare-empty">${candidateSymbols.length ? "위에서 종목을 선택해 목표 주식수를 설정하세요." : "보유 수량·월매수·배당률 중 하나라도 입력하면 목표로 고를 수 있는 종목이 여기 나타납니다."}</p>`;
   }
 
   const fmtW = (v) => fmtPrice(v, "KRW");
