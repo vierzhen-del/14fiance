@@ -1010,6 +1010,25 @@ function upsertBuyPlanHolding(account, symbol, monthlyQty, buyFreq, buyDay) {
   return "added";
 }
 
+/* A44(2026-08-11): upsertBuyPlanHolding(대조 후 병합)과 달리, 해당 계좌의 기존 매수계획
+   (월매수량·주기·요일)을 전부 0으로 초기화한 뒤 캡처된 값만 다시 채운다. resetAccountHoldings와
+   달리 행 자체는 지우지 않는다 — 보유수량·평단가·배당정보를 그대로 두고 매수계획 필드만
+   건드려야 하기 때문. upsert만 쓰면 "화면에서 사라진(=매수 중단된) 종목"의 월매수가 0으로
+   안 떨어지는 문제가 있었다(2026-08-11 실사례: ACE·TIGER 미국배당다우존스 두 종목이 이미
+   매수 중단됐는데 캡처에 안 잡혀 계속 활성으로 남아있었음). 호출부에서 반드시 사용자 확인
+   (경고 다이얼로그)을 거친 뒤 호출할 것. */
+function resetAccountBuyPlan(account, holdings) {
+  document.querySelectorAll("#myAssetRows .portfolio-row").forEach((row) => {
+    if (row.querySelector(".my-account").value !== account) return;
+    row.querySelector(".my-monthly").value = 0;
+    row.querySelector(".my-buy-freq").value = "매월";
+    row.querySelector(".my-buy-day").value = "";
+  });
+  for (const h of holdings) {
+    upsertBuyPlanHolding(account, h.matchedSymbol, h.buyQtyPerTime || 0, h.buyFreq || "매월", h.buyDay || "");
+  }
+}
+
 function accountPreviewHTML(account, h) {
   if (!account) return `<span class="stat-sub">계좌 선택 필요</span>`;
   const existing = findExistingAssetRow(account, h.matchedSymbol);
@@ -1565,8 +1584,10 @@ function renderCaptureBuyPlanResult(validated, apiResult) {
     </table></div>
     <div class="action-row" style="margin-top:10px;">
       <button type="button" id="captureBuyPlanFillBtn" class="btn-action">📥 선택 항목 폼에 채우기</button>
+      <button type="button" id="captureBuyPlanResetBtn" class="btn-action">🆕 매수계획 전체 재설정</button>
       <button type="button" id="captureBuyPlanSummaryBtn" class="btn-action">📋 노션 SOP 요약 복사</button>
-    </div>`;
+    </div>
+    <p class="stat-sub">💡 종목 일부만 반영할 땐 "폼에 채우기", 계좌의 매수계획 전체를 이번 캡처로 갈아끼울 땐(화면에서 사라진 종목은 매수 중단으로 간주해 0으로 정리) "전체 재설정"을 쓰세요.</p>`;
   wireThumbHighlight(el);
   el.querySelectorAll("tbody tr").forEach((tr) => {
     const h = validated.holdings[Number(tr.dataset.idx)];
@@ -1596,6 +1617,50 @@ function renderCaptureBuyPlanResult(validated, apiResult) {
   });
   document.getElementById("captureBuyPlanSummaryBtn").addEventListener("click", () =>
     copyToClipboard(buildBuyPlanCaptureSummaryText(validated), "captureBuyPlanStatus", `요약 복사됨 — ${sopTargetLabel()}에 붙여넣어 노션 SOP 갱신을 요청하세요`));
+  document.getElementById("captureBuyPlanResetBtn").addEventListener("click", async () => {
+    // 계좌 캡처의 "🆕 완전 신규 업데이트"와 동일한 패턴: 체크된 행만 후보로 삼고, 계좌별로 묶는다.
+    const groups = new Map();
+    el.querySelectorAll("tbody tr").forEach((tr) => {
+      const h = validated.holdings[Number(tr.dataset.idx)];
+      const accSel = tr.querySelector(".capture-account-select");
+      const check = tr.querySelector(".capture-row-check");
+      if (!accSel || !accSel.value || !h.matchedSymbol) return;
+      if (!check || !check.checked) return;
+      if (!groups.has(accSel.value)) groups.set(accSel.value, []);
+      groups.get(accSel.value).push(h);
+    });
+    if (!groups.size) { flashStatus("captureBuyPlanStatus", "체크된 항목이 없습니다(각 행의 \"채우기\" 체크와 계좌를 확인하세요)"); return; }
+    let resetCount = 0;
+    for (const [account, rawHoldings] of groups) {
+      const { deduped: holdings, duplicateGroups } = findDuplicateGroups(rawHoldings, (h) => h.matchedSymbol || null);
+      const dupWarning = duplicateGroups.length
+        ? `\n\n🔁 중복 감지 — 아래 ${duplicateGroups.length}개 종목이 이번 캡처 결과에 2회 이상 나타났습니다. 마지막 값만 반영되고 나머지는 버려집니다(합산 아님):\n` +
+          duplicateGroups.map((g) => {
+            const hs = g.entries;
+            const label = hs[0].matchedName || hs[0].name || hs[0].matchedSymbol;
+            const values = hs.map((h) => `${h.buyQtyPerTime ?? "?"}주×${h.buyFreq || "?"}`).join(" → ");
+            return `- ${label}(${hs[0].matchedSymbol}): ${hs.length}회 [${values}] → 최종 반영 ${hs[hs.length - 1].buyQtyPerTime ?? "?"}주`;
+          }).join("\n")
+        : "";
+      const ok = window.confirm(
+        `⚠️ "${account}"의 기존 매수계획을 모두 지우고(월매수량 0으로) 이번 캡처 결과(${holdings.length}건)로 다시 채웁니다.\n` +
+        `보유수량·평단가·배당정보는 그대로 유지됩니다 — 매수계획(월매수량·주기·요일)만 바뀝니다.\n\n` +
+        `되돌릴 수 없습니다 — 먼저 "📤 내보내기"로 백업하는 것을 권장합니다.${dupWarning}\n\n계속하시겠습니까?`
+      );
+      if (!ok) continue;
+      const beforeHoldings = snapshotHoldingsMap();
+      const beforeSnap = snapshotAccountValues();
+      resetAccountBuyPlan(account, holdings);
+      saveMyAssets();
+      await renderMyAssets();
+      pushAssetChangelog("capture-buyplan-reset", beforeHoldings, beforeSnap, snapshotHoldingsMap(), snapshotAccountValues());
+      resetCount++;
+    }
+    if (resetCount > 0) {
+      updateMyRowsCollapseUI();
+      flashStatus("captureBuyPlanStatus", `${resetCount}개 계좌 매수계획 전체 재설정 완료 — 아래 "내 자산"에서 확인하세요`);
+    }
+  });
 }
 
 // capture/ 전용 서비스워커 — 루트 sw.js와 별개 scope("/capture/")로 등록
