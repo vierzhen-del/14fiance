@@ -2997,14 +2997,15 @@ async function renderMyAssets() {
        목표표의 "현재 종목수익률"이 영구히 "—"였고, 목표(예: 15%)를 세워둔 채 실제로 몇 %가
        나오고 있는지 화면에서 대조할 방법이 없었다. 직접입력 모드에서 이 값은 대조용으로만
        쓰고 목표 계산(goalRate)에는 넣지 않는다 — 아래 expReturn 분기 참조. */
-    const trailReturn = trailingReturnAnnualized(it.full.dates, it.full.closes,
+    const trailDetail = trailingReturnDetail(it.full.dates, it.full.closes,
       cfg.returnMode !== "manual" ? Number(cfg.returnMode) : GOAL_TRAIL_DEFAULT_MONTHS);
+    const trailReturn = trailDetail ? trailDetail.value : null;
 
     totalValue += value;
     if (cost != null) { totalCost += cost; costedValue += value; }
     totalMonthlyDiv += monthlyDiv;
     totalMonthlyBuy += monthlyBuy;
-    perRow.push({ ...it, meta, close, isUsd, value, cost, profit, monthlyDiv, nextMonthDiv, monthlyBuy, erosion, usedConfirmed, trailReturn, effRate, divBasis, dpsFromRate, dpsGapPct, divPrice, divPriceDate, recordDate, recordFuture, buyDeadline });
+    perRow.push({ ...it, meta, close, isUsd, value, cost, profit, monthlyDiv, nextMonthDiv, monthlyBuy, erosion, usedConfirmed, trailReturn, trailDetail, effRate, divBasis, dpsFromRate, dpsGapPct, divPrice, divPriceDate, recordDate, recordFuture, buyDeadline });
 
     const accKey = it.account || "계좌 미지정";
     if (!accountMap.has(accKey)) accountMap.set(accKey, { value: 0, cost: 0, costedValue: 0, monthlyDiv: 0, monthlyBuy: 0, n: 0 });
@@ -3046,6 +3047,45 @@ async function renderMyAssets() {
   if (cfg.returnMode !== "manual") {
     expReturn = weightedTrailReturn; // 종목별 실적 반영 모드에서만 직접입력 대신 이 값을 목표 계산에 씀
   }
+  /* A45b: 이 수치가 어떻게 조정됐는지 화면에 밝힌다(2026-08-12 사용자 요청).
+     ① 상·하한 클램프에 걸린 종목 — 실제 등락률이 잘려 나가므로 표시값은 실제보다 눌려 있다
+     ② 상장 1년 미만 종목 — 짧은 구간 수익률이 기간 전체값으로 쓰여 과소계상된다
+     비중이 큰 종목부터 보여주고, 클램프를 풀었을 때의 값도 같이 내 얼마나 눌렸는지 알게 한다. */
+  const trailCapped = [], trailShort = [];
+  let rawWsum = 0;
+  for (const p of perRow) {
+    if (!p.trailDetail || !(p.value > 0)) continue;
+    rawWsum += p.trailDetail.raw * p.value;
+    if (p.trailDetail.capped || p.trailDetail.floored) trailCapped.push(p);
+    else if (p.trailDetail.shortHistory) trailShort.push(p);
+  }
+  const weightedTrailRaw = vsum > 0 ? rawWsum / vsum : null;
+  trailCapped.sort((a, b) => b.value - a.value);
+  trailShort.sort((a, b) => b.value - a.value);
+  const trailNoteHTML = weightedTrailReturn == null || (!trailCapped.length && !trailShort.length) ? "" : `
+    <details style="margin-top:6px;">
+      <summary style="font-size:12px; color:var(--text-muted); cursor:pointer;">⚠️ 종목수익률 보정 내역 — ${
+        [trailCapped.length ? `상·하한 절단 ${trailCapped.length}종목` : "", trailShort.length ? `이력부족 ${trailShort.length}종목` : ""].filter(Boolean).join(" · ")
+      }${weightedTrailRaw != null && Math.abs(weightedTrailRaw - weightedTrailReturn) > 0.005
+        ? ` (절단 없으면 ${(weightedTrailRaw * 100).toFixed(1)}%)` : ""}</summary>
+      <div style="overflow-x:auto; margin-top:6px;">
+      <table class="account-summary-table" style="font-size:11.5px;">
+        <thead><tr><th>종목</th><th>비중</th><th>실제</th><th>반영</th><th>사유</th></tr></thead>
+        <tbody>${[...trailCapped, ...trailShort].slice(0, 12).map((p) => {
+          const d = p.trailDetail;
+          const reason = d.capped ? `상한 절단` : d.floored ? `하한 절단` : `${d.spanMonths}개월치만 존재(${d.startDate}~)`;
+          return `<tr>
+            <td style="text-align:left;">${p.meta ? p.meta.name : p.symbol}</td>
+            <td>${(p.value / vsum * 100).toFixed(1)}%</td>
+            <td>${(d.raw * 100).toFixed(1)}%</td>
+            <td>${(d.value * 100).toFixed(1)}%</td>
+            <td style="text-align:left; color:var(--text-muted);">${reason}</td>
+          </tr>`;
+        }).join("")}</tbody>
+      </table>
+      </div>
+      <p class="stat-sub" style="margin-top:4px; color:var(--text-muted);">상·하한(−70%~+150%)은 단기 급등락이 미래 가정으로 흘러드는 걸 막으려는 장치입니다. 이력부족 종목은 짧은 구간 수익률이 기간 전체값으로 쓰여 <b>과소계상</b>됩니다 — 둘 다 표시값을 실제보다 보수적으로 만듭니다.</p>
+    </details>`;
   // 생활비 사용액 — 월배당 중 일부를 생활비로 인출하면 그만큼은 복리 재투자에서 빠짐
   const livingExpenseUsed = Math.min(cfg.livingExpense || 0, totalMonthlyDiv);
   const reinvestedDiv = totalMonthlyDiv - livingExpenseUsed;
@@ -3326,6 +3366,7 @@ async function renderMyAssets() {
               ? " 현재 종목수익률은 보유 종목의 가격 데이터가 부족해 계산되지 않았습니다."
               : ` 현재 종목수익률은 보유 종목의 최근 ${GOAL_TRAIL_DEFAULT_MONTHS}개월 가격 등락률(연환산)을 평가금액 비중으로 가중평균한 값으로, <b>목표 계산에는 쓰지 않고 실적 대조용</b>입니다.`
         }</p>
+        ${trailNoteHTML}
         <p class="stat-sub">월 재투자액 ${fmtW(totalMonthlyInvest)}${totalContributions > 0 ? ` (월매수 ${fmtW(totalMonthlyBuy)} + 월적립 ${fmtW(totalContributions)})` : ""} 반영${livingExpenseUsed > 0 ? ` · 배당은 재투자분(${fmtW(reinvestedDiv)}/월)만 복리 반영, 생활비 사용분 제외` : ""}</p>
         ${realGoalLabel ? `<p class="stat-sub" style="color:var(--text-muted);">물가상승률 ${(inflationRate * 100).toFixed(1)}%/년 반영(오늘 구매력 기준): <b>${realGoalLabel}</b></p>` : ""}
       </div>` : ""}
