@@ -1,8 +1,18 @@
 #!/usr/bin/env python3
-"""배당의만장 유튜브 채널의 이번 달 배당 공시 영상을 수집해 텔레그램으로 알린다.
+"""배당의만장 유튜브 채널의 배당 공시 영상을 수집해 텔레그램으로 알린다.
 
-매달 말일에 돌면서 그달 월초·월중·월말 영상을 모아 링크를 보내고, 다음 달 6일
-「월배당 확정」 루틴이 그 링크를 근거로 배당기준 마스터를 확정한다.
+매달 3회(5·17·말일) 돌면서 그 시점에 조회해야 할 달의 영상을 모아 링크를 보내고,
+다음 달 6일 「월배당 확정」 루틴이 그 링크를 근거로 배당기준 마스터를 확정한다.
+
+⚠️ 월1회(말일)에서 3회로 바꾼 이유(2026-08-13, 사용자 설계) — RSS는 채널 전체에서
+가장 최근 15편만 준다(주제 무관, 이 채널은 배당 아닌 영상도 자주 올린다). 이 채널은
+"N월초" 영상을 **전달 말일 근처**에 올리므로, 월말 1회만 조회하면 그 사이 다른 영상들에
+밀려 "N월초"가 이미 15편 밖으로 사라져 있을 수 있다(2026-08-12 실측). 발행 시점에 맞춰
+자주 확인해야 놓치지 않는다:
+    5일  — 전월 백업 확인(전월말 영상이 실제로 반영됐는지)
+    17일 — 이번 달 초·중 확인(초는 전달 말일 근처, 중은 15일 전후 발행)
+    말일 — 이번 달 중·말 백업 확인(28~31일 매일 돌다 말일에만 동작 — 기존 방식과 동일)
+자동 판단은 `run_plan()` 이 today.day 로 수행한다. 수동 실행은 TARGET_MONTH 로 덮어쓴다.
 
 설계 원칙 — 숫자는 자동으로 읽지 않는다.
     영상의 분배금 표는 음성이 아니라 슬라이드 **이미지**에 있어서 자막으로는 복원되지 않고,
@@ -16,7 +26,8 @@
     DIVIDEND_CHANNEL_ID                    UC로 시작하는 채널 ID. 미설정 시 시드 영상에서 역추적.
     DIVIDEND_SEED_VIDEO                    채널 ID 역추적용 시드 영상 ID(기본값 내장).
     NOTION_TOKEN                           설정 시 아카이브 페이지에 이번 달 절을 자동 추가.
-    TARGET_MONTH                           YYYY-MM. 수동 실행 시 특정 달 지정용(기본: 오늘 기준 이번 달).
+    TARGET_MONTH                           YYYY-MM. 수동 실행 시 특정 달 지정용(기본: run_plan()).
+    FORCE_RUN                              1이면 5·17·말일이 아니어도 실행(수동 테스트용).
 """
 
 import json
@@ -249,6 +260,26 @@ def is_last_day_of_month():
     return (today + timedelta(days=1)).month != today.month
 
 
+def prev_month_str():
+    first_of_this_month = datetime.now(KST).date().replace(day=1)
+    return (first_of_this_month - timedelta(days=1)).strftime("%Y-%m")
+
+
+def run_plan():
+    """오늘이 크롤 실행일인지, 실행이면 어느 달을 조회할지 정한다.
+
+    (None, None) 이면 오늘은 실행일이 아니라는 뜻 — 5·17·말일 3일만 동작한다.
+    """
+    day = datetime.now(KST).day
+    if day == 5:
+        return prev_month_str(), "5일 — 전월 백업 확인"
+    if day == 17:
+        return datetime.now(KST).strftime("%Y-%m"), "17일 — 이번 달 초·중 확인"
+    if is_last_day_of_month():
+        return datetime.now(KST).strftime("%Y-%m"), "말일 — 이번 달 중·말 백업 확인"
+    return None, None
+
+
 def build_message(month, picked, archive_url):
     lines = [f"<b>📺 배당의만장 {month} 배당 공시 영상</b>", ""]
     for slot in ("월초", "월중", "월말", "기타"):
@@ -344,12 +375,23 @@ def send_telegram(message):
 
 def main():
     forced = os.environ.get("FORCE_RUN", "").strip() in ("1", "true", "yes")
-    if not forced and not is_last_day_of_month():
-        print(f"오늘({datetime.now(KST):%Y-%m-%d})은 말일이 아님 — 종료. "
-              "(cron이 28~31일 매일 돌면서 말일에만 실제 작업)")
-        return 0
+    explicit_month = os.environ.get("TARGET_MONTH", "").strip()
 
-    month = target_month()
+    if forced:
+        month = target_month()
+        print(f"강제 실행(FORCE_RUN) — 조회 대상: {month}")
+    else:
+        month, reason = run_plan()
+        if month is None:
+            print(f"오늘({datetime.now(KST):%Y-%m-%d})은 실행일이 아님 — 종료. "
+                  "(cron이 매일 돌면서 5·17·말일에만 실제 작업)")
+            return 0
+        if explicit_month:
+            month = target_month()  # TARGET_MONTH 로 명시 지정 시 그 값이 run_plan() 판단보다 우선
+            print(f"조회 대상: {month} (TARGET_MONTH 로 직접 지정, {reason} 실행 자체는 정상)")
+        else:
+            print(f"조회 대상: {month} ({reason})")
+
     candidates, author_url = channel_feed_candidates()
 
     # 후보를 순서대로 시도 — RSS가 200을 주는 첫 후보가 진짜 채널이다.
