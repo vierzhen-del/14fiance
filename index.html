@@ -3009,6 +3009,8 @@ function buildGoalTrackerHTML(perRow) {
       : null;
     const rateRow = matched.find((p) => p.effRate > 0);
     const effRate = rateRow ? rateRow.effRate : 0;
+    const dpsRow = matched.find((p) => p.confirmedDps > 0);
+    const confirmedDps = dpsRow ? dpsRow.confirmedDps : 0;
 
     let etaLabel;
     if (!(g.targetQty > 0)) {
@@ -3029,7 +3031,13 @@ function buildGoalTrackerHTML(perRow) {
     // A44 수정(2026-08-11): divRate는 "월 분배율"이다(입력창 안내문 "월 분배율(%)" 참조,
     // 다른 화면들도 전부 현재가×분배율을 그대로 월배당으로 쓰고 12로 나누지 않는다) —
     // 여기서도 /12를 넣었다가 실제보다 12배 작게 나오는 오류가 있었다(사용자 실측 보고로 발견).
-    const divLabel = g.targetQty > 0 && priceKrw != null && effRate > 0
+    // A47 수정(2026-08-12): 목표 도달은 먼 미래 시점 예측이라 "그날의 현재가×등록분배율"보다
+    // 확정 DPS(원/주, 노션 배당기준 마스터에서 매달 실지급액으로 확정한 값)를 그대로 쓰는 게
+    // 더 안정적이다(사용자 결정 — 확정 배당금 계산에 실제로 쓰인 값을 예측에도 반영). 확정
+    // DPS가 없는 종목(배당 미등록·성장형)만 기존 현재가×등록분배율로 폴백한다.
+    const divLabel = g.targetQty > 0 && confirmedDps > 0
+      ? `월 ${fmtW(g.targetQty * confirmedDps)} (확정 DPS ${confirmedDps.toLocaleString()}원/주 기준)`
+      : g.targetQty > 0 && priceKrw != null && effRate > 0
       ? `월 ${fmtW(g.targetQty * priceKrw * effRate)} (월 ${(effRate * 100).toFixed(2)}% · 연환산 ${(effRate * 1200).toFixed(1)}%)`
       : (effRate > 0 ? "단가 확인 불가" : "배당률 미등록");
 
