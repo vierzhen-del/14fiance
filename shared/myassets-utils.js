@@ -542,7 +542,14 @@ function buildMonthlyBarChart(container, months, opts = {}) {
   svg.addEventListener("click", onClick);
 }
 
-function trailingReturnAnnualized(dates, closes, months) {
+const TRAIL_RETURN_CAP = 1.5;   // 상한 +150%
+const TRAIL_RETURN_FLOOR = -0.7; // 하한 -70%
+
+/* A45b: 등락률과 함께 "그 값이 어떻게 조정됐는지"를 돌려준다. 종전에는 숫자 하나만 나와서
+   ① 상·하한에 걸려 잘린 종목과 ② 상장 1년 미만이라 짧은 구간을 그 기간으로 간주한 종목을
+   화면에서 구분할 수 없었다(2026-08-12 실측: 보유 4종목이 상한 절단, 6종목이 이력부족).
+   spanMonths는 실제로 쓰인 구간 길이라, months보다 짧으면 요청 기간만큼 이력이 없다는 뜻이다. */
+function trailingReturnDetail(dates, closes, months) {
   if (!dates || dates.length < 2) return null;
   const lastClose = closes[closes.length - 1];
   const lastDate = dates[dates.length - 1];
@@ -553,10 +560,27 @@ function trailingReturnAnnualized(dates, closes, months) {
   if (idx < 0 || idx >= dates.length - 1) idx = 0;
   const startClose = closes[idx];
   if (!(startClose > 0)) return null;
+  const startDate = dates[idx];
   const periodReturn = lastClose / startClose - 1;
-  const annualized = Math.pow(1 + periodReturn, 12 / months) - 1;
   // 단기(1~3개월) 등락을 그대로 연율화하면 비현실적으로 큰 값이 나올 수 있어 합리적 범위로 제한
-  return Math.max(-0.7, Math.min(1.5, annualized));
+  const annualized = Math.pow(1 + periodReturn, 12 / months) - 1;
+  const value = Math.max(TRAIL_RETURN_FLOOR, Math.min(TRAIL_RETURN_CAP, annualized));
+  const spanMonths = (new Date(lastDate).getFullYear() - new Date(startDate).getFullYear()) * 12
+    + (new Date(lastDate).getMonth() - new Date(startDate).getMonth());
+  return {
+    value,
+    raw: annualized,
+    capped: annualized > TRAIL_RETURN_CAP,
+    floored: annualized < TRAIL_RETURN_FLOOR,
+    // 요청 기간보다 1개월 이상 짧으면 이력부족 — 그 짧은 구간 수익률이 기간 전체값으로 쓰인다
+    shortHistory: spanMonths < months - 1,
+    spanMonths, startDate, lastDate,
+  };
+}
+
+function trailingReturnAnnualized(dates, closes, months) {
+  const d = trailingReturnDetail(dates, closes, months);
+  return d ? d.value : null;
 }
 
 const ACCOUNT_TYPES = [
