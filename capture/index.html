@@ -976,10 +976,14 @@ function findExistingAssetRow(account, symbol) {
   ) || null;
 }
 
+/* A45: qty·avgPrice 둘 다 null이면 "화면에 없었음"으로 보고 기존 값을 건드리지 않는다 —
+   가로 스와이프로 열이 바뀌는 화면(삼성증권 계좌잔고 등, 2026-08-12 실측)은 같은 종목이
+   qty만 보이는 장과 avgPrice만 보이는 장으로 나뉘어 캡처되는데, qty를 무조건 0으로
+   덮어쓰면 먼저 채운 값이 나중 장에서 지워진다. */
 function upsertAccountHolding(account, symbol, qty, avgPrice) {
   const existing = findExistingAssetRow(account, symbol);
   if (existing) {
-    existing.querySelector(".my-qty").value = qty || 0;
+    if (qty != null) existing.querySelector(".my-qty").value = qty;
     if (avgPrice) existing.querySelector(".my-avg").value = avgPrice;
     return "updated";
   }
@@ -1035,7 +1039,7 @@ function accountPreviewHTML(account, h) {
   if (!existing) return `<span style="color:var(--good); font-size:12px;">신규 추가</span>`;
   const oldQty = parseFloat(existing.querySelector(".my-qty").value) || 0;
   const oldAvg = parseFloat(existing.querySelector(".my-avg").value) || 0;
-  const newQty = h.qty || 0, newAvg = h.avgPrice || 0;
+  const newQty = h.qty != null ? h.qty : oldQty, newAvg = h.avgPrice || 0;
   if (oldQty === newQty && (!newAvg || oldAvg === newAvg)) return `<span class="stat-sub">기존과 동일(변경 없음)</span>`;
   return `<span style="color:var(--critical); font-size:12px;">갱신: ${oldQty.toLocaleString()}주→${newQty.toLocaleString()}주${newAvg ? `, 단가 ${oldAvg.toLocaleString()}→${newAvg.toLocaleString()}` : ""}</span>`;
 }
@@ -1447,7 +1451,7 @@ function renderCaptureAccountResult(validated, apiResult) {
       const check = tr.querySelector(".capture-row-check");
       if (!check || !check.checked || !h.matchedSymbol) return;
       const accSel = tr.querySelector(".capture-account-select");
-      const result = upsertAccountHolding(accSel ? accSel.value : "", h.matchedSymbol, h.qty || 0, h.avgPrice || 0);
+      const result = upsertAccountHolding(accSel ? accSel.value : "", h.matchedSymbol, h.qty, h.avgPrice || 0);
       if (result === "updated") updated++; else added++;
     });
     if (added + updated > 0) {
@@ -1478,7 +1482,7 @@ function renderCaptureAccountResult(validated, apiResult) {
       if (!check || !check.checked || !h.matchedSymbol) return;
       const accSel = tr.querySelector(".capture-account-select");
       const accountValue = accSel ? accSel.value : (h.matchedAccount || "");
-      const result = upsertAccountHolding(accountValue, h.matchedSymbol, h.qty || 0, h.avgPrice || 0);
+      const result = upsertAccountHolding(accountValue, h.matchedSymbol, h.qty, h.avgPrice || 0);
       if (result === "updated") updated++; else added++;
       confirmedHoldings.push({ ...h, matchedAccount: accountValue });
     });
