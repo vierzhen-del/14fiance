@@ -68,11 +68,26 @@ def archive_page_id():
         return ARCHIVE_FALLBACK_ID, f"https://www.notion.so/{ARCHIVE_FALLBACK_ID.replace('-', '')}"
 
 
-# ⚠️ watch 페이지에는 `"channelId"` 가 **여러 번** 나온다(추천 영상 것까지 섞임) — 첫 매치가
-# 영상 주인이라는 보장이 없다. 실제로 2026-08-12 실행에서 첫 매치로 RSS 404가 났다.
-# 그래서 "하나를 고른다"가 아니라 **후보를 순서대로 모아 RSS가 뚫릴 때까지 시도**한다.
-# 앞쪽일수록 신뢰도가 높은 출처다(externalId = ytInitialData 상의 채널 주인).
-CHANNEL_ID_PATTERNS = [
+# ⚠️ 2026-08-12 실측 — GitHub Actions 러너와 사용자 개인 기기(Tab S9, 완전히 다른 네트워크)
+# 양쪽에서 **똑같이** UC6_vReB9rXdTYWJWOIfkMHA / UCXPQxdzU1FybeKKVEiHsXjQ 가 뽑혔고 둘 다
+# RSS 404였다. IP 차단이면 두 네트워크에서 같은 결과가 나올 수 없다 — 이건 IP 문제가 아니라
+# **추출 로직이 엉뚱한 채널 ID를 뽑는 버그**였다. @handle 페이지에는 "추천 채널" 모듈에도
+# externalId/channelId 가 잔뜩 박혀 있어, 페이지 전체를 무작정 훑으면 남의 채널 ID를 줍는다.
+#
+# 그래서 "이 페이지 자체를 가리키는" 필드만 신뢰도 순으로 쓴다:
+#   ① rssUrl        — YouTube가 이 채널용으로 직접 생성한 RSS 전체 URL. ID 재조립 불필요.
+#   ② canonical/og:url — <head> 의 단일 태그, 정의상 "이 페이지"를 가리킨다.
+#   ③ channelMetadataRenderer 근방의 externalId — 페이지 전역이 아니라 그 객체 안으로 한정.
+# 페이지 전체를 훑는 옛 방식은 최후 폴백으로만 남긴다.
+RSS_URL_PATTERN = re.compile(
+    r'rssUrl":"(https://www\.youtube\.com/feeds/videos\.xml\?channel_id=UC[\w-]{22})"')
+RELIABLE_ID_PATTERNS = [
+    re.compile(r'<link rel="canonical" href="https://www\.youtube\.com/channel/(UC[\w-]{22})"'),
+    re.compile(r'<meta property="og:url" content="https://www\.youtube\.com/channel/(UC[\w-]{22})"'),
+    re.compile(r'"channelMetadataRenderer":\{.{0,400}?"externalId":"(UC[\w-]{22})"', re.S),
+]
+# 최후 폴백 — 페이지 전역 스캔이라 오탐이 잦다(위 사고 원인). 위 패턴이 전부 실패했을 때만 쓴다.
+LOOSE_ID_PATTERNS = [
     re.compile(r'"externalId":"(UC[\w-]{22})"'),
     re.compile(r'youtube\.com/channel/(UC[\w-]{22})'),
     re.compile(r'"channelId":"(UC[\w-]{22})"'),
@@ -80,18 +95,26 @@ CHANNEL_ID_PATTERNS = [
 MAX_CANDIDATES = 8
 
 
-def _scan_channel_ids(text):
-    """신뢰도 순으로 채널 ID 후보를 뽑는다(중복 제거, 순서 유지)."""
+def _feed_url(cid):
+    return f"https://www.youtube.com/feeds/videos.xml?channel_id={cid}"
+
+
+def _scan_feed_urls(html, loose=False):
+    """페이지 HTML에서 신뢰도 순으로 RSS URL 후보를 뽑는다(중복 제거, 순서 유지)."""
     out = []
-    for pattern in CHANNEL_ID_PATTERNS:
-        for cid in pattern.findall(text or ""):
-            if cid not in out:
-                out.append(cid)
+    m = RSS_URL_PATTERN.search(html or "")
+    if m and m.group(1) not in out:
+        out.append(m.group(1))
+    for pattern in RELIABLE_ID_PATTERNS + (LOOSE_ID_PATTERNS if loose else []):
+        for cid in pattern.findall(html or ""):
+            url = _feed_url(cid)
+            if url not in out:
+                out.append(url)
     return out
 
 
-def channel_id_candidates():
-    """채널 ID 후보를 신뢰도 순으로 모은다.
+def channel_feed_candidates():
+    """RSS 피드 URL 후보를 신뢰도 순으로 모은다. (후보 목록, 채널홈 URL) 튜플을 반환.
 
     ⚠️ Actions 워크플로는 미설정 변수를 **빈 문자열**로 넘긴다 — os.environ.get 의 기본값이
     발동하지 않으므로 반드시 `or 기본값` 으로 받아야 한다(2026-08-12 첫 실행 실패 원인).
@@ -99,33 +122,43 @@ def channel_id_candidates():
     env = (os.environ.get("DIVIDEND_CHANNEL_ID") or "").strip()
     if env.startswith("UC"):
         print(f"DIVIDEND_CHANNEL_ID 사용: {env}")
-        return [env], f"https://www.youtube.com/channel/{env}"
+        return [_feed_url(env)], f"https://www.youtube.com/channel/{env}"
 
     seed = (os.environ.get("DIVIDEND_SEED_VIDEO") or "").strip() or SEED_VIDEO_DEFAULT
     print(f"DIVIDEND_CHANNEL_ID 미설정 — 시드 영상 {seed} 에서 채널 ID 역추적")
-    candidates, author_url = [], ""
+    candidates, author_url, handle_html = [], "", ""
 
-    # ① oEmbed — 공식 API라 영상 주인 채널을 정확히 준다. 가장 신뢰도 높은 경로.
+    # ① oEmbed — 공식 API라 영상 주인 채널의 핸들(@xxx) URL을 정확히 준다.
     try:
         oembed = json.loads(http_get(
             "https://www.youtube.com/oembed?format=json&url="
             + urllib.parse.quote(f"https://www.youtube.com/watch?v={seed}", safe="")))
         author_url = oembed.get("author_url", "")
         print(f"   oEmbed author_url: {author_url}")
-        candidates += _scan_channel_ids(author_url)
-        if not candidates and author_url:
-            # author_url 이 /@handle 형태면 그 페이지에서 externalId·canonical 을 뽑는다.
-            candidates += _scan_channel_ids(http_get(author_url))
     except (urllib.error.URLError, TimeoutError, ValueError) as exc:
         print(f"   oEmbed 실패: {exc}")
 
-    # ② watch 페이지 — 후보를 보강한다(순서상 뒤).
+    # ② @handle 페이지 — rssUrl/canonical 등 "이 페이지 전용" 필드만 먼저 신뢰.
+    if author_url:
+        try:
+            handle_html = http_get(author_url)
+            candidates += [u for u in _scan_feed_urls(handle_html) if u not in candidates]
+        except (urllib.error.URLError, TimeoutError) as exc:
+            print(f"   @handle 페이지 조회 실패: {exc}")
+
+    # ③ watch 페이지 — 같은 신뢰 패턴으로 보강(순서상 뒤).
     try:
-        for cid in _scan_channel_ids(http_get(f"https://www.youtube.com/watch?v={seed}")):
-            if cid not in candidates:
-                candidates.append(cid)
+        watch_html = http_get(f"https://www.youtube.com/watch?v={seed}")
+        candidates += [u for u in _scan_feed_urls(watch_html) if u not in candidates]
     except (urllib.error.URLError, TimeoutError) as exc:
+        watch_html = ""
         print(f"   영상 페이지 조회 실패: {exc}")
+
+    # ④ 신뢰 패턴이 전부 허탕이면 그때만 느슨한 전역 스캔으로 보강(오탐 감수).
+    if not candidates:
+        print("   신뢰 패턴 전부 실패 — 느슨한 전역 스캔으로 보강(오탐 가능)")
+        candidates += [u for u in _scan_feed_urls(handle_html, loose=True) if u not in candidates]
+        candidates += [u for u in _scan_feed_urls(watch_html, loose=True) if u not in candidates]
 
     candidates = candidates[:MAX_CANDIDATES]
     print(f"   후보 {len(candidates)}개: {', '.join(candidates) if candidates else '(없음)'}")
@@ -166,10 +199,9 @@ def scrape_channel_videos(channel_url, month):
     return out
 
 
-def fetch_feed(channel_id):
+def fetch_feed(feed_url):
     """채널 RSS에서 최근 영상 목록을 읽는다(최대 15편). yt-dlp 불필요·봇차단 없음."""
-    url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
-    xml = http_get(url)
+    xml = http_get(feed_url)
     ns = {"a": "http://www.w3.org/2005/Atom", "yt": "http://www.youtube.com/xml/schemas/2015"}
     videos = []
     for entry in ElementTree.fromstring(xml).findall("a:entry", ns):
@@ -306,19 +338,19 @@ def main():
         return 0
 
     month = target_month()
-    candidates, author_url = channel_id_candidates()
+    candidates, author_url = channel_feed_candidates()
 
     # 후보를 순서대로 시도 — RSS가 200을 주는 첫 후보가 진짜 채널이다.
     picked = None
-    for cid in candidates:
+    for url in candidates:
         try:
-            videos = fetch_feed(cid)
-            print(f"✅ RSS 성공: {cid} (피드 {len(videos)}편)")
+            videos = fetch_feed(url)
+            print(f"✅ RSS 성공: {url} (피드 {len(videos)}편)")
             picked = [v for v in videos if v["published"].strftime("%Y-%m") == month]
             picked.sort(key=lambda v: v["published"])
             break
         except (urllib.error.URLError, ElementTree.ParseError, TimeoutError) as exc:
-            print(f"   RSS 실패 {cid}: {exc}")
+            print(f"   RSS 실패 {url}: {exc}")
 
     if picked is None:
         print("⚠️ 모든 후보에서 RSS 실패 — 채널 페이지 스크레이핑으로 폴백")
