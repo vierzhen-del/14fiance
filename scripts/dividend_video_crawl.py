@@ -182,15 +182,14 @@ def scrape_channel_videos(channel_url, month):
 
     pairs = re.findall(r'"videoId":"([\w-]{11})".{0,400}?"text":"([^"]{4,200})"', html, re.S)
     seen, out = set(), []
-    want = f"{int(month.split('-')[1])}월"
     for vid, title in pairs:
         if vid in seen:
             continue
         seen.add(vid)
         title = title.encode().decode("unicode_escape", errors="replace")
-        if want in title:
+        if title_matches_month(title, month):
             out.append({"id": vid, "title": title, "published": None})
-    print(f"   스크레이핑 결과: 영상 {len(seen)}개 중 '{want}' 제목 {len(out)}건")
+    print(f"   스크레이핑 결과: 영상 {len(seen)}개 중 대상월 제목 매칭 {len(out)}건")
     if not seen:
         # 영상 자체를 0개 긁었다면 페이지 구조 변경이거나 봇 차단 페이지다 —
         # "이번 달 영상이 없다"와 구분해야 조용한 실패를 막는다.
@@ -223,6 +222,19 @@ def slot_of(title):
         if pattern.search(title):
             return name
     return "기타"
+
+
+def title_matches_month(title, month):
+    """제목이 대상 월을 언급하는지 확인 — **발행일이 아니라 제목 기준**.
+
+    ⚠️ 2026-08-12 실측: "8월초 배당주는ETF 배당금 확정내역"이 7/29에 발행됐다.
+    이 채널은 "N월초" 영상을 **전달 말일 근처**에 올린다(월초 배당 확정이 그 시점에
+    나오니까) — 발행월로 필터링하면 8월 콘텐츠가 7월 영상으로 잘못 분류된다.
+    그래서 발행 시점이 아니라 제목에 박힌 숫자로 판정한다(`(?<!\d)` 로 "18월" 같은
+    부분 매칭 방지).
+    """
+    mo = int(month.split("-")[1])
+    return re.search(rf"(?<!\d){mo}\s*월(?!\d)", title) is not None
 
 
 def target_month():
@@ -346,8 +358,8 @@ def main():
         try:
             videos = fetch_feed(url)
             print(f"✅ RSS 성공: {url} (피드 {len(videos)}편)")
-            picked = [v for v in videos if v["published"].strftime("%Y-%m") == month]
-            picked.sort(key=lambda v: v["published"])
+            picked = [v for v in videos if title_matches_month(v["title"], month)]
+            picked.sort(key=lambda v: v["published"] or datetime.min.replace(tzinfo=KST))
             break
         except (urllib.error.URLError, ElementTree.ParseError, TimeoutError) as exc:
             print(f"   RSS 실패 {url}: {exc}")
@@ -359,10 +371,10 @@ def main():
             return 1
         picked = scrape_channel_videos(author_url, month)
         if picked is None:
-            print("❌ RSS·스크레이핑 모두 실패 — 유튜브가 이 러너 IP를 차단한 것으로 보인다.")
-            print("   대안: 이 스크립트를 개인 PC에서 직접 실행하면 된다(표준 라이브러리만 사용).")
-            print("   TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=... FORCE_RUN=1 \\")
-            print("     python3 scripts/dividend_video_crawl.py")
+            print("❌ RSS·스크레이핑 모두 실패 — 채널 페이지 접근 자체가 막혔다(IP 차단이 아니라")
+            print("   페이지 구조 변경/일시 오류 가능성이 높다 — 2026-08-12에 IP 차단설은")
+            print("   기각됨: 서로 다른 네트워크에서 동일 증상 재현). DIVIDEND_CHANNEL_ID 를")
+            print("   직접 등록해 재시도하거나 잠시 후 다시 실행할 것.")
             return 1
 
     picked = [{**v, "slot": slot_of(v["title"])} for v in picked]
@@ -372,7 +384,11 @@ def main():
         print(f"  [{v['slot']}] {when} {v['title']} (https://youtu.be/{v['id']})")
 
     if not picked:
-        print(f"⚠️ {month} 영상을 찾지 못함 — 발송 생략(채널 RSS는 최근 15편만 제공).")
+        print(f"⚠️ {month} 영상을 찾지 못함 — 발송 생략.")
+        print("   RSS는 채널 전체에서 가장 최근 15편만 준다(주제 무관). 이 채널은 다른 주제도")
+        print("   자주 올려서, 지난달 이전을 조회하면 진짜 해당 월 영상이 이미 그 15편 밖으로")
+        print("   밀려나 있을 수 있다 — 이건 버그가 아니라 RSS 자체의 한계다. 이번 달(진행 중)이나")
+        print("   막 지난달을 조회할 때 가장 정확하다. 과거 달은 아카이브 md나 사용자 캡처로 보완할 것.")
         return 0
 
     page_id, archive_url = archive_page_id()
