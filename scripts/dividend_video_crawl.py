@@ -45,7 +45,10 @@ SLOT_PATTERNS = [
     ("월말", re.compile(r"월\s*말|말일|하순")),
 ]
 
-UA = "Mozilla/5.0 (compatible; 14fiance-dividend-crawler/1.0)"
+# ⚠️ 커스텀 UA를 쓰면 feeds/videos.xml 이 404를 준다(2026-08-12 실측 — 유효한 채널 ID
+# 2개 모두 404). 평범한 브라우저 UA를 써야 한다.
+UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+      "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
 
 
 def http_get(url, timeout=20, headers=None):
@@ -74,7 +77,7 @@ CHANNEL_ID_PATTERNS = [
     re.compile(r'youtube\.com/channel/(UC[\w-]{22})'),
     re.compile(r'"channelId":"(UC[\w-]{22})"'),
 ]
-MAX_CANDIDATES = 6
+MAX_CANDIDATES = 8
 
 
 def _scan_channel_ids(text):
@@ -96,11 +99,11 @@ def channel_id_candidates():
     env = (os.environ.get("DIVIDEND_CHANNEL_ID") or "").strip()
     if env.startswith("UC"):
         print(f"DIVIDEND_CHANNEL_ID 사용: {env}")
-        return [env]
+        return [env], f"https://www.youtube.com/channel/{env}"
 
     seed = (os.environ.get("DIVIDEND_SEED_VIDEO") or "").strip() or SEED_VIDEO_DEFAULT
     print(f"DIVIDEND_CHANNEL_ID 미설정 — 시드 영상 {seed} 에서 채널 ID 역추적")
-    candidates = []
+    candidates, author_url = [], ""
 
     # ① oEmbed — 공식 API라 영상 주인 채널을 정확히 준다. 가장 신뢰도 높은 경로.
     try:
@@ -111,8 +114,8 @@ def channel_id_candidates():
         print(f"   oEmbed author_url: {author_url}")
         candidates += _scan_channel_ids(author_url)
         if not candidates and author_url:
-            # author_url 이 /@handle 형태면 그 페이지에서 externalId 를 뽑는다.
-            candidates += _scan_channel_ids(http_get(author_url))[:2]
+            # author_url 이 /@handle 형태면 그 페이지에서 externalId·canonical 을 뽑는다.
+            candidates += _scan_channel_ids(http_get(author_url))
     except (urllib.error.URLError, TimeoutError, ValueError) as exc:
         print(f"   oEmbed 실패: {exc}")
 
@@ -126,7 +129,36 @@ def channel_id_candidates():
 
     candidates = candidates[:MAX_CANDIDATES]
     print(f"   후보 {len(candidates)}개: {', '.join(candidates) if candidates else '(없음)'}")
-    return candidates
+    return candidates, author_url
+
+
+def scrape_channel_videos(channel_url, month):
+    """RSS가 막혔을 때의 폴백 — 채널 /videos 페이지에서 영상 ID·제목을 긁는다.
+
+    ⚠️ 게시일을 얻지 못한다. 「배당의만장」 영상 제목이 '8월초/8월중/8월말'처럼 달을 달고 나오는
+    점을 이용해 **제목의 'N월'로 필터**한다. 제목 형식이 바뀌면 이 폴백은 조용히 0건이 되므로,
+    RSS가 정상화되면 그쪽이 우선이다(게시일이 있어 훨씬 정확).
+    """
+    url = channel_url.rstrip("/") + "/videos"
+    print(f"   RSS 폴백 — 채널 페이지 스크레이핑: {url}")
+    try:
+        html = http_get(url, timeout=30)
+    except (urllib.error.URLError, TimeoutError) as exc:
+        print(f"   채널 페이지 조회 실패: {exc}")
+        return []
+
+    pairs = re.findall(r'"videoId":"([\w-]{11})".{0,400}?"text":"([^"]{4,200})"', html, re.S)
+    seen, out = set(), []
+    want = f"{int(month.split('-')[1])}월"
+    for vid, title in pairs:
+        if vid in seen:
+            continue
+        seen.add(vid)
+        title = title.encode().decode("unicode_escape", errors="replace")
+        if want in title:
+            out.append({"id": vid, "title": title, "published": None})
+    print(f"   스크레이핑 결과: 영상 {len(seen)}개 중 '{want}' 제목 {len(out)}건")
+    return out
 
 
 def fetch_feed(channel_id):
@@ -177,7 +209,7 @@ def build_message(month, picked, archive_url):
                 lines.append(f"{slot}: <i>아직 없음</i>")
             continue
         for v in items:
-            when = v["published"].strftime("%m/%d")
+            when = v["published"].strftime("%m/%d") if v["published"] else "날짜미상"
             lines.append(f'{slot} ({when}) — <a href="https://youtu.be/{v["id"]}">{v["title"]}</a>')
     lines += [
         "",
@@ -199,7 +231,7 @@ def notion_append(page_id, month, picked):
 
     bullets = []
     for v in picked:
-        when = v["published"].strftime("%Y-%m-%d")
+        when = v["published"].strftime("%Y-%m-%d") if v["published"] else "날짜미상"
         bullets.append({
             "object": "block",
             "type": "bulleted_list_item",
@@ -268,35 +300,33 @@ def main():
               "(cron이 28~31일 매일 돌면서 말일에만 실제 작업)")
         return 0
 
-    candidates = channel_id_candidates()
-    if not candidates:
-        print("❌ 채널 ID 후보를 하나도 못 구했다 — 저장소 Settings → Secrets and variables →")
-        print("   Actions → Variables 에 DIVIDEND_CHANNEL_ID(UC로 시작하는 24자)를 등록할 것.")
-        return 1
+    month = target_month()
+    candidates, author_url = channel_id_candidates()
 
     # 후보를 순서대로 시도 — RSS가 200을 주는 첫 후보가 진짜 채널이다.
-    channel_id, videos = None, None
+    picked = None
     for cid in candidates:
         try:
             videos = fetch_feed(cid)
-            channel_id = cid
-            print(f"✅ RSS 성공: {cid}")
+            print(f"✅ RSS 성공: {cid} (피드 {len(videos)}편)")
+            picked = [v for v in videos if v["published"].strftime("%Y-%m") == month]
+            picked.sort(key=lambda v: v["published"])
             break
         except (urllib.error.URLError, ElementTree.ParseError, TimeoutError) as exc:
             print(f"   RSS 실패 {cid}: {exc}")
-    if channel_id is None:
-        print("❌ 모든 후보에서 RSS 조회 실패 — DIVIDEND_CHANNEL_ID 를 직접 등록할 것.")
-        return 1
 
-    month = target_month()
+    if picked is None:
+        print("⚠️ 모든 후보에서 RSS 실패 — 채널 페이지 스크레이핑으로 폴백")
+        if not author_url:
+            print("❌ 채널 URL도 없어 폴백 불가 — DIVIDEND_CHANNEL_ID 를 직접 등록할 것.")
+            return 1
+        picked = scrape_channel_videos(author_url, month)
 
-    picked = [{**v, "slot": slot_of(v["title"])}
-              for v in videos if v["published"].strftime("%Y-%m") == month]
-    picked.sort(key=lambda v: v["published"])
-
-    print(f"채널 {channel_id} · 피드 {len(videos)}편 중 {month} 영상 {len(picked)}편")
+    picked = [{**v, "slot": slot_of(v["title"])} for v in picked]
+    print(f"{month} 영상 {len(picked)}편")
     for v in picked:
-        print(f"  [{v['slot']}] {v['published']:%m/%d} {v['title']} (https://youtu.be/{v['id']})")
+        when = f"{v['published']:%m/%d}" if v["published"] else "날짜미상"
+        print(f"  [{v['slot']}] {when} {v['title']} (https://youtu.be/{v['id']})")
 
     if not picked:
         print(f"⚠️ {month} 영상을 찾지 못함 — 발송 생략(채널 RSS는 최근 15편만 제공).")
