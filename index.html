@@ -2179,6 +2179,35 @@ function snapshotAccountValues() {
   return { totalValue: csv.totalValue, byAccount, mdd: m ? m.mdd : null };
 }
 
+/* A46: 수익률 스냅샷 — 일별·월별 자산 스냅샷에 매입단가 기준 수익률(총계좌·계좌별·비중별·국가별)을
+   함께 기록해 "추이" 탭에서 수익률 변동 이력을 보여줄 수 있게 한다. 과거 시점의 매입단가는
+   보존돼 있지 않으므로(현재값만 있음) 이 스냅샷을 쌓기 시작한 시점부터의 추이만 계산된다 —
+   과거로 소급하지 않는다. */
+function computeReturnBreakdown(csv) {
+  if (!csv) return null;
+  const pct = (cost, costedValue) => (cost > 0 ? ((costedValue - cost) / cost) * 100 : null);
+  let totalCost = 0, totalCostedValue = 0;
+  const byRegion = new Map(), byStyle = new Map();
+  for (const p of csv.perRow) {
+    if (!(p.value > 0)) continue;
+    if (p.cost != null) { totalCost += p.cost; totalCostedValue += p.value; }
+    const region = (p.meta && p.meta.region) || "미분류";
+    const style = (p.meta && p.meta.style) || "미분류";
+    for (const [map, key] of [[byRegion, region], [byStyle, style]]) {
+      if (!map.has(key)) map.set(key, { cost: 0, costedValue: 0 });
+      const g = map.get(key);
+      if (p.cost != null) { g.cost += p.cost; g.costedValue += p.value; }
+    }
+  }
+  const toObj = (map) => Object.fromEntries([...map.entries()].map(([k, g]) => [k, { cost: g.cost, costedValue: g.costedValue, pct: pct(g.cost, g.costedValue) }]));
+  const byAccount = {};
+  for (const [acc, g] of csv.accountMap) byAccount[acc] = { cost: g.cost, costedValue: g.costedValue, pct: pct(g.cost, g.costedValue) };
+  return {
+    total: { cost: totalCost, costedValue: totalCostedValue, pct: pct(totalCost, totalCostedValue) },
+    byAccount, byRegion: toObj(byRegion), byStyle: toObj(byStyle),
+  };
+}
+
 /* ---------- A25a: 월별 스냅샷 자동 기록(계좌별·카테고리별 비중 포함) ----------
    종전에는 "📸 이번 달 스냅샷 저장" 버튼을 눌러야만 쌓여서 이력이 거의 남지 않았고, 비중
    정보도 없었다. 계좌를 갱신(캡처 반영·가져오기)하면 그 달 스냅샷이 자동으로 갱신되게 한다.
@@ -2206,7 +2235,7 @@ function upsertMonthlySnapshot(mddOverride) {
   // A26b: 월 단위 MDD 이력이 비중 이력과 같은 주기로 쌓인다(추이 탭 "MDD 이력" 표의 재료).
   let mdd = mddOverride;
   if (mdd === undefined) { const m = portfolioMDD(csv.perRow); mdd = m ? m.mdd : null; }
-  const entry = { month, value: csv.totalValue, monthlyDiv: csv.totalMonthlyDiv, mdd, dpsBySymbol, byAccount, byCategory };
+  const entry = { month, value: csv.totalValue, monthlyDiv: csv.totalMonthlyDiv, mdd, dpsBySymbol, byAccount, byCategory, returnBreakdown: computeReturnBreakdown(csv) };
   const idx = hist.findIndex((h) => h.month === month);
   if (idx >= 0) hist[idx] = entry; else hist.push(entry);
   hist.sort((a, b) => a.month.localeCompare(b.month));
@@ -3244,6 +3273,55 @@ function buildYearlyAssetHTML(monthlyHistory) {
       <tbody>${rows}</tbody>
     </table>
     </div>`;
+}
+
+/* A46: 수익률 추이 — scope는 "total" | 계좌명 | 성향명 | 지역명. entries의 returnBreakdown이
+   없는 과거 스냅샷(이 기능 추가 이전 기록)은 건너뛴다 — 없는 값을 0으로 지어내지 않는다. */
+function returnTrendRows(entries, keyField, scope) {
+  const pick = (rb) => {
+    if (!rb) return null;
+    if (scope === "total") return rb.total;
+    return rb.byAccount[scope] || rb.byRegion[scope] || rb.byStyle[scope] || null;
+  };
+  return entries
+    .map((h) => ({ key: h[keyField], g: pick(h.returnBreakdown) }))
+    .filter((r) => r.g && r.g.pct != null);
+}
+
+function buildReturnTrendHTML(dailyHistory, monthlyHistory, granularity, scope, scopeLabel) {
+  const fmtW = (v) => fmtPrice(v, "KRW");
+  let rows;
+  if (granularity === "daily") {
+    rows = returnTrendRows(dailyHistory.slice().sort((a, b) => a.date.localeCompare(b.date)), "date", scope);
+  } else if (granularity === "monthly") {
+    rows = returnTrendRows(monthlyHistory.slice().sort((a, b) => a.month.localeCompare(b.month)), "month", scope);
+  } else {
+    // 연도별: 월별 스냅샷을 연도로 묶어 그 해의 마지막 기록만 사용
+    const byYear = new Map();
+    for (const h of monthlyHistory.slice().sort((a, b) => a.month.localeCompare(b.month))) byYear.set(h.month.slice(0, 4), h);
+    rows = returnTrendRows([...byYear.values()], "month", scope).map((r) => ({ ...r, key: r.key.slice(0, 4) }));
+  }
+  if (!rows.length) {
+    return `<p class="compare-empty">${scopeLabel} 수익률 스냅샷이 아직 없습니다 — "오늘 자산 스냅샷"·"이번 달 스냅샷 저장"을 누르면 그 시점의 매입단가 기준 수익률이 함께 기록되고, 이후부터 추이가 쌓입니다(과거로 소급되진 않습니다).</p>`;
+  }
+  const trRows = rows.map((r, i) => {
+    const prev = rows[i - 1];
+    const diffPt = prev ? r.g.pct - prev.g.pct : null;
+    return `<tr>
+      <td>${r.key}</td>
+      <td style="color:${r.g.pct >= 0 ? "var(--good)" : "var(--critical)"}">${r.g.pct >= 0 ? "+" : ""}${r.g.pct.toFixed(2)}%</td>
+      <td style="color:${diffPt == null ? "var(--text-muted)" : diffPt >= 0 ? "var(--good)" : "var(--critical)"}">${diffPt == null ? "—" : `${diffPt >= 0 ? "+" : ""}${diffPt.toFixed(2)}%p`}</td>
+      <td>${fmtW(r.g.costedValue)} / ${fmtW(r.g.cost)}</td>
+    </tr>`;
+  }).join("");
+  const periodLabel = granularity === "daily" ? "날짜" : granularity === "monthly" ? "월" : "연도";
+  return `<div style="overflow-x:auto;">
+    <table class="account-summary-table">
+      <thead><tr><th>${periodLabel}</th><th>수익률</th><th>전기간 대비</th><th>평가액 / 매입원가</th></tr></thead>
+      <tbody>${trRows}</tbody>
+    </table>
+    </div>
+    <p class="stat-sub" style="margin-top:6px;">매입단가를 입력한 종목만 대상입니다(${scopeLabel}). 스냅샷을 쌓기 시작한 시점부터의 추이이며, 과거 매입단가 이력은 없어 소급 계산되지 않습니다.</p>`;
 }
 
 /* ---------- A3c: 🗂️ 변동이력 탭 — MY_ASSETS_CHANGELOG_KEY(자동 기록)를 일/주/월/연 단위로
@@ -5423,6 +5501,18 @@ async function renderMyAssets() {
       <div id="myAssetChangeBody"></div>
       <p class="stat-sub" style="margin-top:6px;">이 사이트는 정적 페이지(서버 없음)라 일별 캡처는 자동으로 쌓이지 않습니다 — 확인할 때마다 "오늘 자산 스냅샷"을 눌러야 이력이 쌓입니다. 주간은 일별 캡처가 서로 다른 주에 2건 이상 쌓여야 계산됩니다.</p>
 
+      <p class="chart-title" style="margin-top:24px;">📊 수익률 추이 (일별·월별·연도별)</p>
+      <p class="stat-sub">매입단가 기준 수익률을 스냅샷 시점마다 함께 기록합니다 — 오늘부터 쌓이기 시작하며 과거로 소급되지 않습니다.</p>
+      <div class="controls" style="margin-bottom:8px; flex-wrap:wrap; gap:8px 16px;">
+        <select id="myReturnTrendGranularity" aria-label="수익률 추이 기간 단위">
+          <option value="daily">일별</option>
+          <option value="monthly">월별</option>
+          <option value="yearly">연도별</option>
+        </select>
+        <select id="myReturnTrendScope" aria-label="수익률 추이 범위"></select>
+      </div>
+      <div id="myReturnTrendBody"></div>
+
       <p class="chart-title" style="margin-top:24px;">📅 월별 비중 변화</p>
       <div class="controls" style="margin-bottom:8px;">
         <select id="myTrendWeightGroup" aria-label="비중 이력 그룹 기준">
@@ -5855,7 +5945,7 @@ async function renderMyAssets() {
     const date = todayStr();
     const hist = JSON.parse(localStorage.getItem(MY_ASSETS_DAILY_HISTORY_KEY) || "[]");
     const idx = hist.findIndex((h) => h.date === date);
-    const entry = { date, value: totalValue, monthlyDiv: totalMonthlyDiv };
+    const entry = { date, value: totalValue, monthlyDiv: totalMonthlyDiv, returnBreakdown: computeReturnBreakdown(state.myAssetsCsvData) };
     if (idx >= 0) hist[idx] = entry; else hist.push(entry);
     hist.sort((a, b) => a.date.localeCompare(b.date));
     localStorage.setItem(MY_ASSETS_DAILY_HISTORY_KEY, JSON.stringify(hist));
@@ -6157,6 +6247,31 @@ async function renderMyAssets() {
       renderMonthlyPnlChart(pnlSel.value);
     });
     renderMonthlyPnlChart(savedPnlAcc);
+  }
+
+  // A46: 수익률 추이 — 범위(총계좌/계좌별/비중별/국가별) + 기간(일/월/연) select, 선택은 state에 보존.
+  const rtSel = document.getElementById("myReturnTrendScope");
+  const rtGranSel = document.getElementById("myReturnTrendGranularity");
+  if (rtSel && rtGranSel) {
+    const rtRegions = [...new Set(perRow.map((p) => (p.meta && p.meta.region) || "미분류"))];
+    const rtStyles = [...new Set(perRow.map((p) => (p.meta && p.meta.style) || "미분류"))];
+    rtSel.innerHTML = `<option value="total">총계좌(전체)</option>` +
+      `<optgroup label="계좌별">${[...accountMap.keys()].map((a) => `<option value="${a}">${a}</option>`).join("")}</optgroup>` +
+      `<optgroup label="비중별(성향)">${rtStyles.map((s) => `<option value="${s}">${s}</option>`).join("")}</optgroup>` +
+      `<optgroup label="국가별(지역)">${rtRegions.map((r) => `<option value="${r}">${r}</option>`).join("")}</optgroup>`;
+    const rtValidScopes = ["total", ...accountMap.keys(), ...rtStyles, ...rtRegions];
+    rtSel.value = state.myReturnTrendScope && rtValidScopes.includes(state.myReturnTrendScope) ? state.myReturnTrendScope : "total";
+    if (state.myReturnTrendGranularity) rtGranSel.value = state.myReturnTrendGranularity;
+    const renderReturnTrend = () => {
+      const body = document.getElementById("myReturnTrendBody");
+      if (!body) return;
+      const scope = rtSel.value;
+      const scopeLabel = scope === "total" ? "총계좌" : scope;
+      body.innerHTML = buildReturnTrendHTML(dailyHistory, history, rtGranSel.value, scope, scopeLabel);
+    };
+    rtSel.addEventListener("change", () => { state.myReturnTrendScope = rtSel.value; renderReturnTrend(); });
+    rtGranSel.addEventListener("change", () => { state.myReturnTrendGranularity = rtGranSel.value; renderReturnTrend(); });
+    renderReturnTrend();
   }
 
   // A30: 계획 달성현황 — 범위(종합/계좌) select + 금액·수익률 토글, 선택은 state에 보존.
