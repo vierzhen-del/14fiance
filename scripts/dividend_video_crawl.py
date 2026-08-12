@@ -145,7 +145,7 @@ def scrape_channel_videos(channel_url, month):
         html = http_get(url, timeout=30)
     except (urllib.error.URLError, TimeoutError) as exc:
         print(f"   채널 페이지 조회 실패: {exc}")
-        return []
+        return None
 
     pairs = re.findall(r'"videoId":"([\w-]{11})".{0,400}?"text":"([^"]{4,200})"', html, re.S)
     seen, out = set(), []
@@ -158,6 +158,11 @@ def scrape_channel_videos(channel_url, month):
         if want in title:
             out.append({"id": vid, "title": title, "published": None})
     print(f"   스크레이핑 결과: 영상 {len(seen)}개 중 '{want}' 제목 {len(out)}건")
+    if not seen:
+        # 영상 자체를 0개 긁었다면 페이지 구조 변경이거나 봇 차단 페이지다 —
+        # "이번 달 영상이 없다"와 구분해야 조용한 실패를 막는다.
+        print("   ⚠️ 영상을 하나도 못 긁음 — 봇 차단(429/동의 페이지) 또는 페이지 구조 변경")
+        return None
     return out
 
 
@@ -321,6 +326,12 @@ def main():
             print("❌ 채널 URL도 없어 폴백 불가 — DIVIDEND_CHANNEL_ID 를 직접 등록할 것.")
             return 1
         picked = scrape_channel_videos(author_url, month)
+        if picked is None:
+            print("❌ RSS·스크레이핑 모두 실패 — 유튜브가 이 러너 IP를 차단한 것으로 보인다.")
+            print("   대안: 이 스크립트를 개인 PC에서 직접 실행하면 된다(표준 라이브러리만 사용).")
+            print("   TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=... FORCE_RUN=1 \\")
+            print("     python3 scripts/dividend_video_crawl.py")
+            return 1
 
     picked = [{**v, "slot": slot_of(v["title"])} for v in picked]
     print(f"{month} 영상 {len(picked)}편")
