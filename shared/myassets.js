@@ -903,24 +903,30 @@ function buildGoalTrackerHTML(perRow) {
       ? `월 ${fmtW(monthlyDiv)} (${confirmedDps > 0 ? `확정 DPS ${confirmedDps.toLocaleString()}원/주 기준` : `월 ${(effRate * 100).toFixed(2)}% · 연환산 ${(effRate * 1200).toFixed(1)}%`})`
       : (effRate > 0 ? "단가 확인 불가" : "배당률 미등록");
 
+    // A49: 목표 도달시 예상 평가액(목표주수×단가)도 월배당과 같이 합계로 보여준다.
+    const targetValue = g.targetQty > 0 && priceKrw != null ? g.targetQty * priceKrw : null;
+
     const html = `<tr>
       <td style="text-align:left;">${name}<br><span style="color:var(--text-muted); font-size:11px;">${g.symbol}</span></td>
       <td>${curQty.toLocaleString()}주</td>
       <td>${monthlyShares > 0 ? monthlyShares.toLocaleString(undefined, { maximumFractionDigits: 2 }) + "주" : "—"}</td>
       <td><input type="number" class="my-goal-target portfolio-weight" style="width:90px" min="0" step="1" value="${g.targetQty || ""}" data-symbol="${g.symbol}" aria-label="목표 주식수"></td>
       <td>${etaLabel}</td>
-      <td>${divLabel}</td>
+      <td>${divLabel}${targetValue != null ? `<br><span class="stat-sub" style="font-size:11px;">평가액 ${fmtW(targetValue)}</span>` : ""}</td>
       <td><button type="button" class="my-goal-remove btn-action" data-symbol="${g.symbol}" title="목표 삭제">🗑️</button></td>
     </tr>`;
-    return { html, monthlyDiv };
+    return { html, monthlyDiv, targetValue };
   });
   const rows = goalCalcs.map((c) => c.html).join("");
-  // A48: 목표 전종목 도달 시 예상 월배당 합계 — 배당률 미등록·단가 확인불가 종목은 금액을 알 수
-  // 없으므로(0으로 지어내지 않고) 합계에서 제외하고, 제외분이 있으면 안내문에 명시한다.
+  // A48/A49: 목표 전종목 도달 시 예상 월배당·평가액 합계 — 배당률 미등록·단가 확인불가 종목은
+  // 금액을 알 수 없으므로(0으로 지어내지 않고) 합계에서 제외하고, 제외분이 있으면 안내문에 명시한다.
   const totalMonthlyDiv = goalCalcs.reduce((s, c) => s + (c.monthlyDiv || 0), 0);
   const excludedCount = goalCalcs.filter((c) => c.monthlyDiv == null).length;
+  const totalValueSum = goalCalcs.reduce((s, c) => s + (c.targetValue || 0), 0);
+  const excludedValueCount = goalCalcs.filter((c) => c.targetValue == null).length;
   const totalHTML = goals.length > 0
-    ? `<p class="stat-sub" style="margin-top:8px;"><b>🎯 목표 전종목 도달 시 예상 월배당 합계: ${fmtW(totalMonthlyDiv)}</b>${excludedCount > 0 ? ` (배당률 미등록·단가 확인불가 ${excludedCount}종목 제외)` : ""}</p>`
+    ? `<p class="stat-sub" style="margin-top:8px;"><b>🎯 목표 전종목 도달 시 예상 평가액 합계: ${fmtW(totalValueSum)}</b>${excludedValueCount > 0 ? ` (단가 확인불가 ${excludedValueCount}종목 제외)` : ""}</p>
+       <p class="stat-sub"><b>🎯 목표 전종목 도달 시 예상 월배당 합계: ${fmtW(totalMonthlyDiv)}</b>${excludedCount > 0 ? ` (배당률 미등록·단가 확인불가 ${excludedCount}종목 제외)` : ""}</p>`
     : "";
 
   return `${pickerHTML}
