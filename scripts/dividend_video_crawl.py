@@ -65,26 +65,64 @@ def archive_page_id():
         return ARCHIVE_FALLBACK_ID, f"https://www.notion.so/{ARCHIVE_FALLBACK_ID.replace('-', '')}"
 
 
+# 유튜브가 페이지 구조를 바꿔도 하나는 걸리도록 여러 패턴을 시도한다.
+CHANNEL_ID_PATTERNS = [
+    re.compile(r'"channelId":"(UC[\w-]{22})"'),
+    re.compile(r'"externalId":"(UC[\w-]{22})"'),
+    re.compile(r'youtube\.com/channel/(UC[\w-]{22})'),
+]
+
+
+def _scan_channel_id(html):
+    for pattern in CHANNEL_ID_PATTERNS:
+        m = pattern.search(html)
+        if m:
+            return m.group(1)
+    return None
+
+
 def resolve_channel_id():
-    """채널 ID를 구한다. 환경변수 우선, 없으면 시드 영상 페이지에서 역추적."""
-    env = os.environ.get("DIVIDEND_CHANNEL_ID", "").strip()
+    """채널 ID를 구한다. 환경변수 우선, 없으면 시드 영상에서 역추적.
+
+    ⚠️ Actions 워크플로는 미설정 변수를 **빈 문자열**로 넘긴다 — os.environ.get 의 기본값이
+    발동하지 않으므로 반드시 `or 기본값` 으로 받아야 한다(2026-08-12 첫 실행 실패 원인).
+    """
+    env = (os.environ.get("DIVIDEND_CHANNEL_ID") or "").strip()
     if env.startswith("UC"):
+        print(f"DIVIDEND_CHANNEL_ID 사용: {env}")
         return env
 
-    seed = os.environ.get("DIVIDEND_SEED_VIDEO", SEED_VIDEO_DEFAULT).strip()
+    seed = (os.environ.get("DIVIDEND_SEED_VIDEO") or "").strip() or SEED_VIDEO_DEFAULT
     print(f"DIVIDEND_CHANNEL_ID 미설정 — 시드 영상 {seed} 에서 채널 ID 역추적")
+
+    # ① 영상 페이지 직접 조회
     try:
         html = http_get(f"https://www.youtube.com/watch?v={seed}")
+        found = _scan_channel_id(html)
+        if found:
+            print(f"✅ 채널 ID 역추적 성공(영상 페이지): {found}")
+            return found
+        print(f"   영상 페이지에서 못 찾음(응답 {len(html)}바이트) — oEmbed 폴백 시도")
     except (urllib.error.URLError, TimeoutError) as exc:
-        print(f"❌ 시드 영상 조회 실패: {exc}")
-        return None
+        print(f"   영상 페이지 조회 실패({exc}) — oEmbed 폴백 시도")
 
-    m = re.search(r'"channelId":"(UC[\w-]{22})"', html)
-    if not m:
-        print("❌ 페이지에서 channelId를 찾지 못함 — DIVIDEND_CHANNEL_ID 변수를 직접 설정할 것")
-        return None
-    print(f"✅ 채널 ID 역추적 성공: {m.group(1)}")
-    return m.group(1)
+    # ② oEmbed 로 채널 페이지 URL을 얻어 거기서 다시 추출(봇 차단 페이지를 우회하는 경로)
+    try:
+        oembed = json.loads(http_get(
+            "https://www.youtube.com/oembed?format=json&url="
+            + urllib.parse.quote(f"https://www.youtube.com/watch?v={seed}", safe="")))
+        author_url = oembed.get("author_url", "")
+        print(f"   oEmbed author_url: {author_url}")
+        found = _scan_channel_id(author_url) or _scan_channel_id(http_get(author_url))
+        if found:
+            print(f"✅ 채널 ID 역추적 성공(oEmbed): {found}")
+            return found
+    except (urllib.error.URLError, TimeoutError, ValueError) as exc:
+        print(f"   oEmbed 폴백도 실패: {exc}")
+
+    print("❌ 채널 ID를 못 구했다 — 저장소 Settings → Secrets and variables → Actions → Variables")
+    print("   에 DIVIDEND_CHANNEL_ID(UC로 시작하는 24자)를 직접 등록할 것.")
+    return None
 
 
 def fetch_feed(channel_id):
