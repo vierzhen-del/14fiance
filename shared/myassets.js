@@ -3507,7 +3507,7 @@ async function renderMyAssets() {
 
     <div class="dash-panel" data-tab="heatmap" hidden>
       <p class="chart-title" style="margin-top:20px;">🗺️ 비중 히트맵 (트리맵)</p>
-      <p class="stat-sub">사각형 크기 = 평가액 비중, 색 = 등락률(<b style="color:#de2121;">상승 빨강</b> · <b style="color:#3042c2;">하락 파랑</b>). 주가는 주 1회 수집이라 등락률은 <b>마지막 두 수집 종가 간 변화</b>(🔄 최신시세 켬 시 라이브가 vs 마지막 수집 종가)입니다 — 일간 등락이 아닐 수 있습니다.</p>
+      <p class="stat-sub">사각형 크기 = 평가액 비중, 색 = 등락률(<b style="color:#de2121;">상승 빨강</b> · <b style="color:#3042c2;">하락 파랑</b>). 주가는 주 1회 수집이라 등락률은 <b>마지막 두 수집 종가 간 변화</b>(🔄 최신시세 켬 시 라이브가 vs 마지막 수집 종가)입니다 — 일간 등락이 아닐 수 있습니다. <b>마지막 수집: ${state.manifest.updated}</b> — 이 날짜 이후 누적분이라 급등락 다음날은 당일 등락보다 크게 보일 수 있습니다.</p>
       <div class="controls" style="margin:10px 0;">
         <select id="myTreemapGroup" aria-label="트리맵 그룹 기준">
           <option value="category" selected>카테고리별</option>
