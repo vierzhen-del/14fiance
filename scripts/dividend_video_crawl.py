@@ -65,24 +65,30 @@ def archive_page_id():
         return ARCHIVE_FALLBACK_ID, f"https://www.notion.so/{ARCHIVE_FALLBACK_ID.replace('-', '')}"
 
 
-# 유튜브가 페이지 구조를 바꿔도 하나는 걸리도록 여러 패턴을 시도한다.
+# ⚠️ watch 페이지에는 `"channelId"` 가 **여러 번** 나온다(추천 영상 것까지 섞임) — 첫 매치가
+# 영상 주인이라는 보장이 없다. 실제로 2026-08-12 실행에서 첫 매치로 RSS 404가 났다.
+# 그래서 "하나를 고른다"가 아니라 **후보를 순서대로 모아 RSS가 뚫릴 때까지 시도**한다.
+# 앞쪽일수록 신뢰도가 높은 출처다(externalId = ytInitialData 상의 채널 주인).
 CHANNEL_ID_PATTERNS = [
-    re.compile(r'"channelId":"(UC[\w-]{22})"'),
     re.compile(r'"externalId":"(UC[\w-]{22})"'),
     re.compile(r'youtube\.com/channel/(UC[\w-]{22})'),
+    re.compile(r'"channelId":"(UC[\w-]{22})"'),
 ]
+MAX_CANDIDATES = 6
 
 
-def _scan_channel_id(html):
+def _scan_channel_ids(text):
+    """신뢰도 순으로 채널 ID 후보를 뽑는다(중복 제거, 순서 유지)."""
+    out = []
     for pattern in CHANNEL_ID_PATTERNS:
-        m = pattern.search(html)
-        if m:
-            return m.group(1)
-    return None
+        for cid in pattern.findall(text or ""):
+            if cid not in out:
+                out.append(cid)
+    return out
 
 
-def resolve_channel_id():
-    """채널 ID를 구한다. 환경변수 우선, 없으면 시드 영상에서 역추적.
+def channel_id_candidates():
+    """채널 ID 후보를 신뢰도 순으로 모은다.
 
     ⚠️ Actions 워크플로는 미설정 변수를 **빈 문자열**로 넘긴다 — os.environ.get 의 기본값이
     발동하지 않으므로 반드시 `or 기본값` 으로 받아야 한다(2026-08-12 첫 실행 실패 원인).
@@ -90,39 +96,37 @@ def resolve_channel_id():
     env = (os.environ.get("DIVIDEND_CHANNEL_ID") or "").strip()
     if env.startswith("UC"):
         print(f"DIVIDEND_CHANNEL_ID 사용: {env}")
-        return env
+        return [env]
 
     seed = (os.environ.get("DIVIDEND_SEED_VIDEO") or "").strip() or SEED_VIDEO_DEFAULT
     print(f"DIVIDEND_CHANNEL_ID 미설정 — 시드 영상 {seed} 에서 채널 ID 역추적")
+    candidates = []
 
-    # ① 영상 페이지 직접 조회
-    try:
-        html = http_get(f"https://www.youtube.com/watch?v={seed}")
-        found = _scan_channel_id(html)
-        if found:
-            print(f"✅ 채널 ID 역추적 성공(영상 페이지): {found}")
-            return found
-        print(f"   영상 페이지에서 못 찾음(응답 {len(html)}바이트) — oEmbed 폴백 시도")
-    except (urllib.error.URLError, TimeoutError) as exc:
-        print(f"   영상 페이지 조회 실패({exc}) — oEmbed 폴백 시도")
-
-    # ② oEmbed 로 채널 페이지 URL을 얻어 거기서 다시 추출(봇 차단 페이지를 우회하는 경로)
+    # ① oEmbed — 공식 API라 영상 주인 채널을 정확히 준다. 가장 신뢰도 높은 경로.
     try:
         oembed = json.loads(http_get(
             "https://www.youtube.com/oembed?format=json&url="
             + urllib.parse.quote(f"https://www.youtube.com/watch?v={seed}", safe="")))
         author_url = oembed.get("author_url", "")
         print(f"   oEmbed author_url: {author_url}")
-        found = _scan_channel_id(author_url) or _scan_channel_id(http_get(author_url))
-        if found:
-            print(f"✅ 채널 ID 역추적 성공(oEmbed): {found}")
-            return found
+        candidates += _scan_channel_ids(author_url)
+        if not candidates and author_url:
+            # author_url 이 /@handle 형태면 그 페이지에서 externalId 를 뽑는다.
+            candidates += _scan_channel_ids(http_get(author_url))[:2]
     except (urllib.error.URLError, TimeoutError, ValueError) as exc:
-        print(f"   oEmbed 폴백도 실패: {exc}")
+        print(f"   oEmbed 실패: {exc}")
 
-    print("❌ 채널 ID를 못 구했다 — 저장소 Settings → Secrets and variables → Actions → Variables")
-    print("   에 DIVIDEND_CHANNEL_ID(UC로 시작하는 24자)를 직접 등록할 것.")
-    return None
+    # ② watch 페이지 — 후보를 보강한다(순서상 뒤).
+    try:
+        for cid in _scan_channel_ids(http_get(f"https://www.youtube.com/watch?v={seed}")):
+            if cid not in candidates:
+                candidates.append(cid)
+    except (urllib.error.URLError, TimeoutError) as exc:
+        print(f"   영상 페이지 조회 실패: {exc}")
+
+    candidates = candidates[:MAX_CANDIDATES]
+    print(f"   후보 {len(candidates)}개: {', '.join(candidates) if candidates else '(없음)'}")
+    return candidates
 
 
 def fetch_feed(channel_id):
@@ -264,16 +268,27 @@ def main():
               "(cron이 28~31일 매일 돌면서 말일에만 실제 작업)")
         return 0
 
-    channel_id = resolve_channel_id()
-    if not channel_id:
+    candidates = channel_id_candidates()
+    if not candidates:
+        print("❌ 채널 ID 후보를 하나도 못 구했다 — 저장소 Settings → Secrets and variables →")
+        print("   Actions → Variables 에 DIVIDEND_CHANNEL_ID(UC로 시작하는 24자)를 등록할 것.")
+        return 1
+
+    # 후보를 순서대로 시도 — RSS가 200을 주는 첫 후보가 진짜 채널이다.
+    channel_id, videos = None, None
+    for cid in candidates:
+        try:
+            videos = fetch_feed(cid)
+            channel_id = cid
+            print(f"✅ RSS 성공: {cid}")
+            break
+        except (urllib.error.URLError, ElementTree.ParseError, TimeoutError) as exc:
+            print(f"   RSS 실패 {cid}: {exc}")
+    if channel_id is None:
+        print("❌ 모든 후보에서 RSS 조회 실패 — DIVIDEND_CHANNEL_ID 를 직접 등록할 것.")
         return 1
 
     month = target_month()
-    try:
-        videos = fetch_feed(channel_id)
-    except (urllib.error.URLError, ElementTree.ParseError, TimeoutError) as exc:
-        print(f"❌ RSS 조회 실패: {exc}")
-        return 1
 
     picked = [{**v, "slot": slot_of(v["title"])}
               for v in videos if v["published"].strftime("%Y-%m") == month]
