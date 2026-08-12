@@ -1,0 +1,50 @@
+# 배당의만장 유튜브 채널의 이번 달 배당 공시 영상 수집 → 텔레그램 알림(노션 경로 포함).
+# 매달 말일에 돌고, 다음 달 6일 「월배당 확정」 루틴이 이 링크를 근거로 마스터를 확정한다.
+#
+# cron 은 "말일"을 직접 표현하지 못해서 28~31일 매일 돌리고 스크립트가 말일인지 판정한다.
+# ⚠️ GitHub 무료 스케줄은 혼잡 시 수 시간 지연/드롭될 수 있음(signal-alert.yml 과 동일 한계).
+# 시크릿 미설정 시 안내 로그만 남기고 무해하게 종료한다.
+name: Dividend Video Crawl
+
+on:
+  schedule:
+    - cron: "0 9 28-31 * *" # 18:00 KST — 말일에만 실제 동작(스크립트가 판정)
+  workflow_dispatch:
+    inputs:
+      month:
+        description: "수집할 달 (YYYY-MM, 비우면 이번 달)"
+        required: false
+        default: ""
+      force:
+        description: "말일이 아니어도 강제 실행"
+        required: false
+        default: "1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dividend-video
+  cancel-in-progress: false
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Crawl & notify
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          DIVIDEND_CHANNEL_ID: ${{ vars.DIVIDEND_CHANNEL_ID }}
+          DIVIDEND_SEED_VIDEO: ${{ vars.DIVIDEND_SEED_VIDEO }}
+          TARGET_MONTH: ${{ github.event.inputs.month }}
+          FORCE_RUN: ${{ github.event.inputs.force }}
+        run: python scripts/dividend_video_crawl.py
