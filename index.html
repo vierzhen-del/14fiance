@@ -2097,6 +2097,10 @@ const MY_ASSETS_CHANGELOG_KEY = "my_assets_changelog_v1";
 const MY_ASSETS_WATCHLIST_KEY = "my_assets_watchlist_v1"; // A10 📡 시그널 탭 워치리스트, 최대 300건, A3b/c: 폼 채우기·가져오기 시 변경 이력
 const MY_SIGNAL_DECISIONS_KEY = "my_signal_decisions_v1"; // A14 트레이드플랜 결정메모(승인/보류/거부), 최대 200건
 const MY_ASSETS_GOALS_KEY = "my_assets_goals_v1"; // A44 🎯 종목별 목표주식수 추적([{symbol, targetQty}])
+/* A45: 직접입력(manual) 모드에서 "현재 종목수익률"을 계산할 때 쓰는 기본 조회기간(개월).
+   종목별 실적 모드는 사용자가 고른 1/3/6/12를 쓰지만, 직접입력 모드는 고를 기간이 없어
+   1년치를 표준으로 삼는다(단기 등락을 연율화하면 과장되는 문제를 피하려는 선택). */
+const GOAL_TRAIL_DEFAULT_MONTHS = 12;
 const BUY_FREQ_TIMES = { "매월": 1, "매주": 4, "매일": 22 };
 
 /* ---------- A3c: 변동이력(🗂️) — 폼 채우기(캡처 반영)·가져오기 시마다 자동 기록되는 변경 로그.
@@ -5021,10 +5025,13 @@ async function renderMyAssets() {
       if (drop > monthlyYield) erosion = drop;
     }
 
-    // 목표 도달 "종목별 실적 반영" 옵션용 — 선택된 기간(1/3/6/12개월)의 실제 가격 등락률(연환산)
-    const trailReturn = cfg.returnMode !== "manual"
-      ? trailingReturnAnnualized(it.full.dates, it.full.closes, Number(cfg.returnMode))
-      : null;
+    /* 목표 도달 "종목별 실적 반영" 옵션용 — 선택된 기간(1/3/6/12개월)의 실제 가격 등락률(연환산).
+       A45(2026-08-12): 직접입력 모드에서도 최근 12개월 기준으로 계산한다. 종전엔 null이라
+       목표표의 "현재 종목수익률"이 영구히 "—"였고, 목표(예: 15%)를 세워둔 채 실제로 몇 %가
+       나오고 있는지 화면에서 대조할 방법이 없었다. 직접입력 모드에서 이 값은 대조용으로만
+       쓰고 목표 계산(goalRate)에는 넣지 않는다 — 아래 expReturn 분기 참조. */
+    const trailReturn = trailingReturnAnnualized(it.full.dates, it.full.closes,
+      cfg.returnMode !== "manual" ? Number(cfg.returnMode) : GOAL_TRAIL_DEFAULT_MONTHS);
 
     totalValue += value;
     if (cost != null) { totalCost += cost; costedValue += value; }
@@ -5063,14 +5070,14 @@ async function renderMyAssets() {
   // 목표 도달: 기대수익률 미입력 시 배당수익률만 가정(보수적) — 안내문에 명시
   const goalAmount = parseFloat(cfg.goalAmount) || 0;
   let expReturn = cfg.expectedReturn !== "" ? Number(cfg.expectedReturn) / 100 : null;
-  let weightedTrailReturn = null;
+  let wsum = 0, vsum = 0;
+  for (const p of perRow) {
+    if (p.trailReturn != null && p.value > 0) { wsum += p.trailReturn * p.value; vsum += p.value; }
+  }
+  // A45: 가중평균은 모드와 무관하게 항상 구한다(직접입력 모드에서도 목표표에 "현재" 실적을 보여주려고).
+  const weightedTrailReturn = vsum > 0 ? wsum / vsum : null;
   if (cfg.returnMode !== "manual") {
-    let wsum = 0, vsum = 0;
-    for (const p of perRow) {
-      if (p.trailReturn != null && p.value > 0) { wsum += p.trailReturn * p.value; vsum += p.value; }
-    }
-    weightedTrailReturn = vsum > 0 ? wsum / vsum : null;
-    expReturn = weightedTrailReturn; // 종목별 실적 반영 모드에서는 직접입력 대신 이 값을 씀
+    expReturn = weightedTrailReturn; // 종목별 실적 반영 모드에서만 직접입력 대신 이 값을 목표 계산에 씀
   }
   // 생활비 사용액 — 월배당 중 일부를 생활비로 인출하면 그만큼은 복리 재투자에서 빠짐
   const livingExpenseUsed = Math.min(cfg.livingExpense || 0, totalMonthlyDiv);
@@ -5347,9 +5354,10 @@ async function renderMyAssets() {
                 expReturn == null ? " (미입력 — 현재 배당수익률만 가정)" : ""}`
             : `종목별 최근 ${cfg.returnMode}개월 실적(가격 등락률) + 배당수익률로 계산합니다.`
         } 현재 배당수익률은 재투자분 ${fmtW(reinvestedDiv)}/월 ÷ 평가액 기준이라 <b>배당이 바뀌면 자동으로 갱신</b>됩니다.${
-          weightedTrailReturn == null && cfg.returnMode === "manual"
-            ? " 현재 종목수익률은 「종목별 실적 반영」 모드로 바꾸면 계산됩니다."
-            : ""
+          cfg.returnMode !== "manual" ? ""
+            : weightedTrailReturn == null
+              ? " 현재 종목수익률은 보유 종목의 가격 데이터가 부족해 계산되지 않았습니다."
+              : ` 현재 종목수익률은 보유 종목의 최근 ${GOAL_TRAIL_DEFAULT_MONTHS}개월 가격 등락률(연환산)을 평가금액 비중으로 가중평균한 값으로, <b>목표 계산에는 쓰지 않고 실적 대조용</b>입니다.`
         }</p>
         <p class="stat-sub">월 재투자액 ${fmtW(totalMonthlyInvest)}${totalContributions > 0 ? ` (월매수 ${fmtW(totalMonthlyBuy)} + 월적립 ${fmtW(totalContributions)})` : ""} 반영${livingExpenseUsed > 0 ? ` · 배당은 재투자분(${fmtW(reinvestedDiv)}/월)만 복리 반영, 생활비 사용분 제외` : ""}</p>
         ${realGoalLabel ? `<p class="stat-sub" style="color:var(--text-muted);">물가상승률 ${(inflationRate * 100).toFixed(1)}%/년 반영(오늘 구매력 기준): <b>${realGoalLabel}</b></p>` : ""}
