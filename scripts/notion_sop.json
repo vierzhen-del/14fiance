@@ -1,7 +1,7 @@
 {
   "_comment": "14RAE 자산 SOP 노션 페이지 레지스트리. n8n·에이전트가 페이지 ID를 하드코딩하지 않고 여기서 읽는다. 페이지를 옮기거나 새로 만들어도 이 파일만 고치면 모든 소비자가 따라온다.",
   "_raw_url": "https://raw.githubusercontent.com/vierzhen-del/14fiance/claude/us-etf-mdd-calculator-gdwui7/scripts/notion_sop.json",
-  "_updated": "2026-08-03",
+  "_updated": "2026-08-12",
   "pages": {
     "account_holdings": {
       "id": "3955efd0-e462-81da-b7f3-cbd905a15dfd",
@@ -37,6 +37,15 @@
       "append_table": "🚫 매도이력 대장",
       "required": true,
       "check_first": true
+    },
+    "dividend_video_archive": {
+      "id": "3ba5efd0-e462-8123-ac07-e98a4375fbac",
+      "url": "https://www.notion.so/3ba5efd0e4628123ac07e98a4375fbac",
+      "title": "📺 배당의만장 배당표 아카이브 (md 원본)",
+      "role": "유튜브 배당표 원본 md 적재고. dividend_master의 확정 DPS·분배율 교차검증 근거",
+      "parent": "dividend_master",
+      "update_marker": "적재일:",
+      "required": false
     },
     "handover": {
       "id": "3b05efd0-e462-81a5-ba52-d0ef6a810fea",
