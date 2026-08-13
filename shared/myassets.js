@@ -813,8 +813,11 @@ function buildBuyPlanHTML(perRow) {
     }).join("");
     return `<p class="hm-account-title">${acc} <span style="color:var(--text-muted); font-weight:400;">— 월매수 합계 ${fmtW(subtotal)}</span></p>
     <div style="overflow-x:auto;">
-    <table class="account-summary-table stack-narrow">
-      <thead><tr><th>종목</th><th>매수주기</th><th>1회수량</th><th>1회매수액</th><th>월횟수</th><th>월매수액</th></tr></thead>
+    <table class="account-summary-table wrap-fixed">
+      <thead><tr>
+        <th style="width:30%">종목</th><th style="width:16%">매수주기</th><th style="width:12%">1회수량</th>
+        <th style="width:16%">1회매수액</th><th style="width:10%">월횟수</th><th style="width:16%">월매수액</th>
+      </tr></thead>
       <tbody>${rows}</tbody>
     </table>
     </div>`;
@@ -957,7 +960,7 @@ async function buildGoalTrackerHTML(perRow, latestRate) {
       <td data-label="종목" style="text-align:left;">${name}<br><span style="color:var(--text-muted); font-size:11px;">${g.symbol}</span></td>
       <td data-label="현재 보유(전계좌)">${curQty.toLocaleString()}주</td>
       <td data-label="월매수(전계좌 합산)">${monthlyShares > 0 ? monthlyShares.toLocaleString(undefined, { maximumFractionDigits: 2 }) + "주" : "—"}</td>
-      <td data-label="목표 주식수"><input type="number" class="my-goal-target portfolio-weight" style="width:90px" min="0" step="1" value="${g.targetQty || ""}" data-symbol="${g.symbol}" aria-label="목표 주식수"></td>
+      <td data-label="목표 주식수"><input type="number" class="my-goal-target portfolio-weight" style="width:100%" min="0" step="1" value="${g.targetQty || ""}" data-symbol="${g.symbol}" aria-label="목표 주식수"></td>
       <td data-label="도달 예상">${etaLabel}</td>
       <td data-label="목표 도달시 예상 배당">${divLabel}</td>
       <td data-label=""><button type="button" class="my-goal-remove btn-action" data-symbol="${g.symbol}" title="목표 삭제">🗑️</button></td>
@@ -966,8 +969,11 @@ async function buildGoalTrackerHTML(perRow, latestRate) {
 
   return `${pickerHTML}
     <div id="myGoalTrackerWrap" style="overflow-x:auto;">
-    <table class="account-summary-table stack-narrow">
-      <thead><tr><th>종목</th><th>현재 보유(전계좌)</th><th>월매수(전계좌 합산)</th><th>목표 주식수</th><th>도달 예상</th><th>목표 도달시 예상 배당</th><th></th></tr></thead>
+    <table class="account-summary-table wrap-fixed">
+      <thead><tr>
+        <th style="width:17%">종목</th><th style="width:11%">현재 보유(전계좌)</th><th style="width:11%">월매수(전계좌 합산)</th>
+        <th style="width:13%">목표 주식수</th><th style="width:17%">도달 예상</th><th style="width:20%">목표 도달시 예상 배당</th><th style="width:11%"></th>
+      </tr></thead>
       <tbody>${rows}</tbody>
     </table>
     </div>`;

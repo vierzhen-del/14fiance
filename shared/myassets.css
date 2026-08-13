@@ -355,6 +355,18 @@
   }
   .account-summary-table th { color: var(--text-muted); font-weight: 600; font-size: 12px; border-bottom: 2px solid var(--baseline); }
   .account-summary-table tbody tr:hover td { background: rgba(127,127,127,.07); }
+  /* A53(2026-08-13 사용자 요청): 매수계획 상세·목표주식수 추적을 자급률처럼 카드 스택 대신
+     표 형태로 유지하되, 표가 옆으로 길어지거나 가로 스크롤이 필요해지는 대신 셀 안에서
+     줄바꿈되게 한다 — table-layout:fixed로 표 폭을 100%에 고정하고, 각 열은 thead의 width
+     비율대로 나뉜다(콘텐츠 길이로 열이 늘어나지 않음). stack-narrow의 대안. */
+  .account-summary-table.wrap-fixed { table-layout: fixed; }
+  .account-summary-table.wrap-fixed th,
+  .account-summary-table.wrap-fixed td {
+    white-space: normal; overflow-wrap: break-word; word-break: keep-all;
+  }
+  /* 삭제 버튼 열은 폭이 좁아(6~9%) 기본 .btn-action 패딩(8px 14px)이면 셀보다 커져
+     표가 살짝 넘친다(실측 scrollWidth 320→352px) — 이 열 안에서만 패딩을 줄인다. */
+  .account-summary-table.wrap-fixed .my-goal-remove { padding: 3px 5px; font-size: 13px; }
   /* A45c(2026-08-12): 열이 6~7개인 표(자급률·매수계획·목표추적)는 폰 화면에서 위 nowrap +
      가로스크롤 조합이 사실상 "둘째 열까지만 보이고 나머지는 화면 밖"이 된다(사용자 실측:
      자급률 7열 중 "매수" 열이 ₩3,733,18 에서 잘림). 좁은 화면에서는 한 행을 카드처럼 세로로
