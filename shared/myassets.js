@@ -771,17 +771,17 @@ function buildSelfSuffHTML(accountMap, contributions) {
       : diff >= 0 ? `여유 ${fmtW(diff)}`
       : `월매수를 ${fmtW(-diff)} 줄이면 자급률 100%`;
     return `<tr>
-      <td>${acc}</td>
-      <td>${fmtW(income)}${contributions[acc] ? ` <span style="color:var(--text-muted); font-size:11px;">(납입 ${fmtW(contributions[acc])} 포함)</span>` : ""}</td>
-      <td>${g.monthlyBuy > 0 ? fmtW(g.monthlyBuy) : "—"}</td>
-      <td style="color:${diff >= 0 ? "var(--good)" : "var(--critical)"}">${g.monthlyBuy > 0 ? (diff >= 0 ? "+" : "") + fmtW(diff) : "—"}</td>
-      <td>${rate != null ? (rate * 100).toFixed(1) + "%" : "—"}</td>
-      <td>${status}</td>
-      <td style="text-align:left; font-size:12px; color:var(--text-muted);">${advice}</td>
+      <td data-label="계좌">${acc}</td>
+      <td data-label="수입(배당+납입)">${fmtW(income)}${contributions[acc] ? ` <span style="color:var(--text-muted); font-size:11px;">(납입 ${fmtW(contributions[acc])} 포함)</span>` : ""}</td>
+      <td data-label="매수">${g.monthlyBuy > 0 ? fmtW(g.monthlyBuy) : "—"}</td>
+      <td data-label="차액" style="color:${diff >= 0 ? "var(--good)" : "var(--critical)"}">${g.monthlyBuy > 0 ? (diff >= 0 ? "+" : "") + fmtW(diff) : "—"}</td>
+      <td data-label="자급률">${rate != null ? (rate * 100).toFixed(1) + "%" : "—"}</td>
+      <td data-label="상태">${status}</td>
+      <td data-label="조절 안내" style="text-align:left; font-size:12px; color:var(--text-muted);">${advice}</td>
     </tr>`;
   }).join("");
   return `<div style="overflow-x:auto;">
-    <table class="account-summary-table">
+    <table class="account-summary-table stack-narrow">
       <thead><tr><th>계좌</th><th>수입(배당+납입)</th><th>매수</th><th>차액</th><th>자급률</th><th>상태</th><th>조절 안내</th></tr></thead>
       <tbody>${rowsHTML}</tbody>
     </table>
@@ -807,17 +807,17 @@ function buildBuyPlanHTML(perRow) {
       subtotal += p.monthlyBuy;
       const freqLabel = p.buyDay ? `${p.buyFreq}/${p.buyDay}` : p.buyFreq;
       return `<tr>
-        <td style="text-align:left;">${p.meta ? p.meta.name : p.symbol}</td>
-        <td>${freqLabel}</td>
-        <td>${p.monthlyQty.toLocaleString()}</td>
-        <td>${fmtW(onceKrw)}</td>
-        <td>${times}</td>
-        <td>${fmtW(p.monthlyBuy)}</td>
+        <td data-label="종목" style="text-align:left;">${p.meta ? p.meta.name : p.symbol}</td>
+        <td data-label="매수주기">${freqLabel}</td>
+        <td data-label="1회수량">${p.monthlyQty.toLocaleString()}</td>
+        <td data-label="1회매수액">${fmtW(onceKrw)}</td>
+        <td data-label="월횟수">${times}</td>
+        <td data-label="월매수액">${fmtW(p.monthlyBuy)}</td>
       </tr>`;
     }).join("");
     return `<p class="hm-account-title">${acc} <span style="color:var(--text-muted); font-weight:400;">— 월매수 합계 ${fmtW(subtotal)}</span></p>
     <div style="overflow-x:auto;">
-    <table class="account-summary-table">
+    <table class="account-summary-table stack-narrow">
       <thead><tr><th>종목</th><th>매수주기</th><th>1회수량</th><th>1회매수액</th><th>월횟수</th><th>월매수액</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
@@ -834,28 +834,40 @@ function saveMyGoals(list) {
 
 /* A44: 🎯 ETF별 목표주식수 추적 — 종목(symbol) 단위로 저장하고, 그 종목을 보유·매수 중인 모든
    계좌를 합산해 "현재수량 + 월매수 유지 시 도달 시점"과 "도달 시 예상 배당금"을 계산한다.
-   목표를 추가할 종목은 보유 중(qty>0)이거나 월매수 설정(monthlyQty>0)이거나 배당기준
-   SOP에 등록(divRate>0)된 항목 중에서만 고르게 해, 오타로 존재하지 않는 종목을 목표로
-   잡는 실수를 막는다(2026-08-11: 월매수 항목으로만 한정하던 것을 넓힘). */
+   목표를 추가할 종목은 수집 카탈로그에 있는 것만 고르게 해, 오타로 존재하지 않는 종목을
+   목표로 잡는 실수를 막는다(2026-08-11: 월매수 항목으로만 한정하던 것을 보유·배당등록까지
+   넓힘 → 2026-08-12 A45c: 미보유 카탈로그 종목까지 열어 "앞으로 모을 종목"도 목표가 됨). */
 function buildGoalTrackerHTML(perRow) {
   const goals = loadMyGoals();
   const candidateSymbols = [...new Map(
     perRow.filter((p) => p.qty > 0 || p.monthlyQty > 0 || p.divRate > 0).map((p) => [p.symbol, p.meta ? p.meta.name : p.symbol])
   ).entries()];
-  const optionsHTML = candidateSymbols
-    .filter(([sym]) => !goals.some((g) => g.symbol === sym))
+  const taken = new Set(goals.map((g) => g.symbol));
+  const mineHTML = candidateSymbols
+    .filter(([sym]) => !taken.has(sym))
     .map(([sym, name]) => `<option value="${sym}">${name} (${sym})</option>`).join("");
+  /* A45c(2026-08-12): 아직 보유하지 않은 종목도 목표로 잡을 수 있어야 한다 — 사용자가
+     "KODEX 금융고배당TOP10타겟위클리커버드콜(498410)을 목표에 추가하고 싶다"고 요청했는데,
+     그 종목은 카탈로그에는 있지만 보유·매수계획·배당등록 어디에도 없어 목록에 안 떴다.
+     "앞으로 모을 종목"을 목표로 세우는 건 이 기능의 정당한 용법이므로, 수집 카탈로그
+     (state.listedEtfs) 전체를 두 번째 그룹으로 연다. 카탈로그 밖 임의 문자열은 여전히
+     고를 수 없어 오타 종목이 목표가 되는 일은 막힌다(원래 제한의 취지 유지). */
+  const mineSet = new Set(candidateSymbols.map(([sym]) => sym));
+  const othersHTML = (state.listedEtfs || [])
+    .filter((e) => !mineSet.has(e.symbol) && !taken.has(e.symbol))
+    .map((e) => `<option value="${e.symbol}">${e.name} (${e.symbol})</option>`).join("");
   const pickerHTML = `
     <div class="controls" style="margin-bottom:10px;">
       <select id="myGoalSymbolPick" aria-label="목표 추가할 종목 선택">
-        <option value="">보유·매수계획·배당등록 종목에서 선택…</option>
-        ${optionsHTML}
+        <option value="">목표로 삼을 종목 선택…</option>
+        ${mineHTML ? `<optgroup label="보유·매수계획·배당등록 종목">${mineHTML}</optgroup>` : ""}
+        ${othersHTML ? `<optgroup label="그 외 수집 종목(아직 미보유)">${othersHTML}</optgroup>` : ""}
       </select>
       <button type="button" id="myGoalAddBtn" class="btn-action">+ 목표 추가</button>
     </div>`;
 
   if (!goals.length) {
-    return pickerHTML + `<p class="compare-empty">${candidateSymbols.length ? "위에서 종목을 선택해 목표 주식수를 설정하세요." : "보유 수량·월매수·배당률 중 하나라도 입력하면 목표로 고를 수 있는 종목이 여기 나타납니다."}</p>`;
+    return pickerHTML + `<p class="compare-empty">${mineHTML || othersHTML ? "위에서 종목을 선택해 목표 주식수를 설정하세요 — 아직 보유하지 않은 종목도 고를 수 있습니다." : "수집 종목 목록을 불러오는 중입니다."}</p>`;
   }
 
   const fmtW = (v) => fmtPrice(v, "KRW");
@@ -911,13 +923,13 @@ function buildGoalTrackerHTML(perRow) {
     const targetValue = g.targetQty > 0 && priceKrw != null ? g.targetQty * priceKrw : null;
 
     const html = `<tr>
-      <td style="text-align:left;">${name}<br><span style="color:var(--text-muted); font-size:11px;">${g.symbol}</span></td>
-      <td>${curQty.toLocaleString()}주</td>
-      <td>${monthlyShares > 0 ? monthlyShares.toLocaleString(undefined, { maximumFractionDigits: 2 }) + "주" : "—"}</td>
-      <td><input type="number" class="my-goal-target portfolio-weight" style="width:90px" min="0" step="1" value="${g.targetQty || ""}" data-symbol="${g.symbol}" aria-label="목표 주식수"></td>
-      <td>${etaLabel}</td>
-      <td>${divLabel}${targetValue != null ? `<br><span class="stat-sub" style="font-size:11px;">평가액 ${fmtW(targetValue)}</span>` : ""}</td>
-      <td><button type="button" class="my-goal-remove btn-action" data-symbol="${g.symbol}" title="목표 삭제">🗑️</button></td>
+      <td data-label="종목" style="text-align:left;">${name}<br><span style="color:var(--text-muted); font-size:11px;">${g.symbol}</span></td>
+      <td data-label="현재 보유(전계좌)">${curQty.toLocaleString()}주</td>
+      <td data-label="월매수(전계좌 합산)">${monthlyShares > 0 ? monthlyShares.toLocaleString(undefined, { maximumFractionDigits: 2 }) + "주" : "—"}</td>
+      <td data-label="목표 주식수"><input type="number" class="my-goal-target portfolio-weight" style="width:90px" min="0" step="1" value="${g.targetQty || ""}" data-symbol="${g.symbol}" aria-label="목표 주식수"></td>
+      <td data-label="도달 예상">${etaLabel}</td>
+      <td data-label="목표 도달시 예상 배당">${divLabel}${targetValue != null ? `<br><span class="stat-sub" style="font-size:11px;">평가액 ${fmtW(targetValue)}</span>` : ""}</td>
+      <td data-label=""><button type="button" class="my-goal-remove btn-action" data-symbol="${g.symbol}" title="목표 삭제">🗑️</button></td>
     </tr>`;
     return { html, monthlyDiv, targetValue };
   });
@@ -935,7 +947,7 @@ function buildGoalTrackerHTML(perRow) {
 
   return `${pickerHTML}
     <div id="myGoalTrackerWrap" style="overflow-x:auto;">
-    <table class="account-summary-table">
+    <table class="account-summary-table stack-narrow">
       <thead><tr><th>종목</th><th>현재 보유(전계좌)</th><th>월매수(전계좌 합산)</th><th>목표 주식수</th><th>도달 예상</th><th>목표 도달시 예상 배당</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
