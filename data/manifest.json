@@ -1,5 +1,5 @@
 {
- "updated": "2026-08-13 02:44 UTC",
+ "updated": "2026-08-13 06:01 UTC",
  "us": [
   {
    "symbol": "SPY",
@@ -2108,6 +2108,21 @@
    "dividendYield": 0.0002,
    "dividendCountThisYear": 1,
    "dividendMonthThisYear": 4
+  },
+  {
+   "symbol": "0190C0.KS",
+   "name": "RISE 현대차고정피지컬AI",
+   "category": "국내 반도체·로봇 테마",
+   "region": "한국",
+   "style": "성장",
+   "assetType": "etf",
+   "currency": "KRW",
+   "first": "2026-05-12",
+   "last": "2026-08-13",
+   "count": 65,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0,
+   "dividendCountThisYear": 0
   }
  ]
 }
