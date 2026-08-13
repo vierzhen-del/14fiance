@@ -1060,6 +1060,41 @@
       "category": "미국 지수(국내상장)",
       "region": "미국",
       "style": "성장"
+    },
+    {
+      "symbol": "122630.KS",
+      "name": "KODEX 레버리지",
+      "category": "국내 지수",
+      "region": "한국",
+      "style": "성장"
+    },
+    {
+      "symbol": "272580.KS",
+      "name": "TIGER 단기채권액티브",
+      "category": "채권",
+      "region": "한국",
+      "style": "안전"
+    },
+    {
+      "symbol": "418660.KS",
+      "name": "TIGER 미국나스닥100레버리지(합성)",
+      "category": "미국 지수(국내상장)",
+      "region": "미국",
+      "style": "성장"
+    },
+    {
+      "symbol": "426020.KS",
+      "name": "TIME 미국S&P500액티브",
+      "category": "미국 지수(국내상장)",
+      "region": "미국",
+      "style": "성장"
+    },
+    {
+      "symbol": "469830.KS",
+      "name": "SOL 초단기채권액티브",
+      "category": "채권",
+      "region": "한국",
+      "style": "안전"
     }
   ]
 }
