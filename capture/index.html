@@ -40,6 +40,7 @@
     <div>
       <h1 id="pageTitle">📸 계좌·월매수 캡처 앱</h1>
       <p class="lede" id="pageUpdated">데이터 업데이트 확인 중…</p>
+      <p class="lede" id="appBuildBadge" style="margin-top:2px;"></p>
     </div>
     <select id="themeMode" aria-label="화면 밝기 모드" style="min-width:110px;">
       <option value="system">🌓 시스템</option>
@@ -474,6 +475,50 @@
       </div>
     </div>
   </section>
+
+  <!-- A54(2026-08-13 사용자 요청): 노션·기존 JSON 없이 처음 설치한 타인 배포용 사용자를 위한
+       4단계 안내. 다른 보조 섹션과 동일하게 기본 접힘 — 위 .section-toggle 공용 배선이
+       그대로 적용된다(추가 JS 불필요). -->
+  <section class="page-section collapsed" id="sec-install-guide">
+    <div class="section-header">
+      <p class="section-title">🆕 처음 설치하셨나요? (설치 가이드)</p>
+      <button type="button" class="section-toggle" aria-label="섹션 접기/펴기">▾</button>
+    </div>
+    <div class="section-body">
+      <p class="section-lede">노션·기존 JSON 없이 처음 쓰는 분을 위한 4단계 안내입니다. 순서대로 따라 하세요.</p>
+
+      <div class="card">
+        <p class="chart-title" style="margin-top:0;">1️⃣ 배포용 JSON 다운로드</p>
+        <p class="stat-sub">배포해주신 분에게 받은 배포용 JSON 파일을 기기에 저장하세요. 위 "⚙️ 내 자산 입력·불러오기" 섹션의 "📂 가져오기"로 불러오면 시작됩니다.</p>
+      </div>
+
+      <div class="card">
+        <p class="chart-title" style="margin-top:0;">2️⃣ 계좌(보유종목) 입력 — 자산반영 프롬프트</p>
+        <p class="stat-sub">아래 프롬프트를 복사해 Claude.ai(또는 Gemini) 새 대화창에 보유종목 스크린샷과 함께 붙여넣으세요. <b>Claude는 한 번에 이미지 10장까지만 첨부됩니다</b> — 스크린샷이 10장을 넘으면, 먼저 10장 + 이 프롬프트로 결과를 받은 뒤, 나머지 스크린샷은 아래 "이어서 입력" 문구와 함께 같은 대화창에 추가로 보내 이전 결과 뒤에 이어 붙이세요. 계좌 스크린샷을 전부 입력할 때까지 이 과정을 반복합니다.</p>
+        <div class="action-row">
+          <button type="button" id="installGuideAccountCopyBtn" class="btn-action">📋 자산반영 프롬프트 복사</button>
+          <button type="button" id="installGuideAccountContinueBtn" class="btn-action">➕ 이어서 입력 문구 복사</button>
+          <span id="installGuideAccountStatus" class="action-status"></span>
+        </div>
+        <p class="stat-sub">받은 JSON은 위 "📸 캡처 업로드·파싱" 섹션의 "📋 붙여넣은 JSON 파싱"에 붙여넣어 반영하세요.</p>
+      </div>
+
+      <div class="card">
+        <p class="chart-title" style="margin-top:0;">3️⃣ 월매수(자동매수) 계획 입력 — 월매수 프롬프트</p>
+        <p class="stat-sub">계좌 입력을 마쳤으면 ETF모으기(월자동매수) 현황 화면도 같은 방식으로 입력합니다. 이것도 <b>한 번에 10장까지</b>이므로, 10장이 넘으면 계좌와 동일하게 나눠서 "이어서 입력" 문구로 이어 붙이세요.</p>
+        <div class="action-row">
+          <button type="button" id="installGuideBuyPlanCopyBtn" class="btn-action">📋 월매수 프롬프트 복사</button>
+          <button type="button" id="installGuideBuyPlanContinueBtn" class="btn-action">➕ 이어서 입력 문구 복사</button>
+          <span id="installGuideBuyPlanStatus" class="action-status"></span>
+        </div>
+      </div>
+
+      <div class="card">
+        <p class="chart-title" style="margin-top:0;">4️⃣ 인식 안 되는 종목이 있다면</p>
+        <p class="stat-sub">AI가 종목코드를 못 찾았거나("null"로 나옴) 화면에 없던 종목이라면, 이 앱이 아직 그 종목의 시세를 수집하지 않는 것입니다 — 종목명과 코드를 배포해주신 분께 전달해 등록을 요청하세요. 등록되면 다음 데이터 수집부터 자동 반영됩니다.</p>
+      </div>
+    </div>
+  </section>
 </div>
 
 <script src="../shared/myassets-utils.js"></script>
@@ -484,6 +529,10 @@
 <script>
 // capture/index.html 전용 초기화 — index.html의 init() 중 "내 자산" 관련 부분만 재현
 const DATA_DIR = "../data";
+// A54: 이 3개 값은 웹(capture/index.html 그대로 열람) 상태에서는 항상 "dev"다 —
+// app/build-www.mjs가 APK 빌드 시에만 실제 커밋 SHA·빌드일·GitHub Actions run 번호로
+// 치환한다(문자열 그대로 매칭해 교체하므로 형식을 바꾸지 말 것).
+const APP_BUILD = { sha: "dev", date: "dev", run: "dev" };
 const state = { manifest: null, cache: new Map(), lastParsed: { account: null, buyplan: null } };
 
 /* 수동 라이트/다크 선택 — <head> 인라인 스크립트가 첫 페인트 전에 이미 data-theme을
@@ -493,6 +542,8 @@ const THEME_KEY = "capture_theme_v1";
    따로 둔다. initCapture()가 이 값을 읽는데 그 호출이 스크립트 평가 중에 일어나므로,
    선언은 반드시 init() 호출부(아래)보다 위에 있어야 한다(const TDZ). */
 const CAPTURE_PRE_ACCOUNT_KEY = "capture_pre_account_v1";
+// A54: Claude.ai 첨부 10장 제한 대응 — 스크린샷이 10장을 넘는 사용자를 위한 배치 이어붙이기 문구.
+const CAPTURE_CONTINUE_SNIPPET = "위와 같은 형식으로 이어서 분석해줘. 이번에 새로 받은 스크린샷에서 찾은 항목을 이전에 준 holdings 배열 뒤에 이어 붙여서, 지금까지 받은 전체 이미지 기준의 완전한 JSON을 다시 통째로 출력해줘(이전 항목은 생략하지 말고 전부 포함).";
 function initTheme() {
   const sel = document.getElementById("themeMode");
   if (!sel) return;
@@ -528,6 +579,16 @@ async function init() {
     return;
   }
   document.getElementById("pageUpdated").textContent = `데이터 업데이트: ${state.manifest.updated}`;
+  // A54: 웹(capture/index.html 직접 열람)에서는 APP_BUILD가 항상 "dev"이므로 배지를 숨긴다 —
+  // 실제 값은 build-www.mjs가 치환한 APK 빌드에서만 채워져 표시된다.
+  {
+    const badge = document.getElementById("appBuildBadge");
+    if (badge && APP_BUILD.sha !== "dev") {
+      badge.textContent = `앱 빌드 #${APP_BUILD.run} · ${APP_BUILD.sha} · ${APP_BUILD.date}`;
+    } else if (badge) {
+      badge.style.display = "none";
+    }
+  }
   state.listedEtfs = [
     ...state.manifest.us.map((e) => ({ ...e, market: "us" })),
     ...state.manifest.kr.map((e) => ({ ...e, market: "kr" })),
@@ -819,6 +880,18 @@ function initCapture() {
     copyToClipboard(getEffectivePrompt("account"), "captureAccountStatus", "프롬프트 복사됨 — AI 채팅에 스크린샷과 함께 붙여넣으세요"));
   document.getElementById("captureBuyPlanCopyPromptBtn").addEventListener("click", () =>
     copyToClipboard(getEffectivePrompt("buyplan"), "captureBuyPlanStatus", "프롬프트 복사됨 — AI 채팅에 스크린샷과 함께 붙여넣으세요"));
+
+  // A54: 설치 가이드 섹션의 버튼 — 위와 같은 프롬프트를 그대로 재사용(별도 지침 아님).
+  // "이어서 입력" 문구는 Claude.ai 첨부 10장 제한 대응 — 두 번째 배치부터 이 문구와 함께 보내면
+  // 이전 응답의 holdings 배열 뒤에 이어 붙인 전체 JSON을 다시 받을 수 있다.
+  document.getElementById("installGuideAccountCopyBtn").addEventListener("click", () =>
+    copyToClipboard(getEffectivePrompt("account"), "installGuideAccountStatus", "프롬프트 복사됨 — AI 채팅에 스크린샷(최대 10장)과 함께 붙여넣으세요"));
+  document.getElementById("installGuideBuyPlanCopyBtn").addEventListener("click", () =>
+    copyToClipboard(getEffectivePrompt("buyplan"), "installGuideBuyPlanStatus", "프롬프트 복사됨 — AI 채팅에 스크린샷(최대 10장)과 함께 붙여넣으세요"));
+  document.getElementById("installGuideAccountContinueBtn").addEventListener("click", () =>
+    copyToClipboard(CAPTURE_CONTINUE_SNIPPET, "installGuideAccountStatus", "이어서 입력 문구 복사됨 — 다음 스크린샷과 함께 붙여넣으세요"));
+  document.getElementById("installGuideBuyPlanContinueBtn").addEventListener("click", () =>
+    copyToClipboard(CAPTURE_CONTINUE_SNIPPET, "installGuideBuyPlanStatus", "이어서 입력 문구 복사됨 — 다음 스크린샷과 함께 붙여넣으세요"));
 
   document.getElementById("captureAccountParsePasteBtn").addEventListener("click", () => {
     const text = document.getElementById("captureAccountPaste").value.trim();
