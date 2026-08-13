@@ -5194,7 +5194,7 @@ async function renderMyAssets() {
     ? `<p class="stat-sub" style="margin-top:6px;">🏢 일반종목 ${stockRows.length}건(${stockRows.map((r) => (state.metaBySymbol.get(r.symbol) || {}).name || r.symbol).join(", ")})은 "일반종목: 제외" 상태라 계산에서 빠졌습니다.</p>`
     : "";
   const unknownHTML = unknownRows.length
-    ? `<p class="stat-sub" style="color:var(--critical); margin-top:10px;">⚠️ 아직 수집 목록에 없는 종목 ${unknownRows.length}건은 계산에서 제외했습니다: ${unknownRows.map((r) => r.symbol).join(", ")} — 클로드에게 "이 종목 추가해줘"라고 요청하면 다음 데이터 수집 때 반영됩니다. (데이터 기준: ${state.manifest.updated}) <button type="button" id="myManifestRefreshBtn">🔄 수집 목록 새로 확인</button></p>`
+    ? `<p class="stat-sub" style="color:var(--critical); margin-top:10px;">⚠️ 아직 수집 목록에 없는 종목 ${unknownRows.length}건은 계산에서 제외했습니다: ${unknownRows.map((r) => r.symbol).join(", ")} — 이 앱을 만든/배포해주신 분(또는 Claude)에게 종목명·코드와 함께 "이 종목 추가해줘"라고 요청하면 등록 후 다음 데이터 수집 때부터 반영됩니다. (데이터 기준: ${state.manifest.updated}) <button type="button" id="myManifestRefreshBtn">🔄 수집 목록 새로 확인</button></p>`
     : "";
   if (result && !result.dataset.manifestBtnWired) {
     result.dataset.manifestBtnWired = "1";
@@ -5483,7 +5483,12 @@ async function renderMyAssets() {
   }).join("");
 
   // 지급시기별 월배당 — 시트(금융비서 대시보드)의 "지급시기별" 집계와 동일형태
-  const PERIOD_ORDER = ["월초", "월중", "월말", "지급시기 미지정"];
+  // A55(2026-08-13 사용자 보고 버그수정): 여기 라벨이 "월초"/"월중"/"월말"이었는데 실제 저장되는
+  // 값은 normalizePayPeriod()가 만드는 "월초5일"/"월중15일"/"월말30일"이라 하나도 매칭되지 않고
+  // periodMap.has(k)가 전부 false — payPeriod가 있는 종목도 전부 "지급시기 미지정"에만 잡히지
+  // 않고 그 어디에도 안 보이는 상태였다(rows에 payPeriod가 없는 종목만 "지급시기 미지정"으로
+  // 보였던 것). PAY_PERIOD_TYPES(정규화의 원본)를 그대로 재사용해 라벨이 다시는 어긋나지 않게 한다.
+  const PERIOD_ORDER = [...PAY_PERIOD_TYPES, "지급시기 미지정"];
   const periodTotal = [...periodMap.values()].reduce((a, b) => a + b, 0);
   const periodHTML = PERIOD_ORDER.filter((k) => periodMap.has(k)).map((k, i) => {
     const v = periodMap.get(k);
