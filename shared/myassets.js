@@ -560,13 +560,20 @@ const TREEMAP_GROUP_FIELDS = {
   style: (p) => (p.meta && p.meta.style) || "미분류",
 };
 
-/* 등락률 — 라이브 시세가 적용됐으면 라이브가 vs 마지막 수집 종가, 아니면 마지막 두
-   수집 종가 간 변화. 주가 수집이 주 1회라 "일간" 등락이 아닐 수 있음(화면 문구로 명시). */
+/* 등락률 — A51(2026-08-13 사용자 보고): 라이브가 적용 시 종전엔 "라이브가 vs 마지막
+   주간 수집 종가"를 비교해서, 수집 이후 며칠 치 누적 변화가 섞여 오늘 실제로 상승 중인
+   종목이 하락으로 뜨는 문제가 있었다. p.livePrevClose(intraday-kr.yml이 매일 첫 실행
+   때 확정하는 전일종가, scripts/fetch_intraday_kr.py 참조)가 있으면 그걸 기준으로
+   써서 진짜 "오늘 하루"만큼의 등락만 반영한다. 아직 파이프라인이 그 값을 못 준 종목은
+   기존처럼 마지막 수집 종가로 폴백(주 1회 수집이라 "일간" 등락이 아닐 수 있음 — 화면 문구로 명시). */
 function lastChangePct(p) {
   const closes = p.full && p.full.closes;
   if (!closes || closes.length < 2) return null;
   const lastStored = closes[closes.length - 1];
-  if (p.close !== lastStored) return p.close / lastStored - 1;
+  if (p.close !== lastStored) {
+    const base = p.livePrevClose > 0 ? p.livePrevClose : lastStored;
+    return p.close / base - 1;
+  }
   return lastStored / closes[closes.length - 2] - 1;
 }
 
@@ -2879,6 +2886,9 @@ async function renderMyAssets() {
     const baseClose = close;
     // 🔄 최신시세 켜짐 + 해당 국내 종목의 장중 가격이 있으면 주간 종가 대신 사용
     if (liveKr && liveKr.prices[it.symbol] > 0) { close = liveKr.prices[it.symbol]; liveApplied += 1; }
+    // A51: 히트맵 등락률(lastChangePct)이 마지막 주간 수집 종가 대신 쓸 전일종가.
+    // intraday-kr.yml이 매일 첫 실행 때 확정해 넣어준다 — 없으면 undefined(폴백).
+    const livePrevClose = liveKr && liveKr.prevClose ? liveKr.prevClose[it.symbol] : undefined;
     const isUsd = (it.full.currency || "USD") === "USD";
     if (isUsd && latestRate == null) {
       result.innerHTML = `<p class="compare-empty" style="color:var(--critical)">환율 데이터가 아직 없어 달러 종목을 환산할 수 없습니다.</p>`;
@@ -2962,7 +2972,7 @@ async function renderMyAssets() {
     if (cost != null) { totalCost += cost; costedValue += value; }
     totalMonthlyDiv += monthlyDiv;
     totalMonthlyBuy += monthlyBuy;
-    perRow.push({ ...it, meta, close, isUsd, value, cost, profit, monthlyDiv, nextMonthDiv, monthlyBuy, erosion, usedConfirmed, trailReturn, trailDetail, effRate, divBasis, dpsFromRate, dpsGapPct, divPrice, divPriceDate, recordDate, recordFuture, buyDeadline });
+    perRow.push({ ...it, meta, close, isUsd, value, cost, profit, monthlyDiv, nextMonthDiv, monthlyBuy, erosion, usedConfirmed, trailReturn, trailDetail, effRate, divBasis, dpsFromRate, dpsGapPct, divPrice, divPriceDate, recordDate, recordFuture, buyDeadline, livePrevClose });
 
     const accKey = it.account || "계좌 미지정";
     if (!accountMap.has(accKey)) accountMap.set(accKey, { value: 0, cost: 0, costedValue: 0, monthlyDiv: 0, monthlyBuy: 0, n: 0 });
@@ -3506,7 +3516,7 @@ async function renderMyAssets() {
 
     <div class="dash-panel" data-tab="heatmap" hidden>
       <p class="chart-title" style="margin-top:20px;">🗺️ 비중 히트맵 (트리맵)</p>
-      <p class="stat-sub">사각형 크기 = 평가액 비중, 색 = 등락률(<b style="color:#de2121;">상승 빨강</b> · <b style="color:#3042c2;">하락 파랑</b>). 주가는 주 1회 수집이라 등락률은 <b>마지막 두 수집 종가 간 변화</b>(🔄 최신시세 켬 시 라이브가 vs 마지막 수집 종가)입니다 — 일간 등락이 아닐 수 있습니다.</p>
+      <p class="stat-sub">사각형 크기 = 평가액 비중, 색 = 등락률(<b style="color:#de2121;">상승 빨강</b> · <b style="color:#3042c2;">하락 파랑</b>). 주가는 주 1회 수집이라 등락률은 기본적으로 <b>마지막 두 수집 종가 간 변화</b>입니다 — 일간 등락이 아닐 수 있습니다. 🔄 최신시세 켬 시 <b>라이브가 vs 전일종가</b>로 바뀌어 그날 하루의 등락만 보여줍니다(전일종가 미확보 종목은 라이브가 vs 마지막 수집 종가로 폴백).</p>
       <div class="controls" style="margin:10px 0;">
         <select id="myTreemapGroup" aria-label="트리맵 그룹 기준">
           <option value="category" selected>카테고리별</option>
