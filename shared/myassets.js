@@ -832,6 +832,25 @@ function saveMyGoals(list) {
   localStorage.setItem(MY_ASSETS_GOALS_KEY, JSON.stringify(list));
 }
 
+/* A46(2026-08-13): 목표 카드의 "현재 종목수익률"을 ETF/일반종목(개별주)/종합으로 나눠 볼 수 있게
+   한다. 실측(2026-08-12): 삼성전자·SK하이닉스 두 개별주(비중 25.3%)가 종목수익률 93%p 중 38%p를
+   만들어, 종합 수치만으로는 "커버드콜·배당 ETF 전략 자체가 잘 되고 있는지"를 개별주 폭등과
+   분리해서 볼 수 없었다. "통합" 탭의 assetType 필터(myOverviewAssetType, __all__/etf/stock)와
+   같은 값 체계를 그대로 쓴다 — 새 개념을 만들지 않고 기존 구분을 재사용. */
+const MY_GOAL_TRAIL_TYPE_KEY = "my_goal_trail_type_v1";
+function loadGoalTrailType() {
+  const v = localStorage.getItem(MY_GOAL_TRAIL_TYPE_KEY);
+  return v === "etf" || v === "stock" ? v : "__all__";
+}
+function saveGoalTrailType(v) {
+  localStorage.setItem(MY_GOAL_TRAIL_TYPE_KEY, v);
+}
+function matchesGoalTrailType(p, type) {
+  if (type === "__all__") return true;
+  const isStock = !!(p.meta && p.meta.assetType === "stock");
+  return type === "stock" ? isStock : !isStock;
+}
+
 /* A44: 🎯 ETF별 목표주식수 추적 — 종목(symbol) 단위로 저장하고, 그 종목을 보유·매수 중인 모든
    계좌를 합산해 "현재수량 + 월매수 유지 시 도달 시점"과 "도달 시 예상 배당금"을 계산한다.
    목표를 추가할 종목은 수집 카탈로그에 있는 것만 고르게 해, 오타로 존재하지 않는 종목을
@@ -3050,8 +3069,11 @@ async function renderMyAssets() {
   // 목표 도달: 기대수익률 미입력 시 배당수익률만 가정(보수적) — 안내문에 명시
   const goalAmount = parseFloat(cfg.goalAmount) || 0;
   let expReturn = cfg.expectedReturn !== "" ? Number(cfg.expectedReturn) / 100 : null;
+  // A46: 종목수익률을 종합/ETF/일반종목 중 어느 자산군 기준으로 볼지 — 버튼으로 고른다.
+  const goalTrailType = loadGoalTrailType();
+  const trailScopeRows = perRow.filter((p) => matchesGoalTrailType(p, goalTrailType));
   let wsum = 0, vsum = 0;
-  for (const p of perRow) {
+  for (const p of trailScopeRows) {
     if (p.trailReturn != null && p.value > 0) { wsum += p.trailReturn * p.value; vsum += p.value; }
   }
   // A45: 가중평균은 모드와 무관하게 항상 구한다(직접입력 모드에서도 목표표에 "현재" 실적을 보여주려고).
@@ -3059,44 +3081,34 @@ async function renderMyAssets() {
   if (cfg.returnMode !== "manual") {
     expReturn = weightedTrailReturn; // 종목별 실적 반영 모드에서만 직접입력 대신 이 값을 목표 계산에 씀
   }
-  /* A45b: 이 수치가 어떻게 조정됐는지 화면에 밝힌다(2026-08-12 사용자 요청).
-     ① 상·하한 클램프에 걸린 종목 — 실제 등락률이 잘려 나가므로 표시값은 실제보다 눌려 있다
-     ② 상장 1년 미만 종목 — 짧은 구간 수익률이 기간 전체값으로 쓰여 과소계상된다
-     비중이 큰 종목부터 보여주고, 클램프를 풀었을 때의 값도 같이 내 얼마나 눌렸는지 알게 한다. */
-  const trailCapped = [], trailShort = [];
-  let rawWsum = 0;
-  for (const p of perRow) {
-    if (!p.trailDetail || !(p.value > 0)) continue;
-    rawWsum += p.trailDetail.raw * p.value;
-    if (p.trailDetail.capped || p.trailDetail.floored) trailCapped.push(p);
-    else if (p.trailDetail.shortHistory) trailShort.push(p);
+  /* A47(2026-08-13): A45b의 상·하한 클램프 절단 안내는 클램프 자체를 없애면서 함께 걷어냈다
+     (trailingReturnDetail이 이제 항상 capped=false/floored=false를 돌려주므로 그 갈래는 죽은
+     코드였다). 남는 건 이력부족 안내뿐 — 짧은 구간 수익률이 기간 전체값으로 쓰인다는 사실은
+     클램프와 무관하게 여전히 유효한 정보라 그대로 둔다. trailScopeRows로 스캔해 위 종합/ETF/
+     일반종목 필터와 같은 자산군만 집계한다. */
+  const trailShort = [];
+  for (const p of trailScopeRows) {
+    if (p.trailDetail && p.value > 0 && p.trailDetail.shortHistory) trailShort.push(p);
   }
-  const weightedTrailRaw = vsum > 0 ? rawWsum / vsum : null;
-  trailCapped.sort((a, b) => b.value - a.value);
   trailShort.sort((a, b) => b.value - a.value);
-  const trailNoteHTML = weightedTrailReturn == null || (!trailCapped.length && !trailShort.length) ? "" : `
+  const trailNoteHTML = weightedTrailReturn == null || !trailShort.length ? "" : `
     <details style="margin-top:6px;">
-      <summary style="font-size:12px; color:var(--text-muted); cursor:pointer;">⚠️ 종목수익률 보정 내역 — ${
-        [trailCapped.length ? `상·하한 절단 ${trailCapped.length}종목` : "", trailShort.length ? `이력부족 ${trailShort.length}종목` : ""].filter(Boolean).join(" · ")
-      }${weightedTrailRaw != null && Math.abs(weightedTrailRaw - weightedTrailReturn) > 0.005
-        ? ` (절단 없으면 ${(weightedTrailRaw * 100).toFixed(1)}%)` : ""}</summary>
+      <summary style="font-size:12px; color:var(--text-muted); cursor:pointer;">⚠️ 이력부족 종목 ${trailShort.length}건 — 짧은 구간 실적이 연간값으로 쓰임</summary>
       <div style="overflow-x:auto; margin-top:6px;">
       <table class="account-summary-table" style="font-size:11.5px;">
-        <thead><tr><th>종목</th><th>비중</th><th>실제</th><th>반영</th><th>사유</th></tr></thead>
-        <tbody>${[...trailCapped, ...trailShort].slice(0, 12).map((p) => {
+        <thead><tr><th>종목</th><th>비중</th><th>등락률(연환산)</th><th>실제 보유·상장 기간</th></tr></thead>
+        <tbody>${trailShort.slice(0, 12).map((p) => {
           const d = p.trailDetail;
-          const reason = d.capped ? `상한 절단` : d.floored ? `하한 절단` : `${d.spanMonths}개월치만 존재(${d.startDate}~)`;
           return `<tr>
             <td style="text-align:left;">${p.meta ? p.meta.name : p.symbol}</td>
             <td>${(p.value / vsum * 100).toFixed(1)}%</td>
-            <td>${(d.raw * 100).toFixed(1)}%</td>
             <td>${(d.value * 100).toFixed(1)}%</td>
-            <td style="text-align:left; color:var(--text-muted);">${reason}</td>
+            <td style="text-align:left; color:var(--text-muted);">${d.spanMonths}개월치만 존재(${d.startDate}~)</td>
           </tr>`;
         }).join("")}</tbody>
       </table>
       </div>
-      <p class="stat-sub" style="margin-top:4px; color:var(--text-muted);">상·하한(−70%~+150%)은 단기 급등락이 미래 가정으로 흘러드는 걸 막으려는 장치입니다. 이력부족 종목은 짧은 구간 수익률이 기간 전체값으로 쓰여 <b>과소계상</b>됩니다 — 둘 다 표시값을 실제보다 보수적으로 만듭니다.</p>
+      <p class="stat-sub" style="margin-top:4px; color:var(--text-muted);">이력부족 종목은 짧은 구간 수익률이 기간 전체값으로 쓰여 실제 연간 수익률과 다를 수 있습니다.</p>
     </details>`;
   // 생활비 사용액 — 월배당 중 일부를 생활비로 인출하면 그만큼은 복리 재투자에서 빠짐
   const livingExpenseUsed = Math.min(cfg.livingExpense || 0, totalMonthlyDiv);
@@ -3338,7 +3350,7 @@ async function renderMyAssets() {
         <p class="stat-label">🎯 목표 ${fmtManwon(goalAmount)} 도달</p>
         <p class="stat-value">${goalLabel}</p>
         <p class="stat-sub">연 ${(goalRate * 100).toFixed(1)}% 가정${
-          cfg.returnMode !== "manual" ? ` (종목별 최근 ${cfg.returnMode}개월 실적 가중평균${weightedTrailReturn == null ? ", 가격데이터 부족 시 0% 처리" : ""} + 배당수익률)`
+          cfg.returnMode !== "manual" ? ` (${goalTrailType === "__all__" ? "종목별" : goalTrailType === "etf" ? "ETF만" : "일반종목만"} 최근 ${cfg.returnMode}개월 실적 가중평균${weightedTrailReturn == null ? ", 가격데이터 부족 시 0% 처리" : ""} + 배당수익률)`
           : expReturn == null ? " (기대수익률 미입력 — 배당만 반영)" : ""
         }</p>
         ${/* A36: 이 수치가 어디서 왔는지 화면에 밝힌다. 종전에는 "연 22.7% 가정"만 보여서
@@ -3346,6 +3358,18 @@ async function renderMyAssets() {
              드러나지 않았다(실제로 배당 과대계상이 고쳐지자 27.4%→22.7%로 내려갔다). */""}
         ${/* A38: 목표를 총/종목/배당 세 항으로 쪼개 보여주고, 각 항을 현재 실적과 나란히 둔다.
              "22.7%가 어디서 왔나"를 물어봐야 알던 것을 화면에서 바로 읽게 하려는 것. */""}
+        ${/* A46: 아래 "현재 종목수익률"이 어느 자산군 기준인지 고른다 — 개별주가 섞이면
+             종목수익률이 실제 ETF 전략 성과와 크게 어긋날 수 있어서(실측: 삼성전자·SK하이닉스
+             비중 25.3%가 93%p 중 38%p를 만듦), 종합/ETF만/일반종목만을 나눠 볼 수 있게 한다. */""}
+        <div class="controls" style="margin:6px 0 2px; gap:6px;">
+          ${[["__all__", "종합"], ["etf", "ETF"], ["stock", "일반종목"]].map(([val, label]) =>
+            `<button type="button" class="btn-action goal-trail-type-btn${goalTrailType === val ? " active" : ""}" data-type="${val}" style="padding:5px 12px; font-size:12px;">${label}</button>`
+          ).join("")}
+          <span class="stat-sub" style="margin:0;">${
+            goalTrailType === "__all__" ? "보유 전체 기준"
+              : `${goalTrailType === "etf" ? "ETF" : "일반종목(개별주)"}만 · 평가액 비중 ${totalValue > 0 ? (vsum / totalValue * 100).toFixed(1) : "0.0"}%`
+          }</span>
+        </div>
         <div style="overflow-x:auto; margin-top:6px;">
         <table class="account-summary-table" style="font-size:12px;">
           <thead><tr><th>구분</th><th>목표</th><th>현재</th><th>차이</th></tr></thead>
@@ -3375,8 +3399,8 @@ async function renderMyAssets() {
         } 현재 배당수익률은 재투자분 ${fmtW(reinvestedDiv)}/월 ÷ 평가액 기준이라 <b>배당이 바뀌면 자동으로 갱신</b>됩니다.${
           cfg.returnMode !== "manual" ? ""
             : weightedTrailReturn == null
-              ? " 현재 종목수익률은 보유 종목의 가격 데이터가 부족해 계산되지 않았습니다."
-              : ` 현재 종목수익률은 보유 종목의 최근 ${GOAL_TRAIL_DEFAULT_MONTHS}개월 가격 등락률(연환산)을 평가금액 비중으로 가중평균한 값으로, <b>목표 계산에는 쓰지 않고 실적 대조용</b>입니다.`
+              ? " 현재 종목수익률은 선택한 자산군의 가격 데이터가 부족해 계산되지 않았습니다."
+              : ` 현재 종목수익률은 ${goalTrailType === "__all__" ? "보유 종목 전체" : goalTrailType === "etf" ? "ETF만" : "일반종목(개별주)만"}의 최근 ${GOAL_TRAIL_DEFAULT_MONTHS}개월 가격 등락률(연환산)을 평가금액 비중으로 가중평균한 값으로, <b>목표 계산에는 쓰지 않고 실적 대조용</b>입니다.`
         }</p>
         ${trailNoteHTML}
         <p class="stat-sub">월 재투자액 ${fmtW(totalMonthlyInvest)}${totalContributions > 0 ? ` (월매수 ${fmtW(totalMonthlyBuy)} + 월적립 ${fmtW(totalContributions)})` : ""} 반영${livingExpenseUsed > 0 ? ` · 배당은 재투자분(${fmtW(reinvestedDiv)}/월)만 복리 반영, 생활비 사용분 제외` : ""}</p>
@@ -4130,6 +4154,13 @@ async function renderMyAssets() {
   document.querySelectorAll(".my-goal-remove").forEach((el) => {
     el.addEventListener("click", () => {
       saveMyGoals(loadMyGoals().filter((g) => g.symbol !== el.dataset.symbol));
+      renderMyAssets();
+    });
+  });
+  // A46: 목표 카드의 종합/ETF/일반종목 토글
+  document.querySelectorAll(".goal-trail-type-btn").forEach((el) => {
+    el.addEventListener("click", () => {
+      saveGoalTrailType(el.dataset.type);
       renderMyAssets();
     });
   });
