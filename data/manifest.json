@@ -1,5 +1,5 @@
 {
- "updated": "2026-08-13 06:20 UTC",
+ "updated": "2026-08-13 06:52 UTC",
  "us": [
   {
    "symbol": "SPY",
@@ -2232,6 +2232,81 @@
    "dividendYield": 0.0092,
    "dividendCountThisYear": 3,
    "dividendMonthThisYear": 7
+  },
+  {
+   "symbol": "122630.KS",
+   "name": "KODEX 레버리지",
+   "category": "국내 지수",
+   "region": "한국",
+   "style": "성장",
+   "assetType": "etf",
+   "currency": "KRW",
+   "first": "2010-02-22",
+   "last": "2026-08-13",
+   "count": 4056,
+   "ttmDividend": 0.0,
+   "dividendYield": 0.0,
+   "dividendCountThisYear": 0
+  },
+  {
+   "symbol": "272580.KS",
+   "name": "TIGER 단기채권액티브",
+   "category": "채권",
+   "region": "한국",
+   "style": "안전",
+   "assetType": "etf",
+   "currency": "KRW",
+   "first": "2017-06-29",
+   "last": "2026-08-13",
+   "count": 2237,
+   "ttmDividend": 437.0,
+   "dividendYield": 0.0077,
+   "dividendCountThisYear": 0
+  },
+  {
+   "symbol": "418660.KS",
+   "name": "TIGER 미국나스닥100레버리지(합성)",
+   "category": "미국 지수(국내상장)",
+   "region": "미국",
+   "style": "성장",
+   "assetType": "etf",
+   "currency": "KRW",
+   "first": "2022-02-22",
+   "last": "2026-08-13",
+   "count": 1095,
+   "ttmDividend": 380.0,
+   "dividendYield": 0.0089,
+   "dividendCountThisYear": 0
+  },
+  {
+   "symbol": "426020.KS",
+   "name": "TIME 미국S&P500액티브",
+   "category": "미국 지수(국내상장)",
+   "region": "미국",
+   "style": "성장",
+   "assetType": "etf",
+   "currency": "KRW",
+   "first": "2022-05-11",
+   "last": "2026-08-13",
+   "count": 1042,
+   "ttmDividend": 54.0,
+   "dividendYield": 0.0016,
+   "dividendCountThisYear": 0
+  },
+  {
+   "symbol": "469830.KS",
+   "name": "SOL 초단기채권액티브",
+   "category": "채권",
+   "region": "한국",
+   "style": "안전",
+   "assetType": "etf",
+   "currency": "KRW",
+   "first": "2023-11-07",
+   "last": "2026-08-13",
+   "count": 674,
+   "ttmDividend": 850.0,
+   "dividendYield": 0.0157,
+   "dividendCountThisYear": 0
   }
  ]
 }
