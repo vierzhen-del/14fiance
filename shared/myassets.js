@@ -741,18 +741,21 @@ function buildSelfSuffHTML(accountMap, contributions) {
     const advice = g.monthlyBuy === 0 ? "월매수 미설정"
       : diff >= 0 ? `여유 ${fmtW(diff)}`
       : `월매수를 ${fmtW(-diff)} 줄이면 자급률 100%`;
+    /* A48(2026-08-13 사용자 결정): 스택 레이아웃(A45c) 대신 원래 표 형태로 되돌리되, 폭을
+       키우던 원인이던 "(납입 X 포함)" 문구만 <br>로 다음 줄에 내려 셀 폭을 줄인다 — 표 전체가
+       가로로 길어지지 않게 하는 게 목적이라 다른 열은 손대지 않는다. */
     return `<tr>
-      <td data-label="계좌">${acc}</td>
-      <td data-label="수입(배당+납입)">${fmtW(income)}${contributions[acc] ? ` <span style="color:var(--text-muted); font-size:11px;">(납입 ${fmtW(contributions[acc])} 포함)</span>` : ""}</td>
-      <td data-label="매수">${g.monthlyBuy > 0 ? fmtW(g.monthlyBuy) : "—"}</td>
-      <td data-label="차액" style="color:${diff >= 0 ? "var(--good)" : "var(--critical)"}">${g.monthlyBuy > 0 ? (diff >= 0 ? "+" : "") + fmtW(diff) : "—"}</td>
-      <td data-label="자급률">${rate != null ? (rate * 100).toFixed(1) + "%" : "—"}</td>
-      <td data-label="상태">${status}</td>
-      <td data-label="조절 안내" style="text-align:left; font-size:12px; color:var(--text-muted);">${advice}</td>
+      <td>${acc}</td>
+      <td>${fmtW(income)}${contributions[acc] ? `<br><span style="color:var(--text-muted); font-size:11px;">(납입 ${fmtW(contributions[acc])} 포함)</span>` : ""}</td>
+      <td>${g.monthlyBuy > 0 ? fmtW(g.monthlyBuy) : "—"}</td>
+      <td style="color:${diff >= 0 ? "var(--good)" : "var(--critical)"}">${g.monthlyBuy > 0 ? (diff >= 0 ? "+" : "") + fmtW(diff) : "—"}</td>
+      <td>${rate != null ? (rate * 100).toFixed(1) + "%" : "—"}</td>
+      <td>${status}</td>
+      <td style="text-align:left; font-size:12px; color:var(--text-muted);">${advice}</td>
     </tr>`;
   }).join("");
   return `<div style="overflow-x:auto;">
-    <table class="account-summary-table stack-narrow">
+    <table class="account-summary-table">
       <thead><tr><th>계좌</th><th>수입(배당+납입)</th><th>매수</th><th>차액</th><th>자급률</th><th>상태</th><th>조절 안내</th></tr></thead>
       <tbody>${rowsHTML}</tbody>
     </table>
@@ -827,7 +830,7 @@ function matchesGoalTrailType(p, type) {
    목표를 추가할 종목은 수집 카탈로그에 있는 것만 고르게 해, 오타로 존재하지 않는 종목을
    목표로 잡는 실수를 막는다(2026-08-11: 월매수 항목으로만 한정하던 것을 보유·배당등록까지
    넓힘 → 2026-08-12 A45c: 미보유 카탈로그 종목까지 열어 "앞으로 모을 종목"도 목표가 됨). */
-function buildGoalTrackerHTML(perRow) {
+async function buildGoalTrackerHTML(perRow, latestRate) {
   const goals = loadMyGoals();
   const candidateSymbols = [...new Map(
     perRow.filter((p) => p.qty > 0 || p.monthlyQty > 0 || p.divRate > 0).map((p) => [p.symbol, p.meta ? p.meta.name : p.symbol])
@@ -860,6 +863,33 @@ function buildGoalTrackerHTML(perRow) {
     return pickerHTML + `<p class="compare-empty">${mineHTML || othersHTML ? "위에서 종목을 선택해 목표 주식수를 설정하세요 — 아직 보유하지 않은 종목도 고를 수 있습니다." : "수집 종목 목록을 불러오는 중입니다."}</p>`;
   }
 
+  /* A50(2026-08-13 사용자 보고): 아직 보유·매수계획이 전혀 없는 순수 목표 종목(예:
+     KODEX 금융고배당TOP10타겟위클리커버드콜/498410)은 perRow에 행 자체가 없어 divRate를
+     등록할 방법이 없고, 그 결과 항상 "배당률 미등록"으로 떴다. 카탈로그(manifest)엔
+     TTM 배당액·배당수익률이 이미 있는 경우가 많으므로(498410: ttmDividend 1892원,
+     dividendYield 16.45%), 메인 계산 루프의 ttmRate 폴백(ttm÷12÷종가)과 같은 공식으로
+     추정치를 보여준다 — 사용자가 등록한 값이 아니므로 "TTM 추정"이라고 밝힌다. */
+  const unmatchedSymbols = goals
+    .filter((g) => !perRow.some((p) => p.symbol === g.symbol))
+    .map((g) => g.symbol);
+  const fallbackBySymbol = new Map(); // symbol -> { priceKrw, effRate }
+  await Promise.all(unmatchedSymbols.map(async (sym) => {
+    const meta = state.metaBySymbol.get(sym);
+    if (!meta) return;
+    try {
+      const full = await loadSymbol(sym);
+      const close = full.closes[full.closes.length - 1];
+      if (!(close > 0)) return;
+      const isUsd = (full.currency || "KRW") === "USD";
+      if (isUsd && latestRate == null) return;
+      const priceKrw = isUsd ? close * latestRate : close;
+      const ttm = meta.ttmDividend || 0;
+      const divYield = meta.dividendYield || 0;
+      const effRate = ttm > 0 ? ttm / 12 / close : divYield > 0 ? divYield / 12 : 0;
+      if (effRate > 0) fallbackBySymbol.set(sym, { priceKrw, effRate });
+    } catch (err) { /* 조회 실패 시 그냥 "배당률 미등록"으로 남김 — best-effort */ }
+  }));
+
   const fmtW = (v) => fmtPrice(v, "KRW");
   const rows = goals.map((g) => {
     const matched = perRow.filter((p) => p.symbol === g.symbol);
@@ -867,14 +897,16 @@ function buildGoalTrackerHTML(perRow) {
     const name = meta ? meta.name : g.symbol;
     const curQty = matched.reduce((s, p) => s + (p.qty || 0), 0);
     const monthlyShares = matched.reduce((s, p) => s + (p.monthlyQty || 0) * (BUY_FREQ_TIMES[p.buyFreq] || 1), 0);
-    // 단가: 보유 평가액에서 역산(가장 정확) → 없으면 월매수액에서 역산
+    // 단가: 보유 평가액에서 역산(가장 정확) → 없으면 월매수액에서 역산 → 그마저 없으면 TTM 폴백
     const priceRow = matched.find((p) => p.qty > 0) || matched.find((p) => p.monthlyQty > 0);
+    const fallback = fallbackBySymbol.get(g.symbol);
     const priceKrw = priceRow
       ? (priceRow.qty > 0 ? priceRow.value / priceRow.qty
         : priceRow.monthlyBuy / (priceRow.monthlyQty * (BUY_FREQ_TIMES[priceRow.buyFreq] || 1)))
-      : null;
+      : (fallback ? fallback.priceKrw : null);
     const rateRow = matched.find((p) => p.effRate > 0);
-    const effRate = rateRow ? rateRow.effRate : 0;
+    const effRate = rateRow ? rateRow.effRate : (fallback ? fallback.effRate : 0);
+    const isEstimated = !rateRow && !!fallback;
 
     let etaLabel;
     if (!(g.targetQty > 0)) {
@@ -896,7 +928,7 @@ function buildGoalTrackerHTML(perRow) {
     // 다른 화면들도 전부 현재가×분배율을 그대로 월배당으로 쓰고 12로 나누지 않는다) —
     // 여기서도 /12를 넣었다가 실제보다 12배 작게 나오는 오류가 있었다(사용자 실측 보고로 발견).
     const divLabel = g.targetQty > 0 && priceKrw != null && effRate > 0
-      ? `월 ${fmtW(g.targetQty * priceKrw * effRate)} (월 ${(effRate * 100).toFixed(2)}% · 연환산 ${(effRate * 1200).toFixed(1)}%)`
+      ? `월 ${fmtW(g.targetQty * priceKrw * effRate)} (월 ${(effRate * 100).toFixed(2)}% · 연환산 ${(effRate * 1200).toFixed(1)}%)${isEstimated ? " · TTM 추정" : ""}`
       : (effRate > 0 ? "단가 확인 불가" : "배당률 미등록");
 
     return `<tr>
@@ -3199,7 +3231,7 @@ async function renderMyAssets() {
 
   // 매수계획 상세(ETF모으기)
   const buyPlanHTML = buildBuyPlanHTML(perRow);
-  const goalTrackerHTML = buildGoalTrackerHTML(perRow);
+  const goalTrackerHTML = await buildGoalTrackerHTML(perRow, latestRate);
 
   // 계좌 히트맵 탭은 A7에서 트리맵으로 대체 — 패널 컨테이너에 renderMyAssets 끝의
   // 와이어링(renderTreemap)이 buildTreemapHTML 결과를 채운다.
