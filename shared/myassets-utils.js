@@ -585,17 +585,41 @@ const ACCOUNT_TYPES = [
   "KB_일반", "KB_ISA", "신한_일반",
 ];
 
-function accountOptionsHTML(selected) {
+/* A52(2026-08-13 사용자 보고 — 타인 배포 후 피드백): ACCOUNT_TYPES가 이 코드에 박힌
+   내 계좌명 9개라, 다른 사람이 자기 JSON을 가져와도 드롭다운엔 계속 "삼성_DC" 같은
+   내 계좌가 보였다(그 사람 계좌명 자체는 각 행에 보존되지만, 다른 행에서 골라 쓸
+   선택지로는 안 나옴). dynamicList가 있으면 그것만 쓰고 ACCOUNT_TYPES는 섞지 않는다 —
+   "JSON에 기재된 계좌정보대로 표시"가 목표라, 남의 계좌 목록에 내 계좌명이 끼어 있으면
+   오히려 더 헷갈린다. dynamicList가 비어있을 때만(완전 빈 템플릿 등) 마지막 안전망으로
+   ACCOUNT_TYPES를 쓴다. */
+function accountOptionsHTML(selected, dynamicList) {
+  // dynamicList 인자를 생략한 호출부(⚡ 계좌 일괄 지정 등)도 state.myAccountsExplicit로
+  // 자동 폴백 — 호출부마다 일일이 넘겨줄 필요 없이 "가져온 JSON 기준 계좌 목록"이 앱
+  // 전체에서 일관되게 적용된다.
+  const effectiveList = dynamicList !== undefined ? dynamicList : state.myAccountsExplicit;
+  const list = (effectiveList && effectiveList.length) ? effectiveList : ACCOUNT_TYPES;
   let html = `<option value="" ${!selected ? "selected" : ""}>계좌 미지정</option>`;
-  // 가져오기 데이터에 목록 밖 계좌명(예: 삼성_DC)이 있어도 그대로 보존한다 —
+  // 목록 밖 계좌명이 선택돼 있어도 그대로 보존한다 —
   // 조용히 "계좌 미지정"으로 빠지면 계좌별 합계를 시트와 비교할 수 없게 됨
-  if (selected && !ACCOUNT_TYPES.includes(selected)) {
+  if (selected && !list.includes(selected)) {
     html += `<option value="${selected}" selected>${selected}</option>`;
   }
-  for (const acc of ACCOUNT_TYPES) {
+  for (const acc of list) {
     html += `<option value="${acc}" ${acc === selected ? "selected" : ""}>${acc}</option>`;
   }
   return html;
+}
+
+/* rows 배열(가져오기 JSON 등)에서 실제 쓰인 계좌명만 등장 순서대로 뽑는다 —
+   cfg.accounts를 명시하지 않은 파일도 이걸로 "JSON에 기재된 계좌정보대로" 동작한다. */
+function deriveAccountListFromRows(rows) {
+  const seen = new Set();
+  const list = [];
+  for (const r of rows || []) {
+    const acc = r && r.account;
+    if (acc && !seen.has(acc)) { seen.add(acc); list.push(acc); }
+  }
+  return list;
 }
 
 /* ---------- A25f: 지급시기(payPeriod) 정규화 ----------
