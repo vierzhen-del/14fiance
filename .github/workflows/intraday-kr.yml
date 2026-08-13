@@ -31,8 +31,16 @@ jobs:
         with:
           python-version: "3.12"
 
+      # A51: 히트맵 등락률을 "전일종가" 기준으로 계산하려면 스크립트가 직전 실행 결과를
+      # 봐야 한다. live 브랜치는 매번 force-push라 로컬에 이력이 안 남으므로, raw URL로
+      # 현재 커밋을 받아온다 — 최초 실행 등으로 없으면(404) 조용히 건너뛴다.
+      - name: Fetch previous snapshot
+        run: |
+          curl -fsSL "https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/live/latest_kr.json" \
+            -o /tmp/prev_latest_kr.json || echo "이전 스냅샷 없음(최초 실행 등) — 건너뜀"
+
       - name: Fetch intraday KR prices
-        run: python scripts/fetch_intraday_kr.py latest_kr.json
+        run: python scripts/fetch_intraday_kr.py latest_kr.json /tmp/prev_latest_kr.json
 
       # 개발 브랜치 이력을 오염시키지 않도록 전용 live 브랜치에
       # 항상 단일 커밋으로 force-push 한다(사이트는 raw URL로 읽음).
