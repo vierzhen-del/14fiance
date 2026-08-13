@@ -1943,17 +1943,41 @@ const ACCOUNT_TYPES = [
   "KB_일반", "KB_ISA", "신한_일반",
 ];
 
-function accountOptionsHTML(selected) {
+/* A52(2026-08-13 사용자 보고 — 타인 배포 후 피드백): ACCOUNT_TYPES가 이 코드에 박힌
+   내 계좌명 9개라, 다른 사람이 자기 JSON을 가져와도 드롭다운엔 계속 "삼성_DC" 같은
+   내 계좌가 보였다(그 사람 계좌명 자체는 각 행에 보존되지만, 다른 행에서 골라 쓸
+   선택지로는 안 나옴). dynamicList가 있으면 그것만 쓰고 ACCOUNT_TYPES는 섞지 않는다 —
+   "JSON에 기재된 계좌정보대로 표시"가 목표라, 남의 계좌 목록에 내 계좌명이 끼어 있으면
+   오히려 더 헷갈린다. dynamicList가 비어있을 때만(완전 빈 템플릿 등) 마지막 안전망으로
+   ACCOUNT_TYPES를 쓴다. */
+function accountOptionsHTML(selected, dynamicList) {
+  // dynamicList 인자를 생략한 호출부(⚡ 계좌 일괄 지정 등)도 state.myAccountsExplicit로
+  // 자동 폴백 — 호출부마다 일일이 넘겨줄 필요 없이 "가져온 JSON 기준 계좌 목록"이 앱
+  // 전체에서 일관되게 적용된다.
+  const effectiveList = dynamicList !== undefined ? dynamicList : state.myAccountsExplicit;
+  const list = (effectiveList && effectiveList.length) ? effectiveList : ACCOUNT_TYPES;
   let html = `<option value="" ${!selected ? "selected" : ""}>계좌 미지정</option>`;
-  // 가져오기 데이터에 목록 밖 계좌명(예: 삼성_DC)이 있어도 그대로 보존한다 —
+  // 목록 밖 계좌명이 선택돼 있어도 그대로 보존한다 —
   // 조용히 "계좌 미지정"으로 빠지면 계좌별 합계를 시트와 비교할 수 없게 됨
-  if (selected && !ACCOUNT_TYPES.includes(selected)) {
+  if (selected && !list.includes(selected)) {
     html += `<option value="${selected}" selected>${selected}</option>`;
   }
-  for (const acc of ACCOUNT_TYPES) {
+  for (const acc of list) {
     html += `<option value="${acc}" ${acc === selected ? "selected" : ""}>${acc}</option>`;
   }
   return html;
+}
+
+/* rows 배열(가져오기 JSON 등)에서 실제 쓰인 계좌명만 등장 순서대로 뽑는다 —
+   cfg.accounts를 명시하지 않은 파일도 이걸로 "JSON에 기재된 계좌정보대로" 동작한다. */
+function deriveAccountListFromRows(rows) {
+  const seen = new Set();
+  const list = [];
+  for (const r of rows || []) {
+    const acc = r && r.account;
+    if (acc && !seen.has(acc)) { seen.add(acc); list.push(acc); }
+  }
+  return list;
 }
 
 /* ---------- A25f: 지급시기(payPeriod) 정규화 ----------
@@ -2394,11 +2418,15 @@ function nextIntradayCollectionText() {
   return "휴장 중(평일 09:05~15:35 외) — 다음 수집은 개장 후 30분 주기 예정(지연 가능)";
 }
 
-function addMyAssetRow(a = {}) {
+/* A52: dynamicAccounts를 안 넘기면 accountOptionsHTML 자체가 state.myAccountsExplicit
+   (가져온 JSON의 accounts 필드, applyMyAssets가 세팅)로 폴백한다 — 개별 upsert 호출부
+   (캡처 반영 등)까지 일일이 인자를 넘기게 하지 않으면서도 "가져온 JSON 기준 계좌 목록"이
+   기본으로 적용되게 한다. */
+function addMyAssetRow(a = {}, dynamicAccounts) {
   const row = document.createElement("div");
   row.className = "portfolio-row";
   row.innerHTML = `
-    <select class="my-account" aria-label="계좌 구분">${accountOptionsHTML(a.account)}</select>
+    <select class="my-account" aria-label="계좌 구분">${accountOptionsHTML(a.account, dynamicAccounts)}</select>
     <select class="my-symbol portfolio-symbol" aria-label="종목 선택">${etfOptionsHTML(a.symbol)}</select>
     <div class="portfolio-weight-wrap">
       <input type="number" class="my-qty portfolio-weight" style="width:90px" min="0" step="1" value="${a.qty ?? ""}" placeholder="수량"> 주
@@ -2461,6 +2489,9 @@ function serializeMyAssets() {
     livingExpense: parseFloat(document.getElementById("myLivingExpense").value) || 0,
     inflationOn: document.getElementById("myInflationOn") ? document.getElementById("myInflationOn").checked : false,
     inflationRate: document.getElementById("myInflationRate") ? document.getElementById("myInflationRate").value : "",
+    // A52: 계좌 드롭다운 선택지 — 명시적으로 세팅된 적 있으면(가져온 JSON에 accounts가
+    // 있었거나 행에서 파생됐으면) 그대로 내보내 다음 가져오기·재실행에도 유지되게 한다.
+    accounts: state.myAccountsExplicit || [],
     contributions: serializeMyContributions(),
     dataAsOf: state.myAssetsDataAsOf || "",
     importedAt: state.myAssetsImportedAt || "",
@@ -2530,6 +2561,14 @@ function updateMyAssetsVersionBadge() {
 
 function applyMyAssets(data) {
   if (!data || !Array.isArray(data.rows)) return false;
+  /* A52: 계좌 드롭다운 선택지를 이 JSON 기준으로 고정한다 — data.accounts를 명시하면
+     그 순서 그대로, 없으면 rows에 실제 쓰인 계좌명을 등장 순서로 뽑아 쓴다. 둘 다 비어
+     있으면(완전 빈 템플릿) undefined로 둬서 accountOptionsHTML이 ACCOUNT_TYPES로
+     폴백하게 한다. */
+  const derived = (Array.isArray(data.accounts) && data.accounts.length)
+    ? data.accounts
+    : deriveAccountListFromRows(data.rows);
+  state.myAccountsExplicit = derived.length ? derived : undefined;
   state.myContribSeed = data.contributions || {};
   state.myContribAccounts = null; // 계좌 구성이 바뀌었을 수 있으니 다음 렌더에서 강제로 다시 빌드
   state.myAssetsDataAsOf = data.dataAsOf || state.myAssetsDataAsOf || "";
