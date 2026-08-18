@@ -3,7 +3,8 @@ name: Intraday Global Prices
 on:
   workflow_dispatch:
   schedule:
-    # 트레이딩 대시보드용 글로벌 시세(KOSPI 지수·나스닥선물·SOX·SOXX).
+    # 트레이딩 대시보드 + "내 자산" 리포트/조회시점 표시용 글로벌 시세
+    # (KOSPI 지수·S&P500·나스닥종합·나스닥선물·SOX·SOXX, A57 2026-08-14 추가).
     # 나스닥100 선물은 거의 24시간 거래라 평일 종일 30분 주기로 돌린다.
     # intraday-kr.yml과 같은 이유로 정각·30분을 피하되, 그 워크플로(5분·35분)와도
     # 겹치지 않게 7분·37분 offset을 쓴다. GitHub 무료 스케줄 큐 특성상
