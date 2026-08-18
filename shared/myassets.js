@@ -3218,8 +3218,11 @@ async function renderMyAssets() {
   const periodHTML = PERIOD_ORDER.filter((k) => periodMap.has(k)).map((k, i) => {
     const v = periodMap.get(k);
     const pct = periodTotal > 0 ? (v / periodTotal) * 100 : 0;
+    // A58(2026-08-18 사용자 요청): 화면 표기는 "월초5일" 대신 짧게 "월초"만 — 그룹핑 키(k)
+    // 자체는 그대로 둔다(위 A55 수정으로 payPeriod 원본값과 정확히 일치해야 매칭되므로).
+    const shortLabel = PAY_PERIOD_SHORT[k] || k;
     return `<div class="bar-row">
-      <span class="bar-label" title="${k}">${k}</span>
+      <span class="bar-label" title="${shortLabel}">${shortLabel}</span>
       <div class="bar-track"><div class="bar-fill" style="width:${pct.toFixed(1)}%; background:${PALETTE[i % PALETTE.length]}"></div></div>
       <span class="bar-value">${fmtW(v)}</span>
     </div>`;
@@ -3230,7 +3233,11 @@ async function renderMyAssets() {
   const maxDiv = top10Div.length ? top10Div[0].monthlyDiv : 0;
   const top10HTML = top10Div.map((p) => {
     const pct = maxDiv > 0 ? (p.monthlyDiv / maxDiv) * 100 : 0;
-    const label = p.meta ? p.meta.name : p.symbol;
+    const name = p.meta ? p.meta.name : p.symbol;
+    // A58(2026-08-18 사용자 요청): 같은 종목명이 계좌별로 여러 줄 나올 때 지급시기(월초/월중/월말)를
+    // 함께 표기 — 이름만으로는 언제 들어오는 배당인지 구분이 안 됐다.
+    const periodShort = PAY_PERIOD_SHORT[p.payPeriod];
+    const label = periodShort ? `${name} (${periodShort})` : name;
     return `<div class="bar-row">
       <span class="bar-label" title="${label}">${label}</span>
       <div class="bar-track"><div class="bar-fill" style="width:${pct.toFixed(1)}%; background:${accountColor(p.account || "계좌 미지정")}"></div></div>
