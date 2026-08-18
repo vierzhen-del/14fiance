@@ -1199,6 +1199,29 @@ function buildWeeklyAssetHTML(dailyHistory) {
     </div>`;
 }
 
+/* A59(2026-08-18 사용자 요청): "지급시기별 월배당" 막대를 누르면 그 시기(월초/월중/월말/
+   지급시기 미지정)에 해당하는 계좌·종목별 내역을 펼쳐 보여준다 — 합계만으로는 "월말에
+   정확히 뭐가 들어오는지"를 알 수 없었다. periodKey는 payPeriod 원본값("월초5일" 등,
+   미지정이면 "지급시기 미지정") 그대로 받는다 — periodMap 그룹핑 키와 같아야 매칭된다. */
+function buildPeriodDetailHTML(perRow, periodKey) {
+  const matches = perRow
+    .filter((p) => p.monthlyDiv > 0 && (p.payPeriod || "지급시기 미지정") === periodKey)
+    .sort((a, b) => b.monthlyDiv - a.monthlyDiv);
+  if (!matches.length) return `<p class="compare-empty" style="margin:6px 0 0;">해당 종목이 없습니다.</p>`;
+  const fmtW = (v) => fmtPrice(v, "KRW");
+  const rows = matches.map((p) => `<tr>
+    <td data-label="계좌" style="text-align:left;">${p.account || "계좌 미지정"}</td>
+    <td data-label="종목" style="text-align:left;">${p.meta ? p.meta.name : p.symbol}</td>
+    <td data-label="월배당">${fmtW(p.monthlyDiv)}</td>
+  </tr>`).join("");
+  return `<div style="overflow-x:auto; margin:4px 0 10px;">
+    <table class="account-summary-table" style="font-size:12px;">
+      <thead><tr><th>계좌</th><th>종목</th><th>월배당</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    </div>`;
+}
+
 /* 월별 스냅샷(MY_ASSETS_HISTORY_KEY)을 일별·주간·연간과 같은 표 형식으로 보여줌 */
 function buildMonthlyAssetHTML(monthlyHistory) {
   if (!monthlyHistory.length) {
@@ -3026,10 +3049,28 @@ async function renderMyAssets() {
     result.dataset.manifestBtnWired = "1";
     result.addEventListener("click", async (e) => {
       const btn = e.target && e.target.id === "myManifestRefreshBtn" ? e.target : null;
-      if (!btn) return;
-      btn.disabled = true; btn.textContent = "확인 중…";
-      try { await refreshManifestAndRerender(); }
-      catch (err) { btn.disabled = false; btn.textContent = "🔄 수집 목록 새로 확인"; }
+      if (btn) {
+        btn.disabled = true; btn.textContent = "확인 중…";
+        try { await refreshManifestAndRerender(); }
+        catch (err) { btn.disabled = false; btn.textContent = "🔄 수집 목록 새로 확인"; }
+        return;
+      }
+      // A59(2026-08-18 사용자 요청): 지급시기별 월배당 막대를 누르면 계좌·종목별 내역을 펼친다
+      // (한 번에 하나만 — 다른 막대를 누르면 이전에 펼친 것은 접힌다).
+      const row = e.target.closest(".period-bar-row");
+      if (!row) return;
+      const detail = row.nextElementSibling;
+      if (!detail || !detail.classList.contains("period-detail")) return;
+      const willShow = detail.hidden;
+      result.querySelectorAll(".period-detail").forEach((d) => { d.hidden = true; });
+      if (willShow) {
+        detail.hidden = false;
+        if (!detail.dataset.filled) {
+          const csv = state.myAssetsCsvData;
+          detail.innerHTML = csv ? buildPeriodDetailHTML(csv.perRow, row.dataset.periodKey) : "";
+          detail.dataset.filled = "1";
+        }
+      }
     });
   }
 
@@ -3327,11 +3368,14 @@ async function renderMyAssets() {
     // A58(2026-08-18 사용자 요청): 화면 표기는 "월초5일" 대신 짧게 "월초"만 — 그룹핑 키(k)
     // 자체는 그대로 둔다(위 A55 수정으로 payPeriod 원본값과 정확히 일치해야 매칭되므로).
     const shortLabel = PAY_PERIOD_SHORT[k] || k;
-    return `<div class="bar-row">
-      <span class="bar-label" title="${shortLabel}">${shortLabel}</span>
+    // A59(2026-08-18 사용자 요청): 눌러서 계좌·종목별 내역을 펼칠 수 있게 한다 —
+    // 클릭 배선은 아래 result 클릭 위임 리스너(myManifestRefreshBtn과 같은 곳)에서 처리.
+    return `<div class="bar-row period-bar-row" data-period-key="${k}" style="cursor:pointer;" title="눌러서 계좌·종목별 내역 보기">
+      <span class="bar-label">${shortLabel} <span style="font-size:10px; color:var(--text-muted);">▾</span></span>
       <div class="bar-track"><div class="bar-fill" style="width:${pct.toFixed(1)}%; background:${PALETTE[i % PALETTE.length]}"></div></div>
       <span class="bar-value">${fmtW(v)}</span>
-    </div>`;
+    </div>
+    <div class="period-detail" data-period-key="${k}" hidden></div>`;
   }).join("");
 
   // 월배당 TOP10 — 첨부 대시보드의 "월배당 현황차트" 탭 중 TOP10 항목
