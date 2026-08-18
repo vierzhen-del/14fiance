@@ -1167,6 +1167,28 @@ function buildPeriodDetailHTML(perRow, periodKey) {
     </div>`;
 }
 
+/* A60(2026-08-18 사용자 요청): "계좌별 월배당" 막대를 누르면 그 계좌에 들어오는 종목별 내역을
+   지급주기(월초/월중/월말)와 함께 펼쳐 보여준다 — buildPeriodDetailHTML과 짝을 이루는
+   반대 방향 드릴다운(시기→계좌·종목 / 계좌→종목·시기). */
+function buildAccountDivDetailHTML(perRow, account) {
+  const matches = perRow
+    .filter((p) => p.monthlyDiv > 0 && (p.account || "계좌 미지정") === account)
+    .sort((a, b) => b.monthlyDiv - a.monthlyDiv);
+  if (!matches.length) return `<p class="compare-empty" style="margin:6px 0 0;">해당 종목이 없습니다.</p>`;
+  const fmtW = (v) => fmtPrice(v, "KRW");
+  const rows = matches.map((p) => `<tr>
+    <td data-label="종목" style="text-align:left;">${p.meta ? p.meta.name : p.symbol}</td>
+    <td data-label="지급주기">${PAY_PERIOD_SHORT[p.payPeriod] || "미지정"}</td>
+    <td data-label="월배당">${fmtW(p.monthlyDiv)}</td>
+  </tr>`).join("");
+  return `<div style="overflow-x:auto; margin:4px 0 10px;">
+    <table class="account-summary-table" style="font-size:12px;">
+      <thead><tr><th>종목</th><th>지급주기</th><th>월배당</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    </div>`;
+}
+
 /* 월별 스냅샷(MY_ASSETS_HISTORY_KEY)을 일별·주간·연간과 같은 표 형식으로 보여줌 */
 function buildMonthlyAssetHTML(monthlyHistory) {
   if (!monthlyHistory.length) {
@@ -2951,18 +2973,37 @@ async function renderMyAssets() {
       }
       // A59(2026-08-18 사용자 요청): 지급시기별 월배당 막대를 누르면 계좌·종목별 내역을 펼친다
       // (한 번에 하나만 — 다른 막대를 누르면 이전에 펼친 것은 접힌다).
-      const row = e.target.closest(".period-bar-row");
-      if (!row) return;
-      const detail = row.nextElementSibling;
-      if (!detail || !detail.classList.contains("period-detail")) return;
-      const willShow = detail.hidden;
-      result.querySelectorAll(".period-detail").forEach((d) => { d.hidden = true; });
-      if (willShow) {
-        detail.hidden = false;
-        if (!detail.dataset.filled) {
-          const csv = state.myAssetsCsvData;
-          detail.innerHTML = csv ? buildPeriodDetailHTML(csv.perRow, row.dataset.periodKey) : "";
-          detail.dataset.filled = "1";
+      const periodRow = e.target.closest(".period-bar-row");
+      if (periodRow) {
+        const detail = periodRow.nextElementSibling;
+        if (!detail || !detail.classList.contains("period-detail")) return;
+        const willShow = detail.hidden;
+        result.querySelectorAll(".period-detail").forEach((d) => { d.hidden = true; });
+        if (willShow) {
+          detail.hidden = false;
+          if (!detail.dataset.filled) {
+            const csv = state.myAssetsCsvData;
+            detail.innerHTML = csv ? buildPeriodDetailHTML(csv.perRow, periodRow.dataset.periodKey) : "";
+            detail.dataset.filled = "1";
+          }
+        }
+        return;
+      }
+      // A60(2026-08-18 사용자 요청): 계좌별 월배당 막대를 누르면 그 계좌의 종목별 내역·지급주기를
+      // 펼친다(같은 배타적 펼침 규칙 — 위 지급시기 상세와는 별도로 하나씩 열림).
+      const accountRow = e.target.closest(".account-div-row");
+      if (accountRow) {
+        const detail = accountRow.nextElementSibling;
+        if (!detail || !detail.classList.contains("account-div-detail")) return;
+        const willShow = detail.hidden;
+        result.querySelectorAll(".account-div-detail").forEach((d) => { d.hidden = true; });
+        if (willShow) {
+          detail.hidden = false;
+          if (!detail.dataset.filled) {
+            const csv = state.myAssetsCsvData;
+            detail.innerHTML = csv ? buildAccountDivDetailHTML(csv.perRow, accountRow.dataset.accountKey) : "";
+            detail.dataset.filled = "1";
+          }
         }
       }
     });
@@ -3294,11 +3335,14 @@ async function renderMyAssets() {
   const maxAccDiv = byAccountDiv.length ? byAccountDiv[0][1].monthlyDiv : 0;
   const accountDivHTML = byAccountDiv.map(([acc, g]) => {
     const pct = maxAccDiv > 0 ? (g.monthlyDiv / maxAccDiv) * 100 : 0;
-    return `<div class="bar-row">
-      <span class="bar-label" title="${acc}">${acc}</span>
+    // A60(2026-08-18 사용자 요청): 눌러서 그 계좌의 종목별 내역·지급주기를 펼칠 수 있게 한다 —
+    // 클릭 배선은 아래 result 클릭 위임 리스너(period-bar-row와 같은 곳)에서 처리.
+    return `<div class="bar-row account-div-row" data-account-key="${acc}" style="cursor:pointer;" title="눌러서 종목별 내역·지급주기 보기">
+      <span class="bar-label">${acc} <span style="font-size:10px; color:var(--text-muted);">▾</span></span>
       <div class="bar-track"><div class="bar-fill" style="width:${pct.toFixed(1)}%; background:${accountColor(acc)}"></div></div>
       <span class="bar-value">${fmtW(g.monthlyDiv)}</span>
-    </div>`;
+    </div>
+    <div class="account-div-detail" data-account-key="${acc}" hidden></div>`;
   }).join("");
 
   // 투자대상 시장 비중(한국/미국/글로벌) + 성장·배당·안전 스타일 비중 + 자산 성격별(카테고리) 비중
