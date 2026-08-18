@@ -122,8 +122,13 @@ function upsertMonthlySnapshot(mddOverride) {
   // A26b: 월 단위 MDD 이력이 비중 이력과 같은 주기로 쌓인다(추이 탭 "MDD 이력" 표의 재료).
   let mdd = mddOverride;
   if (mdd === undefined) { const m = portfolioMDD(csv.perRow); mdd = m ? m.mdd : null; }
-  const entry = { month, value: csv.totalValue, monthlyDiv: csv.totalMonthlyDiv, mdd, dpsBySymbol, byAccount, byCategory };
+  // A57(2026-08-14 사용자 요청): 스냅샷 시점의 코스피도 함께 남긴다 — 나중에 "이때 시장이
+  // 어땠는지"를 자산 변동과 바로 대조할 수 있게. 조회 시점에 지수를 못 가져왔으면 이전에
+  // 이 달에 이미 기록해둔 값을 유지한다(값을 지어내지도, 있던 값을 지우지도 않는다).
   const idx = hist.findIndex((h) => h.month === month);
+  const marketSnap = marketIndexSnapshot(state.liveGlobal ? state.liveGlobal.data : null);
+  const kospi = (marketSnap && marketSnap.kospi) ? marketSnap.kospi.price : (idx >= 0 ? hist[idx].kospi ?? null : null);
+  const entry = { month, value: csv.totalValue, monthlyDiv: csv.totalMonthlyDiv, mdd, dpsBySymbol, byAccount, byCategory, kospi };
   if (idx >= 0) hist[idx] = entry; else hist.push(entry);
   hist.sort((a, b) => a.month.localeCompare(b.month));
   localStorage.setItem(MY_ASSETS_HISTORY_KEY, JSON.stringify(hist));
@@ -1087,13 +1092,14 @@ function buildDailyAssetHTML(dailyHistory) {
       <td>${h.date}</td><td>${fmtW(h.value)}</td>
       <td style="color:${diff == null ? "var(--text-muted)" : diff >= 0 ? "var(--good)" : "var(--critical)"}">${diff == null ? "—" : (diff >= 0 ? "+" : "") + fmtW(diff)}</td>
       <td>${h.monthlyDiv > 0 ? fmtW(h.monthlyDiv) : "—"}</td>
+      <td>${h.kospi > 0 ? h.kospi.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—"}</td>
       <td><button type="button" class="my-daily-del" data-date="${h.date}" title="이 날 기록 삭제"
         style="border:none; background:none; color:var(--critical); cursor:pointer; font-size:15px; padding:2px 6px;">🗑</button></td>
     </tr>`;
   }).join("");
   return `<div style="overflow-x:auto;">
     <table class="account-summary-table">
-      <thead><tr><th>날짜</th><th>평가액</th><th>전일 대비</th><th>월배당(그 시점)</th><th></th></tr></thead>
+      <thead><tr><th>날짜</th><th>평가액</th><th>전일 대비</th><th>월배당(그 시점)</th><th>코스피</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
     </div>
@@ -1153,11 +1159,12 @@ function buildMonthlyAssetHTML(monthlyHistory) {
       <td>${h.month}</td><td>${fmtW(h.value)}</td>
       <td style="color:${diff == null ? "var(--text-muted)" : diff >= 0 ? "var(--good)" : "var(--critical)"}">${diff == null ? "—" : `${diff >= 0 ? "+" : ""}${fmtW(diff)} (${pct.toFixed(2)}%)`}</td>
       <td>${h.monthlyDiv > 0 ? fmtW(h.monthlyDiv) : "—"}</td>
+      <td>${h.kospi > 0 ? h.kospi.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—"}</td>
     </tr>`;
   }).join("");
   return `<div style="overflow-x:auto;">
     <table class="account-summary-table">
-      <thead><tr><th>월</th><th>평가액</th><th>전월 대비</th><th>월배당(그 시점)</th></tr></thead>
+      <thead><tr><th>월</th><th>평가액</th><th>전월 대비</th><th>월배당(그 시점)</th><th>코스피</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
     </div>
@@ -2031,6 +2038,27 @@ const REPORT_WORST_MIN_VALUE = 1000000;
 // (실사용 텔레그램 리포트에서 확인됨). 상승·하락·월배당 TOP5 전부 이름을 별도 줄로 내려 폭을 넓힌다.
 const REPORT_NAME_WIDTH_WIDE = 28;
 
+/* A57(2026-08-14 사용자 요청): latest_global.json(live-trading 브랜치, 30분 주기 수집)의 원시
+   지수 데이터를 표시용으로 뽑아낸다. 값이 없는 지수는 null로 둔다 — 조용히 숨기지, 0이나
+   전날 값을 지어내지 않는다. */
+function marketIndexSnapshot(liveGlobal) {
+  const p = liveGlobal && liveGlobal.prices;
+  if (!p) return null;
+  const pick = (key) => (p[key] && p[key].price > 0 ? p[key] : null);
+  return { kospi: pick("KOSPI"), sp500: pick("^GSPC"), nasdaq: pick("^IXIC"), updated: liveGlobal.updated };
+}
+
+/* 조회시점 코스피 표시 — "🔄 최신시세" 라인 바로 아래, 매 렌더마다 보인다. 데이터가 없으면
+   빈 문자열(있던 값이 사라진 것처럼 보이지 않게, 아예 줄 자체를 안 그린다). */
+function marketIndexBarHTML(liveGlobal) {
+  const snap = marketIndexSnapshot(liveGlobal);
+  if (!snap || !snap.kospi) return "";
+  const k = snap.kospi;
+  const pct = k.changePct || 0;
+  const color = pct > 0 ? "var(--good)" : pct < 0 ? "var(--critical)" : "var(--text-muted)";
+  return `<p class="stat-sub">📈 코스피 ${k.price.toLocaleString(undefined, { maximumFractionDigits: 2 })} <span style="color:${color}">${signedPct(pct)}</span> — ${snap.updated} 기준(30분 주기 수집, 실시간 아님)</p>`;
+}
+
 /* ---------- A28: 종합 탭 "리포트 생성" (A31에서 가독성·등락 보강) ----------
    종합(계좌별 요약)·비중(성향별)·추이(MDD)·등락(상승·하락 TOP5)·배당(TOP5) 정보를 한 텍스트로
    모아 다운로드·클립보드·텔레그램·옵시디안, 그리고 buildAiAnalysisPrompt(LLM 입력)에 공통으로
@@ -2083,6 +2111,24 @@ async function buildReportText(csv, history, opts) {
     lines.push("  (매입단가 입력분 기준)");
   }
   lines.push("");
+
+  /* ── 시장 ── A57(2026-08-14 사용자 요청): 코스피·S&P500·나스닥·달러환율을 함께 보여
+     포트폴리오 등락을 시장 맥락과 바로 대조할 수 있게 한다. 값을 못 가져오면 그 줄만
+     조용히 뺀다(0이나 어제 값을 지어내지 않음). */
+  const marketSnap = marketIndexSnapshot(await loadLiveGlobalQuotes());
+  const marketFx = await loadFx();
+  const marketRate = marketFx && marketFx.rates && marketFx.rates.length ? marketFx.rates[marketFx.rates.length - 1] : null;
+  const marketLines = [];
+  if (marketSnap && marketSnap.kospi) marketLines.push(`코스피 ${marketSnap.kospi.price.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${changeMark(marketSnap.kospi.changePct || 0)}${signedPct(marketSnap.kospi.changePct || 0)}`);
+  if (marketSnap && marketSnap.sp500) marketLines.push(`S&P500 ${marketSnap.sp500.price.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${changeMark(marketSnap.sp500.changePct || 0)}${signedPct(marketSnap.sp500.changePct || 0)}`);
+  if (marketSnap && marketSnap.nasdaq) marketLines.push(`나스닥 ${marketSnap.nasdaq.price.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${changeMark(marketSnap.nasdaq.changePct || 0)}${signedPct(marketSnap.nasdaq.changePct || 0)}`);
+  if (marketRate > 0) marketLines.push(`달러환율 ${marketRate.toLocaleString(undefined, { maximumFractionDigits: 2 })}원`);
+  if (marketLines.length) {
+    lines.push(reportSection("시장"));
+    for (const l of marketLines) lines.push(l);
+    lines.push("");
+    if (marketSnap && marketSnap.updated) notes.push(`※ 지수값은 ${marketSnap.updated} 기준(30분 주기 수집, 실시간 아님)`);
+  }
 
   /* ── 계좌별 ── 평가액 내림차순 + 1% 미만은 접기. 계좌당 2줄 고정(1줄=이름·비중·막대,
      2줄=평가액·월배당·등락)이라 어느 값이 어느 계좌 것인지 들여쓰기로 분명해진다. */
@@ -2850,9 +2896,11 @@ async function renderMyAssets() {
   let fx = null;
   const items = [];
   let liveKr = null;
+  let liveGlobal = null;
   try {
     fx = await loadFx();
     liveKr = await loadLiveKrQuotes(); // 켜져 있을 때만, 실패 시 null(주간 데이터 폴백)
+    liveGlobal = await loadLiveGlobalQuotes(); // A57: 코스피 등 지수값 — 토글과 무관, 실패 시 null
     for (const r of knownRows) {
       const full = await loadSymbol(r.symbol);
       items.push({ ...r, full });
@@ -3368,6 +3416,7 @@ async function renderMyAssets() {
       liveKr ? ` · <b style="color:var(--good)">🔄 최신시세 ${liveKr.updated} 적용(국내 ${liveApplied}종목, GitHub 사정에 따라 수 시간 지연 가능)</b>`
       : liveQuotesEnabled() ? ` · <span style="color:var(--critical)">🔄 최신시세 불러오기 실패(${state.liveKrError || "데이터 없음"}) — 주간 종가 사용</span>` : ""
     }</p>
+    ${marketIndexBarHTML(liveGlobal)}
     ${excludedStockHTML}
     ${unknownHTML}
 
@@ -3861,7 +3910,10 @@ async function renderMyAssets() {
     const date = todayStr();
     const hist = JSON.parse(localStorage.getItem(MY_ASSETS_DAILY_HISTORY_KEY) || "[]");
     const idx = hist.findIndex((h) => h.date === date);
-    const entry = { date, value: totalValue, monthlyDiv: totalMonthlyDiv };
+    // A57: 입력 당시 코스피도 함께 남긴다(못 가져왔으면 그날 이미 있던 값을 유지).
+    const marketSnap = marketIndexSnapshot(state.liveGlobal ? state.liveGlobal.data : null);
+    const kospi = (marketSnap && marketSnap.kospi) ? marketSnap.kospi.price : (idx >= 0 ? hist[idx].kospi ?? null : null);
+    const entry = { date, value: totalValue, monthlyDiv: totalMonthlyDiv, kospi };
     if (idx >= 0) hist[idx] = entry; else hist.push(entry);
     hist.sort((a, b) => a.date.localeCompare(b.date));
     localStorage.setItem(MY_ASSETS_DAILY_HISTORY_KEY, JSON.stringify(hist));
