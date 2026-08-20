@@ -154,10 +154,15 @@ function upsertMonthlySnapshot(mddOverride) {
   // A57(2026-08-14 사용자 요청): 스냅샷 시점의 코스피도 함께 남긴다 — 나중에 "이때 시장이
   // 어땠는지"를 자산 변동과 바로 대조할 수 있게. 조회 시점에 지수를 못 가져왔으면 이전에
   // 이 달에 이미 기록해둔 값을 유지한다(값을 지어내지도, 있던 값을 지우지도 않는다).
+  // A61(2026-08-20 사용자 보고 "코스피 고정오류"): latest_global.json은 30분 주기 수집이라
+  // 서로 다른 달의 스냅샷이 같은 값을 담는 것 자체는 정상일 수 있다(그사이 수집이 안 갱신됐을
+  // 때) — 다만 그게 진짜 최신값인지 오래된 값을 물고 있는 건지 구분할 방법이 없었다.
+  // kospiAsOf(수집 시각)를 함께 저장해 화면에서 "이 코스피는 언제 기준"인지 밝힌다.
   const idx = hist.findIndex((h) => h.month === month);
   const marketSnap = marketIndexSnapshot(state.liveGlobal ? state.liveGlobal.data : null);
   const kospi = (marketSnap && marketSnap.kospi) ? marketSnap.kospi.price : (idx >= 0 ? hist[idx].kospi ?? null : null);
-  const entry = { month, value: csv.totalValue, monthlyDiv: csv.totalMonthlyDiv, mdd, dpsBySymbol, byAccount, byCategory, kospi, returnBreakdown: computeReturnBreakdown(csv) };
+  const kospiAsOf = (marketSnap && marketSnap.kospi) ? marketSnap.updated : (idx >= 0 ? hist[idx].kospiAsOf ?? null : null);
+  const entry = { month, value: csv.totalValue, monthlyDiv: csv.totalMonthlyDiv, mdd, dpsBySymbol, byAccount, byCategory, kospi, kospiAsOf, returnBreakdown: computeReturnBreakdown(csv) };
   if (idx >= 0) hist[idx] = entry; else hist.push(entry);
   hist.sort((a, b) => a.month.localeCompare(b.month));
   localStorage.setItem(MY_ASSETS_HISTORY_KEY, JSON.stringify(hist));
@@ -1147,7 +1152,7 @@ function buildDailyAssetHTML(dailyHistory) {
       <td>${h.date}</td><td>${fmtW(h.value)}</td>
       <td style="color:${diff == null ? "var(--text-muted)" : diff >= 0 ? "var(--good)" : "var(--critical)"}">${diff == null ? "—" : (diff >= 0 ? "+" : "") + fmtW(diff)}</td>
       <td>${h.monthlyDiv > 0 ? fmtW(h.monthlyDiv) : "—"}</td>
-      <td>${h.kospi > 0 ? h.kospi.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—"}</td>
+      <td${h.kospiAsOf ? ` title="${h.kospiAsOf} 수집분(30분 주기) — 같은 값이 이어지면 그사이 수집이 갱신 안 된 것"` : ""}>${h.kospi > 0 ? h.kospi.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—"}</td>
       <td><button type="button" class="my-daily-del" data-date="${h.date}" title="이 날 기록 삭제"
         style="border:none; background:none; color:var(--critical); cursor:pointer; font-size:15px; padding:2px 6px;">🗑</button></td>
     </tr>`;
@@ -1259,7 +1264,7 @@ function buildMonthlyAssetHTML(monthlyHistory) {
       <td>${h.month}</td><td>${fmtW(h.value)}</td>
       <td style="color:${diff == null ? "var(--text-muted)" : diff >= 0 ? "var(--good)" : "var(--critical)"}">${diff == null ? "—" : `${diff >= 0 ? "+" : ""}${fmtW(diff)} (${pct.toFixed(2)}%)`}</td>
       <td>${h.monthlyDiv > 0 ? fmtW(h.monthlyDiv) : "—"}</td>
-      <td>${h.kospi > 0 ? h.kospi.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—"}</td>
+      <td${h.kospiAsOf ? ` title="${h.kospiAsOf} 수집분(30분 주기) — 같은 값이 이어지면 그사이 수집이 갱신 안 된 것"` : ""}>${h.kospi > 0 ? h.kospi.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—"}</td>
     </tr>`;
   }).join("");
   return `<div style="overflow-x:auto;">
@@ -4124,9 +4129,13 @@ async function renderMyAssets() {
     const hist = JSON.parse(localStorage.getItem(MY_ASSETS_DAILY_HISTORY_KEY) || "[]");
     const idx = hist.findIndex((h) => h.date === date);
     // A57: 입력 당시 코스피도 함께 남긴다(못 가져왔으면 그날 이미 있던 값을 유지).
+    // A61(2026-08-20 사용자 보고 "코스피 고정오류"): 수집 시각(kospiAsOf)도 함께 저장 —
+    // 서로 다른 날짜의 스냅샷이 같은 코스피 값을 보일 때, 30분 주기 수집이 그사이 갱신되지
+    // 않아서인지 실제로 같은 값인지 화면에서 바로 구분할 수 있게 한다.
     const marketSnap = marketIndexSnapshot(state.liveGlobal ? state.liveGlobal.data : null);
     const kospi = (marketSnap && marketSnap.kospi) ? marketSnap.kospi.price : (idx >= 0 ? hist[idx].kospi ?? null : null);
-    const entry = { date, value: totalValue, monthlyDiv: totalMonthlyDiv, kospi, returnBreakdown: computeReturnBreakdown(state.myAssetsCsvData) };
+    const kospiAsOf = (marketSnap && marketSnap.kospi) ? marketSnap.updated : (idx >= 0 ? hist[idx].kospiAsOf ?? null : null);
+    const entry = { date, value: totalValue, monthlyDiv: totalMonthlyDiv, kospi, kospiAsOf, returnBreakdown: computeReturnBreakdown(state.myAssetsCsvData) };
     if (idx >= 0) hist[idx] = entry; else hist.push(entry);
     hist.sort((a, b) => a.date.localeCompare(b.date));
     localStorage.setItem(MY_ASSETS_DAILY_HISTORY_KEY, JSON.stringify(hist));
