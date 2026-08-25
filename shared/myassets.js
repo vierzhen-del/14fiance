@@ -4093,7 +4093,7 @@ async function renderMyAssets() {
       seriesLabel: "평가액",
     });
   }
-  document.getElementById("mySnapshotBtn").addEventListener("click", () => {
+  document.getElementById("mySnapshotBtn").addEventListener("click", async () => {
     const month = todayStr().slice(0, 7);
     // A25a: 수동 버튼도 자동 경로와 같은 헬퍼를 써서 저장 형식(비중 포함)을 하나로 통일한다.
     upsertMonthlySnapshot();
@@ -4102,6 +4102,24 @@ async function renderMyAssets() {
     saveMyAssets();
     flashStatus("mySnapshotStatus", `${month} 스냅샷 저장 ✓ (이 브라우저에만 보관)`);
     renderMyAssets();
+
+    // A62(2026-08-25 사용자 요청): 텔레그램 봇이 설정돼 있으면 스냅샷 내용도 함께 보낸다 —
+    // "리포트 생성"이 이미 쓰는 sendTelegramMessage를 재사용(별도 연동 없음), A32f 자동 리포트와
+    // 같은 "설정돼 있을 때만" 규칙(telegramBotToken()&&telegramChatId()).
+    if (telegramBotToken() && telegramChatId()) {
+      const hist = JSON.parse(localStorage.getItem(MY_ASSETS_HISTORY_KEY) || "[]");
+      const idx = hist.findIndex((h) => h.month === month);
+      const entry = hist[idx];
+      if (entry) {
+        const prev = hist[idx - 1];
+        const diff = prev ? entry.value - prev.value : null;
+        const lines = [`📸 이번 달 자산 스냅샷 (${month})`, `평가액 ${fmtPrice(entry.value, "KRW")}`];
+        if (diff != null) lines.push(`전월 대비 ${diff >= 0 ? "+" : ""}${fmtPrice(diff, "KRW")}`);
+        if (entry.monthlyDiv > 0) lines.push(`월배당 ${fmtPrice(entry.monthlyDiv, "KRW")}`);
+        const res = await sendTelegramMessage(lines.join("\n"));
+        flashStatus("mySnapshotStatus", res.ok ? `${month} 스냅샷 저장 ✓ · 텔레그램 전송됨` : `${month} 스냅샷 저장 ✓ · 텔레그램 전송 실패(${res.error})`);
+      }
+    }
   });
   // A8: 스냅샷·변동이력을 노션 "자산 스냅샷 이력" 페이지에 기록할 붙여넣기용 텍스트 —
   // 앱이 노션 API를 직접 호출하지 않는 원칙 유지(AI 세션에 붙여넣어 처리). 재설치 후
@@ -4124,7 +4142,7 @@ async function renderMyAssets() {
       window.prompt("아래 내용을 복사하세요:", lines.join("\n"));
     }
   });
-  document.getElementById("myDailySnapshotBtn").addEventListener("click", () => {
+  document.getElementById("myDailySnapshotBtn").addEventListener("click", async () => {
     const date = todayStr();
     const hist = JSON.parse(localStorage.getItem(MY_ASSETS_DAILY_HISTORY_KEY) || "[]");
     const idx = hist.findIndex((h) => h.date === date);
@@ -4144,6 +4162,19 @@ async function renderMyAssets() {
     saveMyAssets();
     flashStatus("myDailySnapshotStatus", `${date} 일별 스냅샷 저장 ✓ (이 브라우저에만 보관)`);
     renderMyAssets();
+
+    // A62(2026-08-25 사용자 요청): 텔레그램 봇이 설정돼 있으면 스냅샷 내용도 함께 보낸다.
+    if (telegramBotToken() && telegramChatId()) {
+      const sortedIdx = hist.findIndex((h) => h.date === date);
+      const prev = hist[sortedIdx - 1];
+      const diff = prev ? entry.value - prev.value : null;
+      const lines = [`📅 오늘 자산 스냅샷 (${date})`, `평가액 ${fmtPrice(entry.value, "KRW")}`];
+      if (diff != null) lines.push(`전일 대비 ${diff >= 0 ? "+" : ""}${fmtPrice(diff, "KRW")}`);
+      if (entry.monthlyDiv > 0) lines.push(`월배당 ${fmtPrice(entry.monthlyDiv, "KRW")}`);
+      if (entry.kospi > 0) lines.push(`코스피 ${entry.kospi.toLocaleString(undefined, { maximumFractionDigits: 2 })}`);
+      const res = await sendTelegramMessage(lines.join("\n"));
+      flashStatus("myDailySnapshotStatus", res.ok ? `${date} 일별 스냅샷 저장 ✓ · 텔레그램 전송됨` : `${date} 일별 스냅샷 저장 ✓ · 텔레그램 전송 실패(${res.error})`);
+    }
   });
   const changeSel = document.getElementById("myAssetChangeGranularity");
   const renderAssetChange = () => {
