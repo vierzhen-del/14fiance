@@ -1,5 +1,5 @@
 {
- "updated": "2026-08-25 13:08 UTC",
+ "updated": "2026-08-25 23:18 UTC",
  "us": [
   {
    "symbol": "SPY",
@@ -9,8 +9,8 @@
    "style": "성장",
    "assetType": "etf",
    "currency": "USD",
-   "first": "2006-10-06",
-   "last": "2026-08-24",
+   "first": "2006-10-09",
+   "last": "2026-08-25",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -24,8 +24,8 @@
    "assetType": "etf",
    "currency": "USD",
    "first": "2010-09-09",
-   "last": "2026-08-24",
-   "count": 4013,
+   "last": "2026-08-25",
+   "count": 4014,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   },
@@ -37,8 +37,8 @@
    "style": "성장",
    "assetType": "etf",
    "currency": "USD",
-   "first": "2006-10-06",
-   "last": "2026-08-24",
+   "first": "2006-10-09",
+   "last": "2026-08-25",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -51,11 +51,11 @@
    "style": "성장",
    "assetType": "etf",
    "currency": "USD",
-   "first": "2006-10-06",
-   "last": "2026-08-24",
+   "first": "2006-10-09",
+   "last": "2026-08-25",
    "count": 5000,
    "ttmDividend": 3.03434,
-   "dividendYield": 0.004296
+   "dividendYield": 0.004269
   },
   {
    "symbol": "DIA",
@@ -65,8 +65,8 @@
    "style": "성장",
    "assetType": "etf",
    "currency": "USD",
-   "first": "2006-10-06",
-   "last": "2026-08-24",
+   "first": "2006-10-09",
+   "last": "2026-08-25",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -79,8 +79,8 @@
    "style": "성장",
    "assetType": "etf",
    "currency": "USD",
-   "first": "2006-10-06",
-   "last": "2026-08-24",
+   "first": "2006-10-09",
+   "last": "2026-08-25",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -94,8 +94,8 @@
    "assetType": "etf",
    "currency": "USD",
    "first": "2011-10-20",
-   "last": "2026-08-24",
-   "count": 3731,
+   "last": "2026-08-25",
+   "count": 3732,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   },
@@ -107,8 +107,8 @@
    "style": "배당",
    "assetType": "etf",
    "currency": "USD",
-   "first": "2006-10-06",
-   "last": "2026-08-24",
+   "first": "2006-10-09",
+   "last": "2026-08-25",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -122,8 +122,8 @@
    "assetType": "etf",
    "currency": "USD",
    "first": "2013-05-22",
-   "last": "2026-08-24",
-   "count": 3334,
+   "last": "2026-08-25",
+   "count": 3335,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   },
@@ -136,8 +136,8 @@
    "assetType": "etf",
    "currency": "USD",
    "first": "2014-06-12",
-   "last": "2026-08-24",
-   "count": 3068,
+   "last": "2026-08-25",
+   "count": 3069,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   },
@@ -150,8 +150,8 @@
    "assetType": "etf",
    "currency": "USD",
    "first": "2016-12-15",
-   "last": "2026-08-24",
-   "count": 2434,
+   "last": "2026-08-25",
+   "count": 2435,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   },
@@ -164,8 +164,8 @@
    "assetType": "etf",
    "currency": "USD",
    "first": "2010-01-04",
-   "last": "2026-08-24",
-   "count": 4185,
+   "last": "2026-08-25",
+   "count": 4186,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   },
@@ -178,8 +178,8 @@
    "assetType": "etf",
    "currency": "USD",
    "first": "2015-10-12",
-   "last": "2026-08-24",
-   "count": 2732,
+   "last": "2026-08-25",
+   "count": 2733,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   },
@@ -192,8 +192,8 @@
    "assetType": "etf",
    "currency": "USD",
    "first": "2012-04-25",
-   "last": "2026-08-24",
-   "count": 3603,
+   "last": "2026-08-25",
+   "count": 3604,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   },
@@ -206,8 +206,8 @@
    "assetType": "etf",
    "currency": "USD",
    "first": "2010-09-22",
-   "last": "2026-08-24",
-   "count": 4005,
+   "last": "2026-08-25",
+   "count": 4006,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   },
@@ -219,8 +219,8 @@
    "style": "성장",
    "assetType": "etf",
    "currency": "USD",
-   "first": "2006-10-06",
-   "last": "2026-08-24",
+   "first": "2006-10-09",
+   "last": "2026-08-25",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -233,8 +233,8 @@
    "style": "성장",
    "assetType": "etf",
    "currency": "USD",
-   "first": "2006-10-06",
-   "last": "2026-08-24",
+   "first": "2006-10-09",
+   "last": "2026-08-25",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -247,8 +247,8 @@
    "style": "성장",
    "assetType": "etf",
    "currency": "USD",
-   "first": "2006-10-06",
-   "last": "2026-08-24",
+   "first": "2006-10-09",
+   "last": "2026-08-25",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -262,8 +262,8 @@
    "assetType": "etf",
    "currency": "USD",
    "first": "2010-03-11",
-   "last": "2026-08-24",
-   "count": 4139,
+   "last": "2026-08-25",
+   "count": 4140,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   },
@@ -275,8 +275,8 @@
    "style": "성장",
    "assetType": "etf",
    "currency": "USD",
-   "first": "2006-10-06",
-   "last": "2026-08-24",
+   "first": "2006-10-09",
+   "last": "2026-08-25",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -289,8 +289,8 @@
    "style": "안전",
    "assetType": "etf",
    "currency": "USD",
-   "first": "2006-10-06",
-   "last": "2026-08-24",
+   "first": "2006-10-09",
+   "last": "2026-08-25",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -303,8 +303,8 @@
    "style": "안전",
    "assetType": "etf",
    "currency": "USD",
-   "first": "2006-10-06",
-   "last": "2026-08-24",
+   "first": "2006-10-09",
+   "last": "2026-08-25",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -317,8 +317,8 @@
    "style": "안전",
    "assetType": "etf",
    "currency": "USD",
-   "first": "2006-10-06",
-   "last": "2026-08-24",
+   "first": "2006-10-09",
+   "last": "2026-08-25",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -331,8 +331,8 @@
    "style": "개별주",
    "assetType": "stock",
    "currency": "USD",
-   "first": "2006-10-06",
-   "last": "2026-08-24",
+   "first": "2006-10-09",
+   "last": "2026-08-25",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -346,8 +346,8 @@
    "assetType": "etf",
    "currency": "USD",
    "first": "2026-04-02",
-   "last": "2026-08-24",
-   "count": 99,
+   "last": "2026-08-25",
+   "count": 100,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   },
@@ -360,8 +360,8 @@
    "assetType": "etf",
    "currency": "USD",
    "first": "2021-07-09",
-   "last": "2026-08-24",
-   "count": 483,
+   "last": "2026-08-25",
+   "count": 484,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   },
@@ -374,8 +374,8 @@
    "assetType": "etf",
    "currency": "USD",
    "first": "2017-01-25",
-   "last": "2026-08-24",
-   "count": 2408,
+   "last": "2026-08-25",
+   "count": 2409,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   },
@@ -388,8 +388,8 @@
    "assetType": "etf",
    "currency": "USD",
    "first": "2025-04-03",
-   "last": "2026-08-24",
-   "count": 349,
+   "last": "2026-08-25",
+   "count": 350,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   },
@@ -401,11 +401,11 @@
    "style": "개별주",
    "assetType": "stock",
    "currency": "USD",
-   "first": "2006-10-06",
-   "last": "2026-08-24",
+   "first": "2006-10-09",
+   "last": "2026-08-25",
    "count": 5000,
    "ttmDividend": 1.06,
-   "dividendYield": 0.003415
+   "dividendYield": 0.00342
   },
   {
    "symbol": "MSFT",
@@ -415,8 +415,8 @@
    "style": "개별주",
    "assetType": "stock",
    "currency": "USD",
-   "first": "2006-10-06",
-   "last": "2026-08-24",
+   "first": "2006-10-09",
+   "last": "2026-08-25",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -430,8 +430,8 @@
    "assetType": "stock",
    "currency": "USD",
    "first": "2010-06-29",
-   "last": "2026-08-24",
-   "count": 4063,
+   "last": "2026-08-25",
+   "count": 4064,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   },
@@ -443,8 +443,8 @@
    "style": "개별주",
    "assetType": "stock",
    "currency": "USD",
-   "first": "2006-10-06",
-   "last": "2026-08-24",
+   "first": "2006-10-09",
+   "last": "2026-08-25",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -457,8 +457,8 @@
    "style": "개별주",
    "assetType": "stock",
    "currency": "USD",
-   "first": "2006-10-06",
-   "last": "2026-08-24",
+   "first": "2006-10-09",
+   "last": "2026-08-25",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -471,8 +471,8 @@
    "style": "개별주",
    "assetType": "stock",
    "currency": "USD",
-   "first": "2006-10-06",
-   "last": "2026-08-24",
+   "first": "2006-10-09",
+   "last": "2026-08-25",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -486,8 +486,8 @@
    "assetType": "stock",
    "currency": "USD",
    "first": "2021-07-29",
-   "last": "2026-08-24",
-   "count": 1273,
+   "last": "2026-08-25",
+   "count": 1274,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   },
@@ -499,8 +499,8 @@
    "style": "개별주",
    "assetType": "stock",
    "currency": "USD",
-   "first": "2006-09-25",
-   "last": "2026-08-24",
+   "first": "2006-09-26",
+   "last": "2026-08-25",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -514,8 +514,8 @@
    "assetType": "etf",
    "currency": "USD",
    "first": "2022-05-04",
-   "last": "2026-08-24",
-   "count": 1080,
+   "last": "2026-08-25",
+   "count": 1081,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   },
@@ -528,8 +528,8 @@
    "assetType": "etf",
    "currency": "USD",
    "first": "2023-10-27",
-   "last": "2026-08-24",
-   "count": 708,
+   "last": "2026-08-25",
+   "count": 709,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   },
@@ -541,8 +541,8 @@
    "style": "배당",
    "assetType": "stock",
    "currency": "USD",
-   "first": "2006-10-06",
-   "last": "2026-08-24",
+   "first": "2006-10-09",
+   "last": "2026-08-25",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -555,8 +555,8 @@
    "style": "배당",
    "assetType": "stock",
    "currency": "USD",
-   "first": "2006-10-06",
-   "last": "2026-08-24",
+   "first": "2006-10-09",
+   "last": "2026-08-25",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -570,8 +570,8 @@
    "assetType": "stock",
    "currency": "USD",
    "first": "2025-02-13",
-   "last": "2026-08-24",
-   "count": 383,
+   "last": "2026-08-25",
+   "count": 384,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   },
@@ -584,8 +584,8 @@
    "assetType": "stock",
    "currency": "USD",
    "first": "2026-07-10",
-   "last": "2026-08-24",
-   "count": 32,
+   "last": "2026-08-25",
+   "count": 33,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   },
@@ -597,8 +597,8 @@
    "style": "개별주",
    "assetType": "stock",
    "currency": "USD",
-   "first": "2006-10-06",
-   "last": "2026-08-24",
+   "first": "2006-10-09",
+   "last": "2026-08-25",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -611,8 +611,8 @@
    "style": "개별주",
    "assetType": "stock",
    "currency": "USD",
-   "first": "2006-10-06",
-   "last": "2026-08-24",
+   "first": "2006-10-09",
+   "last": "2026-08-25",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -625,8 +625,8 @@
    "style": "개별주",
    "assetType": "stock",
    "currency": "USD",
-   "first": "2006-10-06",
-   "last": "2026-08-24",
+   "first": "2006-10-09",
+   "last": "2026-08-25",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -640,8 +640,8 @@
    "assetType": "stock",
    "currency": "USD",
    "first": "2007-03-29",
-   "last": "2026-08-24",
-   "count": 4882,
+   "last": "2026-08-25",
+   "count": 4883,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   },
@@ -654,8 +654,8 @@
    "assetType": "etf",
    "currency": "USD",
    "first": "2026-07-01",
-   "last": "2026-08-24",
-   "count": 38,
+   "last": "2026-08-25",
+   "count": 39,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
   },
@@ -667,8 +667,8 @@
    "style": "개별주",
    "assetType": "stock",
    "currency": "USD",
-   "first": "2006-10-06",
-   "last": "2026-08-24",
+   "first": "2006-10-09",
+   "last": "2026-08-25",
    "count": 5000,
    "ttmDividend": 0.0,
    "dividendYield": 0.0
@@ -687,7 +687,7 @@
    "last": "2026-08-25",
    "count": 5890,
    "ttmDividend": 849.0,
-   "dividendYield": 0.008,
+   "dividendYield": 0.0079,
    "dividendCountThisYear": 3,
    "dividendMonthThisYear": 7
   },
@@ -751,7 +751,7 @@
    "last": "2026-08-25",
    "count": 3900,
    "ttmDividend": 937.0,
-   "dividendYield": 0.0053,
+   "dividendYield": 0.0052,
    "dividendCountThisYear": 3,
    "dividendMonthThisYear": 7
   },
@@ -767,7 +767,7 @@
    "last": "2026-08-25",
    "count": 1317,
    "ttmDividend": 479.0,
-   "dividendYield": 0.0201,
+   "dividendYield": 0.02,
    "dividendCountThisYear": 3,
    "dividendMonthThisYear": 7
   },
@@ -783,7 +783,7 @@
    "last": "2026-08-25",
    "count": 1317,
    "ttmDividend": 282.0,
-   "dividendYield": 0.0106,
+   "dividendYield": 0.0105,
    "dividendCountThisYear": 3,
    "dividendMonthThisYear": 7
   },
@@ -799,7 +799,7 @@
    "last": "2026-08-25",
    "count": 775,
    "ttmDividend": 438.0,
-   "dividendYield": 0.0285,
+   "dividendYield": 0.0284,
    "dividendCountThisYear": 7,
    "dividendMonthThisYear": 7
   },
@@ -815,7 +815,7 @@
    "last": "2026-08-25",
    "count": 1317,
    "ttmDividend": 169.0,
-   "dividendYield": 0.0041,
+   "dividendYield": 0.004,
    "dividendCountThisYear": 3,
    "dividendMonthThisYear": 7
   },
@@ -831,7 +831,7 @@
    "last": "2026-08-25",
    "count": 1261,
    "ttmDividend": 226.0,
-   "dividendYield": 0.0044,
+   "dividendYield": 0.0043,
    "dividendCountThisYear": 3,
    "dividendMonthThisYear": 7
   },
@@ -847,7 +847,7 @@
    "last": "2026-08-25",
    "count": 656,
    "ttmDividend": 4202.0,
-   "dividendYield": 0.2071,
+   "dividendYield": 0.2055,
    "dividendCountThisYear": 7,
    "dividendMonthThisYear": 7
   },
@@ -863,7 +863,7 @@
    "last": "2026-08-25",
    "count": 110,
    "ttmDividend": 840.0,
-   "dividendYield": 0.0716,
+   "dividendYield": 0.0713,
    "dividendCountThisYear": 4,
    "dividendMonthThisYear": 7
   },
@@ -879,7 +879,7 @@
    "last": "2026-08-25",
    "count": 419,
    "ttmDividend": 2987.0,
-   "dividendYield": 0.1486,
+   "dividendYield": 0.1477,
    "dividendCountThisYear": 8,
    "dividendMonthThisYear": 8
   },
@@ -895,7 +895,7 @@
    "last": "2026-08-25",
    "count": 29,
    "ttmDividend": 153.0,
-   "dividendYield": 0.0182,
+   "dividendYield": 0.0181,
    "dividendCountThisYear": 1,
    "dividendMonthThisYear": 7
   },
@@ -911,7 +911,7 @@
    "last": "2026-08-25",
    "count": 85,
    "ttmDividend": 741.0,
-   "dividendYield": 0.068,
+   "dividendYield": 0.0674,
    "dividendCountThisYear": 4,
    "dividendMonthThisYear": 8
   },
@@ -927,7 +927,7 @@
    "last": "2026-08-25",
    "count": 568,
    "ttmDividend": 3174.0,
-   "dividendYield": 0.2228,
+   "dividendYield": 0.2211,
    "dividendCountThisYear": 8,
    "dividendMonthThisYear": 8
   },
@@ -943,7 +943,7 @@
    "last": "2026-08-25",
    "count": 955,
    "ttmDividend": 1180.0,
-   "dividendYield": 0.0929,
+   "dividendYield": 0.0923,
    "dividendCountThisYear": 8,
    "dividendMonthThisYear": 8
   },
@@ -959,7 +959,7 @@
    "last": "2026-08-25",
    "count": 461,
    "ttmDividend": 2822.0,
-   "dividendYield": 0.2029,
+   "dividendYield": 0.2005,
    "dividendCountThisYear": 7,
    "dividendMonthThisYear": 7
   },
@@ -975,7 +975,7 @@
    "last": "2026-08-25",
    "count": 39,
    "ttmDividend": 175.0,
-   "dividendYield": 0.0196,
+   "dividendYield": 0.0193,
    "dividendCountThisYear": 1,
    "dividendMonthThisYear": 7
   },
@@ -991,7 +991,7 @@
    "last": "2026-08-25",
    "count": 1186,
    "ttmDividend": 450.0,
-   "dividendYield": 0.0289,
+   "dividendYield": 0.0287,
    "dividendCountThisYear": 8,
    "dividendMonthThisYear": 8
   },
@@ -1007,7 +1007,7 @@
    "last": "2026-08-25",
    "count": 2141,
    "ttmDividend": 358.0,
-   "dividendYield": 0.0173,
+   "dividendYield": 0.0172,
    "dividendCountThisYear": 8,
    "dividendMonthThisYear": 8
   },
@@ -1023,7 +1023,7 @@
    "last": "2026-08-25",
    "count": 85,
    "ttmDividend": 610.0,
-   "dividendYield": 0.0523,
+   "dividendYield": 0.0522,
    "dividendCountThisYear": 4,
    "dividendMonthThisYear": 8
   },
@@ -1039,7 +1039,7 @@
    "last": "2026-08-25",
    "count": 1742,
    "ttmDividend": 396.0,
-   "dividendYield": 0.0962,
+   "dividendYield": 0.0961,
    "dividendCountThisYear": 7,
    "dividendMonthThisYear": 7
   },
@@ -1224,7 +1224,7 @@
    "last": "2026-08-25",
    "count": 347,
    "ttmDividend": 140.0,
-   "dividendYield": 0.0117,
+   "dividendYield": 0.0116,
    "dividendCountThisYear": 0
   },
   {
@@ -1255,7 +1255,7 @@
    "last": "2026-08-25",
    "count": 332,
    "ttmDividend": 51.0,
-   "dividendYield": 0.0034,
+   "dividendYield": 0.0035,
    "dividendCountThisYear": 3,
    "dividendMonthThisYear": 7
   },
@@ -1316,7 +1316,7 @@
    "last": "2026-08-25",
    "count": 163,
    "ttmDividend": 695.0,
-   "dividendYield": 0.0732,
+   "dividendYield": 0.0726,
    "dividendCountThisYear": 7,
    "dividendMonthThisYear": 7
   },
@@ -1467,7 +1467,7 @@
    "last": "2026-08-25",
    "count": 62,
    "ttmDividend": 22.0,
-   "dividendYield": 0.0027,
+   "dividendYield": 0.0026,
    "dividendCountThisYear": 2,
    "dividendMonthThisYear": 8
   },
@@ -1483,7 +1483,7 @@
    "last": "2026-08-25",
    "count": 870,
    "ttmDividend": 425.0,
-   "dividendYield": 0.0125,
+   "dividendYield": 0.0124,
    "dividendCountThisYear": 3,
    "dividendMonthThisYear": 7
   },
@@ -1514,7 +1514,7 @@
    "last": "2026-08-25",
    "count": 975,
    "ttmDividend": 334.0,
-   "dividendYield": 0.0238,
+   "dividendYield": 0.0237,
    "dividendCountThisYear": 0
   },
   {
@@ -1544,7 +1544,7 @@
    "last": "2026-08-25",
    "count": 527,
    "ttmDividend": 1631.0,
-   "dividendYield": 0.1555,
+   "dividendYield": 0.1545,
    "dividendCountThisYear": 7,
    "dividendMonthThisYear": 7
   },
@@ -1560,7 +1560,7 @@
    "last": "2026-08-25",
    "count": 58,
    "ttmDividend": 343.0,
-   "dividendYield": 0.0374,
+   "dividendYield": 0.037,
    "dividendCountThisYear": 2,
    "dividendMonthThisYear": 7
   },
@@ -1576,7 +1576,7 @@
    "last": "2026-08-25",
    "count": 322,
    "ttmDividend": 350.0,
-   "dividendYield": 0.0366,
+   "dividendYield": 0.0365,
    "dividendCountThisYear": 7,
    "dividendMonthThisYear": 7
   },
@@ -1592,7 +1592,7 @@
    "last": "2026-08-25",
    "count": 315,
    "ttmDividend": 829.0,
-   "dividendYield": 0.0734,
+   "dividendYield": 0.0736,
    "dividendCountThisYear": 7,
    "dividendMonthThisYear": 7
   },
@@ -1640,7 +1640,7 @@
    "last": "2026-08-25",
    "count": 409,
    "ttmDividend": 1892.0,
-   "dividendYield": 0.1646,
+   "dividendYield": 0.1622,
    "dividendCountThisYear": 7,
    "dividendMonthThisYear": 7
   },
@@ -1656,7 +1656,7 @@
    "last": "2026-08-25",
    "count": 563,
    "ttmDividend": 977.0,
-   "dividendYield": 0.1318,
+   "dividendYield": 0.1311,
    "dividendCountThisYear": 8,
    "dividendMonthThisYear": 8
   },
@@ -1672,7 +1672,7 @@
    "last": "2026-08-25",
    "count": 409,
    "ttmDividend": 1210.0,
-   "dividendYield": 0.1337,
+   "dividendYield": 0.1333,
    "dividendCountThisYear": 7,
    "dividendMonthThisYear": 7
   },
@@ -1704,7 +1704,7 @@
    "last": "2026-08-25",
    "count": 1147,
    "ttmDividend": 9.0,
-   "dividendYield": 0.0048,
+   "dividendYield": 0.005,
    "dividendCountThisYear": 0
   },
   {
@@ -1719,7 +1719,7 @@
    "last": "2026-08-25",
    "count": 1868,
    "ttmDividend": 310.0,
-   "dividendYield": 0.0153,
+   "dividendYield": 0.0154,
    "dividendCountThisYear": 2,
    "dividendMonthThisYear": 7
   },
@@ -1751,7 +1751,7 @@
    "last": "2026-08-25",
    "count": 3506,
    "ttmDividend": 62.0,
-   "dividendYield": 0.0072,
+   "dividendYield": 0.0073,
    "dividendCountThisYear": 1,
    "dividendMonthThisYear": 4
   },
@@ -1783,7 +1783,7 @@
    "last": "2026-08-25",
    "count": 4140,
    "ttmDividend": 34.0,
-   "dividendYield": 0.0055,
+   "dividendYield": 0.0051,
    "dividendCountThisYear": 2,
    "dividendMonthThisYear": 7
   },
@@ -1799,7 +1799,7 @@
    "last": "2026-08-25",
    "count": 1045,
    "ttmDividend": 105.0,
-   "dividendYield": 0.0198,
+   "dividendYield": 0.0199,
    "dividendCountThisYear": 1,
    "dividendMonthThisYear": 4
   },
@@ -1815,7 +1815,7 @@
    "last": "2026-08-25",
    "count": 1442,
    "ttmDividend": 25.0,
-   "dividendYield": 0.0067,
+   "dividendYield": 0.0068,
    "dividendCountThisYear": 1,
    "dividendMonthThisYear": 4
   },
@@ -1847,7 +1847,7 @@
    "last": "2026-08-25",
    "count": 615,
    "ttmDividend": 40.0,
-   "dividendYield": 0.002,
+   "dividendYield": 0.0019,
    "dividendCountThisYear": 1,
    "dividendMonthThisYear": 4
   },
@@ -1909,7 +1909,7 @@
    "last": "2026-08-25",
    "count": 671,
    "ttmDividend": 29.0,
-   "dividendYield": 0.0013,
+   "dividendYield": 0.0012,
    "dividendCountThisYear": 2,
    "dividendMonthThisYear": 7
   },
@@ -2089,7 +2089,7 @@
    "last": "2026-08-25",
    "count": 1232,
    "ttmDividend": 75.0,
-   "dividendYield": 0.0022,
+   "dividendYield": 0.0021,
    "dividendCountThisYear": 1,
    "dividendMonthThisYear": 4
   },
@@ -2166,7 +2166,7 @@
    "last": "2026-08-25",
    "count": 223,
    "ttmDividend": 326.0,
-   "dividendYield": 0.0285,
+   "dividendYield": 0.0284,
    "dividendCountThisYear": 7,
    "dividendMonthThisYear": 7
   },
@@ -2275,7 +2275,7 @@
    "last": "2026-08-25",
    "count": 1102,
    "ttmDividend": 380.0,
-   "dividendYield": 0.0097,
+   "dividendYield": 0.0096,
    "dividendCountThisYear": 0
   },
   {
