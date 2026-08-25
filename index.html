@@ -4701,6 +4701,51 @@ const OBSIDIAN_PATH_KEY = "my_assets_obsidian_path_v1";
 const AGENT_WEBHOOK_KEY = "my_assets_agent_webhook_v1";
 function agentWebhookUrl() { return (localStorage.getItem(AGENT_WEBHOOK_KEY) || "").trim(); }
 
+/* ---------- A63: 계좌별 요약(에이전트 답변용) ----------
+   2026-08-25 사용자 보고: 텔레그램 봇에 "계좌"라고 물으면 현재 잔고가 아니라 '계좌'라는
+   단어가 든 옛 작업 이력(2026-08-12 매입단가 반영 등)이 돌아온다.
+
+   원인은 봇이 받는 데이터에 **평가액이 없다**는 것 — 종전 웹훅은 state.rows(계좌·종목·
+   수량)만 보내서, n8n이 "계좌별 얼마"에 답하려면 시세를 다시 붙여 직접 계산해야 했다.
+   그 계산이 없으니 문서 키워드 검색으로 폴백한 것.
+
+   그래서 앱이 이미 화면에 띄우고 있는 계산 결과를 그대로 실어 보낸다. 숫자는 리포트
+   「계좌별」 섹션과 **같은 소스**(csv.accountMap · aggregateChange)를 써서, 봇 답변과
+   리포트가 서로 어긋나지 않게 한다.
+
+   계좌명은 마스킹한다 — n8n이 이 값을 노션(클라우드)으로 옮길 수 있으므로 2계층
+   데이터 정책상 "밖으로 나가는 것"으로 취급한다. */
+function buildAccountSummary(csv) {
+  if (!csv || !csv.perRow || !csv.perRow.length) return null;
+  const total = csv.totalValue;
+  const rowsByAccount = new Map();
+  for (const p of csv.perRow) {
+    const k = p.account || "계좌 미지정";
+    if (!rowsByAccount.has(k)) rowsByAccount.set(k, []);
+    rowsByAccount.get(k).push(p);
+  }
+  const accounts = [...csv.accountMap.entries()]
+    .filter(([, g]) => g.value > 0)
+    .map(([acc, g]) => {
+      const chg = aggregateChange(rowsByAccount.get(acc) || []);
+      return {
+        account: maskAccountLabel(acc),
+        value: Math.round(g.value),
+        pct: total > 0 ? Number(((g.value / total) * 100).toFixed(1)) : 0,
+        monthlyDiv: Math.round(g.monthlyDiv || 0),
+        // 가격 이력이 부족하면 null — 0으로 지어내지 않는다(봇이 "0% 변동"으로 오답하지 않게)
+        changePct: chg.pct != null ? Number((chg.pct * 100).toFixed(2)) : null,
+      };
+    })
+    .sort((a, b) => b.value - a.value);
+  return {
+    asOf: nowDateTimeStr(),
+    totalValue: Math.round(total),
+    totalMonthlyDiv: Math.round(csv.totalMonthlyDiv || 0),
+    accounts,
+  };
+}
+
 /* ---------- A40: n8n 에이전트 웹훅 전송 ----------
    보내는 것은 두 가지다:
    - state: serializeMyAssets() 그대로 = import JSON과 **같은 형식**(Tab S9 세션 합의).
@@ -4726,6 +4771,9 @@ async function sendToAgentWebhook() {
     // 노션 append용 delta. 계좌명 마스킹 적용(노션은 클라우드)
     change: log.length && typeof buildChangeReportText === "function"
       ? buildChangeReportText(log[0], { mask: true }) : null,
+    // A63: 계좌별 평가액·비중·월배당을 미리 계산해 실어 보낸다 — n8n이 "계좌" 질문에
+    // 시세 재계산 없이 그대로 답할 수 있게. 화면 계산 전이면 null(지어내지 않음).
+    accountSummary: buildAccountSummary(state.myAssetsCsvData),
   };
   try {
     const res = await fetch(url, {
