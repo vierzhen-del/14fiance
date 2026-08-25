@@ -259,6 +259,24 @@ function periodReturn(symbol, currency, fromDate, toDate) {
   return { native, krw, from: p0.date, to: p1.date, fromPrice: p0.value, toPrice: p1.value };
 }
 
+/**
+ * 일간 수익률의 표준편차(%). 앱 `dailyReturnSigma`(shared/myassets-utils.js:929)와
+ * **같은 식**이어야 한다 — 앱 「시그널」 탭과 CLI가 다른 값을 내면 안 되기 때문.
+ * 표본표준편차(n-1)를 쓰고, 데이터가 window+1 미만이면 null.
+ */
+function dailyReturnSigma(closes, window) {
+  if (!closes || closes.length < window + 1) return null;
+  const rets = [];
+  for (let i = closes.length - window; i < closes.length; i++) rets.push((closes[i] / closes[i - 1] - 1) * 100);
+  const mean = rets.reduce((a, b) => a + b, 0) / rets.length;
+  return Math.sqrt(rets.reduce((a, b) => a + (b - mean) * (b - mean), 0) / (rets.length - 1));
+}
+
+/** 52주(252거래일) 최고 종가 — 앱 high52와 동일. */
+function high52(closes) {
+  return closes && closes.length ? Math.max(...closes.slice(-252)) : null;
+}
+
 /** 카탈로그 필터 — 시장 명령들이 공유한다. */
 function filterCatalog(opts) {
   let items = loadManifest().items;
@@ -315,6 +333,7 @@ function cmdCheck(backup) {
     ["11. 분기별 BEST ETF", true, `quarters --n 4`, "달력 분기별 상위"],
     ["12. 환율 고려/미고려 수익률", true, `market --fx / --native`, "미국 종목만 두 값이 다름"],
     ["13. 전달대비 분배금 상승 ETF", withDps >= 2, `dps`, withDps >= 2 ? "" : `DPS 기록 스냅샷 ${withDps}건 — 2건 이상 필요`],
+    ["14. n시그마 매수가", true, `sigma --symbol SOXL`, "앱 「시그널」 탭과 동일 공식"],
   ];
   for (const [label, ok, cmd, note] of q) {
     console.log(`  ${ok ? "✅" : "❌"} ${padDisp(label, 28)} ${padDisp(cmd, 26)} ${note}`);
@@ -504,6 +523,64 @@ function cmdMdd(backup) {
     console.log(`  ℹ️ MDD는 음수이고 0에 가까울수록 낙폭이 작습니다 — 값이 커지면(+) 회복된 것입니다.`);
   }
   console.log("");
+}
+
+/**
+ * n시그마 매수가. 앱 「시그널」 탭 renderLev와 **같은 식**이다:
+ *   매수목표가 = 전일종가 × (1 − n×σ/100)
+ *   참고 열    = 52주 전고점 × (1 − n×σ/100)   ← 노션 SOXL 매수테이블 방식
+ *
+ * ⚠️ σ는 일간 변동성이다. "1σ 매수가"는 **하루 안에** 그 폭이 나올 확률이
+ *    약 16%라는 뜻이지, 그 가격까지 반드시 내려온다는 뜻이 아니다.
+ */
+function cmdSigma(opts) {
+  const sym = typeof opts.symbol === "string" ? opts.symbol.toUpperCase() : null;
+  if (!sym) die("--symbol <티커> 가 필요합니다 (예: --symbol SOXL, --symbol 069500.KS)");
+  const series = loadPrices(sym);
+  if (!series) die(`data/${sym}.json 이 없습니다 — scripts/etf_list.json에 등재된 종목인지 확인하세요.`);
+
+  const meta = loadMeta().get(sym);
+  const name = meta ? meta.name : sym;
+  const isUsd = meta ? meta.currency === "USD" : !/\.KS$/.test(sym);
+  const closes = series.closes;
+  const close = closes[closes.length - 1];
+  const hi = high52(closes);
+  const s252 = dailyReturnSigma(closes, 252);
+  const s30 = dailyReturnSigma(closes, 30);
+  if (s252 == null && s30 == null) die(`σ 계산에 필요한 데이터가 부족합니다 (보유 ${closes.length}건).`);
+
+  const fx = isUsd ? fxAt(null) : null;
+  const cur = (v) => (isUsd ? `$${v.toFixed(2)}` : Math.round(v).toLocaleString("ko-KR") + "원");
+  const krw = (v) => (isUsd && fx ? `  ≈ ${Math.round(v * fx.value).toLocaleString("ko-KR")}원` : "");
+
+  head(`📐 ${name} — n시그마 매수가`);
+  console.log(`  전일종가        ${cur(close)}${krw(close)}   [${series.dates[series.dates.length - 1]}]`);
+  if (hi) console.log(`  52주 전고점     ${cur(hi)}   (전고점 대비 ${pct((close / hi - 1) * 100, 1)})`);
+  console.log(`  σ 1년(252일)    ${s252 == null ? "—" : s252.toFixed(2) + "%"}`);
+  console.log(`  σ 30일          ${s30 == null ? "—" : s30.toFixed(2) + "%"}`);
+  if (isUsd && fx) console.log(`  환율            ${fx.value.toFixed(2)}원 (${fx.date})`);
+  console.log(`  데이터          ${series.first} ~ ${series.last} (${series.count}건)`);
+
+  const krwOnly = (v) => (isUsd && fx ? Math.round(v * fx.value).toLocaleString("ko-KR") + "원" : "");
+  for (const [label, s] of [["σ 1년", s252], ["σ 30일", s30]]) {
+    if (s == null) continue;
+    console.log(`\n  ── ${label} 기준 ──`);
+    console.log(`  ${padDisp("구간", 6)}${padL("하락폭", 10)}${padL("전일종가 기준", 16)}${isUsd ? padL("(원화)", 14) : ""}${padL("52주 전고점 기준", 20)}`);
+    console.log(`  ${hr("·", isUsd ? 66 : 52)}`);
+    for (const n of [1, 2, 3]) {
+      const t = close * (1 - (n * s) / 100);
+      const r = hi != null ? hi * (1 - (n * s) / 100) : null;
+      console.log(`  ${padDisp(n + "σ", 6)}${padL("-" + (n * s).toFixed(2) + "%", 10)}${padL(cur(t), 16)}${isUsd ? padL(krwOnly(t), 14) : ""}${padL(r == null ? "—" : cur(r), 20)}`);
+    }
+  }
+
+  console.log(`\n  ⚠️ σ는 **일간** 변동성입니다 — "1σ 매수가"는 하루 안에 그 폭이 나올 확률이`);
+  console.log(`     약 16%라는 뜻이지, 그 가격까지 내려온다는 보장이 아닙니다.`);
+  if (/SOXL|TQQQ|레버리지|3배|2배/.test(name)) {
+    console.log(`  ⚠️ 레버리지 상품입니다 — 일간 리밸런싱 탓에 횡보장에서도 가치가 깎입니다(변동성 끌림).`);
+    console.log(`     σ가 크다는 건 밴드가 넓다는 뜻이지 그만큼 싸졌다는 뜻이 아닙니다.`);
+  }
+  console.log(`     "전일종가"는 주 1회 수집의 마지막 종가라 오늘 시세와 다를 수 있습니다.\n`);
 }
 
 /** 등록 카탈로그 전체에서 기간 수익률 상위/하위 — 보유 여부와 무관(백업 JSON 불필요). */
@@ -773,6 +850,7 @@ asset-cli — 백업 JSON으로 자산 질문에 답하는 CLI
 시장 명령 (--file 불필요 — 저장소 수집 데이터만 사용)
   market    [--period 1m] [--top 10]  등록 카탈로그 전체 수익률 랭킹
   quarters  [--n 4] [--top 3]         분기별 BEST
+  sigma     --symbol <티커>           1/2/3σ 매수가 (앱 「시그널」 탭과 동일 공식)
 
 공통 옵션
   --file <경로>   앱 「📤 내보내기」로 받은 JSON (내 자산 명령에 필요)
@@ -794,6 +872,7 @@ asset-cli — 백업 JSON으로 자산 질문에 답하는 CLI
   node scripts/asset-cli.mjs market   --period 1m --region kr --top 10
   node scripts/asset-cli.mjs market   --period 6m --style 배당 --fx
   node scripts/asset-cli.mjs quarters --n 4
+  node scripts/asset-cli.mjs sigma    --symbol SOXL
   node scripts/asset-cli.mjs dps      --file ~/backup.json
 
 ⚠️ 백업 JSON은 개인 보유 데이터입니다 — 이 저장소에 커밋하지 마세요.
@@ -805,14 +884,15 @@ const { cmd, opts } = parseArgs(process.argv);
 if (!cmd || cmd === "help" || opts.help) { usage(); process.exit(0); }
 
 // market·quarters는 저장소 수집 데이터만 쓰므로 백업 JSON 없이 동작한다
-const MARKET_CMDS = ["market", "quarters"];
+const MARKET_CMDS = ["market", "quarters", "sigma"];
 const HOLDING_CMDS = ["check", "accounts", "dividend", "movers", "weights", "mdd", "project", "dps"];
 const KNOWN = [...HOLDING_CMDS, ...MARKET_CMDS];
 if (!KNOWN.includes(cmd)) { console.error(`\n❌ 알 수 없는 명령: ${cmd}`); usage(); process.exit(1); }
 
 if (MARKET_CMDS.includes(cmd)) {
   if (cmd === "market") cmdMarket(opts);
-  else cmdQuarters(opts);
+  else if (cmd === "quarters") cmdQuarters(opts);
+  else cmdSigma(opts);
 } else {
   const backup = loadBackup(opts.file);
   switch (cmd) {
