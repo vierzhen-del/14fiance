@@ -111,6 +111,17 @@ function loadPrices(symbol) {
   return series;
 }
 
+let MANIFEST = null;
+/** 수집 카탈로그 전체(보유 여부 무관) — 시장 랭킹의 모집단. */
+function loadManifest() {
+  if (MANIFEST) return MANIFEST;
+  const p = path.join(DATA, "manifest.json");
+  if (!fs.existsSync(p)) die("data/manifest.json 이 없습니다.");
+  const m = JSON.parse(fs.readFileSync(p, "utf8"));
+  MANIFEST = { updated: m.updated, items: [...(m.kr || []), ...(m.us || [])] };
+  return MANIFEST;
+}
+
 let FX = null;
 function loadFx() {
   if (FX) return FX;
@@ -210,6 +221,57 @@ function monthlyDiv(r) {
   return { amount: null, basis: "unknown" };
 }
 
+/* ---------------- 수익률 계산 ---------------- */
+
+const MONTHS_BY_PERIOD = { "1m": 1, "3m": 3, "6m": 6, "1y": 12, "2y": 24, "3y": 36 };
+
+function monthsAgoStr(months, base) {
+  const d = base ? new Date(base) : new Date();
+  d.setMonth(d.getMonth() - months);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * 두 시점 사이 수익률을 **통화기준·원화환산 두 갈래로** 돌려준다.
+ *
+ * 미국 종목은 이 둘이 다르다 — 달러로 +10%인데 환율이 5% 내리면 원화로는 +4.5%다.
+ * 어느 쪽이 "맞다"가 아니라 질문이 다른 것이다:
+ *   native(통화기준) = 그 자산 자체가 얼마나 올랐나 (종목 비교용)
+ *   krw(원화환산)    = 내 원화 자산이 얼마나 늘었나 (실제 손익)
+ * 국내 종목은 둘이 같다.
+ */
+function periodReturn(symbol, currency, fromDate, toDate) {
+  const p0 = priceAt(symbol, fromDate);
+  const p1 = priceAt(symbol, toDate);
+  if (!p0 || !p1 || !(p0.value > 0) || !(p1.value > 0)) return null;
+  if (p0.date === p1.date) return null; // 두 시점이 같은 수집분이면 비교 불가
+  const native = ((p1.value - p0.value) / p0.value) * 100;
+  let krw = native;
+  if (currency === "USD") {
+    const f0 = fxAt(fromDate), f1 = fxAt(toDate);
+    if (f0 && f1 && f0.value > 0) {
+      const v0 = p0.value * f0.value, v1 = p1.value * f1.value;
+      krw = ((v1 - v0) / v0) * 100;
+    } else {
+      krw = null; // 환율 이력이 없으면 지어내지 않는다
+    }
+  }
+  return { native, krw, from: p0.date, to: p1.date, fromPrice: p0.value, toPrice: p1.value };
+}
+
+/** 카탈로그 필터 — 시장 명령들이 공유한다. */
+function filterCatalog(opts) {
+  let items = loadManifest().items;
+  if (!opts["include-stocks"]) items = items.filter((it) => it.assetType !== "stock");
+  if (typeof opts.region === "string") {
+    const r = opts.region.toLowerCase();
+    items = items.filter((it) => (r === "kr" ? it.region === "한국" : r === "us" ? it.region === "미국" : it.region === opts.region));
+  }
+  if (typeof opts.style === "string") items = items.filter((it) => it.style === opts.style);
+  if (typeof opts.category === "string") items = items.filter((it) => (it.category || "").includes(opts.category));
+  return items;
+}
+
 /* ---------------- 명령 ---------------- */
 
 function cmdCheck(backup) {
@@ -220,8 +282,8 @@ function cmdCheck(backup) {
   const withCost = rows.filter((r) => r.avgPrice > 0).length;
   const v = valuate(rows, null);
   const dailyRB = daily.filter((d) => d.returnBreakdown).length;
-  const snapRB = snap.filter((s) => s.returnBreakdown).length;
   const snapMdd = snap.filter((s) => s.mdd != null).length;
+  const withDps = snap.filter((s) => s.dpsBySymbol && Object.keys(s.dpsBySymbol).length).length;
 
   head("📦 데이터 가용성");
   const line = (label, val, note) => console.log(`  ${padDisp(label, 26)}${padL(val, 8)}  ${note || ""}`);
@@ -233,7 +295,9 @@ function cmdCheck(backup) {
   line("일별 스냅샷", String(daily.length), daily.length ? `${daily[0].date} ~ ${daily[daily.length - 1].date}` : "없음");
   line("  └ 수익률 필드 포함", String(dailyRB), dailyRB < daily.length ? "구버전 항목엔 없음" : "");
   line("월별 MDD 기록", String(snapMdd), "");
+  line("월별 DPS 기록", String(withDps), withDps < 2 ? "2건 이상이어야 분배금 증감 비교 가능" : "");
   line("변동이력", String((backup.changelog || []).length), "");
+  line("수집 카탈로그", String(loadManifest().items.length), `시장 랭킹 모집단 · ${loadManifest().updated}`);
 
   head("❓ 질문별 답변 가능 여부");
   const monthsSpan = snap.length;
@@ -247,6 +311,10 @@ function cmdCheck(backup) {
     ["7. 전달대비 비중", snap.length >= 2, `weights --prev`, snap.length >= 2 ? "" : "월별 스냅샷 2건 이상 필요"],
     ["8. MDD 변화", snapMdd >= 2, `mdd`, snapMdd >= 2 ? "" : "MDD 기록된 월별 스냅샷 2건 이상 필요"],
     ["9. N년뒤 기대수익률 투영", v.rows.length > 0, `project --account <키워드>`, "가격 이력만으로 계산 — 스냅샷 불필요"],
+    ["10. 등록ETF 월간 수익률 1위", true, `market --period 1m`, "카탈로그 전체 — 백업 JSON 불필요"],
+    ["11. 분기별 BEST ETF", true, `quarters --n 4`, "달력 분기별 상위"],
+    ["12. 환율 고려/미고려 수익률", true, `market --fx / --native`, "미국 종목만 두 값이 다름"],
+    ["13. 전달대비 분배금 상승 ETF", withDps >= 2, `dps`, withDps >= 2 ? "" : `DPS 기록 스냅샷 ${withDps}건 — 2건 이상 필요`],
   ];
   for (const [label, ok, cmd, note] of q) {
     console.log(`  ${ok ? "✅" : "❌"} ${padDisp(label, 28)} ${padDisp(cmd, 26)} ${note}`);
@@ -438,6 +506,177 @@ function cmdMdd(backup) {
   console.log("");
 }
 
+/** 등록 카탈로그 전체에서 기간 수익률 상위/하위 — 보유 여부와 무관(백업 JSON 불필요). */
+function cmdMarket(opts) {
+  const period = typeof opts.period === "string" ? opts.period : "1m";
+  const months = MONTHS_BY_PERIOD[period];
+  if (!months) die(`--period 는 ${Object.keys(MONTHS_BY_PERIOD).join("/")} 중 하나여야 합니다 (받은 값: ${period})`);
+  const topN = parseInt(opts.top, 10) || 10;
+  const items = filterCatalog(opts);
+  if (!items.length) die("조건에 맞는 종목이 없습니다. --region kr|us, --style, --category 를 확인하세요.");
+
+  const from = monthsAgoStr(months);
+  const scored = [];
+  let noData = 0;
+  for (const it of items) {
+    const r = periodReturn(it.symbol, it.currency, from, null);
+    if (!r) { noData++; continue; }
+    scored.push({ ...it, ...r });
+  }
+  if (!scored.length) die("가격 이력이 있는 종목이 없습니다.");
+
+  // 미국 종목이 섞여 있으면 원화환산 기준이 공정하다(같은 잣대로 비교)
+  const hasUsd = scored.some((s) => s.currency === "USD");
+  const useKrw = opts.fx || (hasUsd && !opts.native);
+  const keyOf = (s) => (useKrw && s.krw != null ? s.krw : s.native);
+  scored.sort((a, b) => keyOf(b) - keyOf(a));
+
+  head(`🏆 등록 종목 수익률 랭킹 — 최근 ${period}`);
+  console.log(`  모집단 ${scored.length}종${noData ? ` (가격이력 부족 ${noData}종 제외)` : ""} · 수집 ${loadManifest().updated}`);
+  console.log(`  정렬 기준 ${useKrw ? "원화환산" : "통화기준"}${hasUsd ? " · 미국 종목은 두 값이 다릅니다" : ""}`);
+  console.log("");
+  const header = `  ${padDisp("종목", 30)}${padL("통화기준", 11)}${padL("원화환산", 11)}${padL("배당률", 9)}${padL("구간", 13)}`;
+  const show = (title, list) => {
+    console.log(`  ${title}`);
+    console.log(header);
+    console.log(`  ${hr("·", 72)}`);
+    for (const s of list) {
+      const dy = s.dividendYield > 0 ? (s.dividendYield * 100).toFixed(2) + "%" : "—";
+      console.log(`  ${padDisp(s.name.slice(0, 14), 30)}${padL(pct(s.native, 1), 11)}${padL(s.krw == null ? "—" : pct(s.krw, 1), 11)}${padL(dy, 9)}${padL(s.from.slice(5), 13)}`);
+    }
+  };
+  show(`🔺 BEST ${topN}`, scored.slice(0, topN));
+  console.log("");
+  show(`🔻 WORST ${topN}`, scored.slice(-topN).reverse());
+  console.log(`\n  ℹ️ 국내 종목은 통화기준=원화환산(같은 값)입니다.`);
+  console.log(`     주 1회 수집이라 구간 시작일이 종목마다 며칠씩 다를 수 있습니다.`);
+  console.log(`     ⚠️ 과거 수익률이지 추천이 아닙니다 — 보수·괴리·유동성은 여기에 없습니다.\n`);
+}
+
+/** 분기별 BEST — 최근 N개 분기 각각의 상위 종목. */
+function cmdQuarters(opts) {
+  const n = parseInt(opts.n, 10) || 4;
+  const topN = parseInt(opts.top, 10) || 3;
+  const items = filterCatalog(opts);
+
+  // 달력 분기 경계를 만든다(최근 완료분기부터 거슬러 올라간다)
+  const now = new Date();
+  const qs = [];
+  let y = now.getFullYear(), q = Math.floor(now.getMonth() / 3);
+  for (let i = 0; i < n; i++) {
+    const startM = q * 3;
+    const start = new Date(Date.UTC(y, startM, 1));
+    const end = new Date(Date.UTC(y, startM + 3, 0));
+    qs.push({
+      label: `${y}Q${q + 1}`,
+      from: start.toISOString().slice(0, 10),
+      to: end.toISOString().slice(0, 10),
+      ongoing: end > now,
+    });
+    q--; if (q < 0) { q = 3; y--; }
+  }
+
+  head(`📅 분기별 BEST — 최근 ${n}개 분기`);
+  console.log(`  모집단 ${items.length}종 · 수집 ${loadManifest().updated}\n`);
+  for (const qq of qs) {
+    const scored = [];
+    for (const it of items) {
+      const r = periodReturn(it.symbol, it.currency, qq.from, qq.to);
+      if (r) scored.push({ ...it, ...r });
+    }
+    const useKrw = !opts.native;
+    scored.sort((a, b) => ((useKrw && b.krw != null ? b.krw : b.native) - (useKrw && a.krw != null ? a.krw : a.native)));
+    console.log(`  ${qq.label}  ${qq.from} ~ ${qq.to}${qq.ongoing ? "  (진행 중)" : ""}`);
+    if (!scored.length) { console.log(`    가격 이력이 있는 종목 없음\n`); continue; }
+    for (const s of scored.slice(0, topN)) {
+      console.log(`    ${padDisp(s.name.slice(0, 16), 34)}${padL(pct(useKrw && s.krw != null ? s.krw : s.native, 1), 10)}`);
+    }
+    console.log("");
+  }
+  console.log(`  ℹ️ ${opts.native ? "통화기준" : "원화환산"} 정렬입니다 (--native 로 전환).`);
+  console.log(`     진행 중 분기는 아직 끝나지 않은 구간의 부분 수익률입니다.\n`);
+}
+
+/** 전달 대비 확정DPS(분배금) 변화 — 월별 스냅샷의 dpsBySymbol 비교. */
+function cmdDps(backup, opts) {
+  const snap = backup.snapshotHistory || [];
+  const withDps = snap.filter((s) => s.dpsBySymbol && Object.keys(s.dpsBySymbol).length);
+  head("💵 확정 분배금(DPS) 전월 대비 변화");
+  if (withDps.length < 2) {
+    console.log(`  ❌ DPS가 기록된 월별 스냅샷이 2건 미만입니다 (현재 ${withDps.length}건).`);
+    console.log(`     확정DPS가 입력된 상태로 「📸 이번 달 스냅샷 저장」을 두 달 이상 눌러야 비교됩니다.\n`);
+    return;
+  }
+  let cur = withDps[withDps.length - 1], prev = withDps[withDps.length - 2];
+  if (typeof opts.month === "string") {
+    const i = withDps.findIndex((s) => s.month === opts.month);
+    if (i < 1) die(`${opts.month} 스냅샷이 없거나 그 전월 기록이 없습니다.\n  사용 가능: ${withDps.map((s) => s.month).join(", ")}`);
+    cur = withDps[i]; prev = withDps[i - 1];
+  }
+
+  const meta = loadMeta();
+  const fx = fxAt(null);
+  const held = new Map(backup.rows.filter((r) => r.qty > 0).map((r) => [r.symbol, r]));
+  const keys = [...new Set([...Object.keys(cur.dpsBySymbol), ...Object.keys(prev.dpsBySymbol)])];
+  const up = [], down = [], added = [], removed = [];
+  for (const sym of keys) {
+    const c = cur.dpsBySymbol[sym], p = prev.dpsBySymbol[sym];
+    const m = meta.get(sym);
+    const name = m ? m.name : sym;
+    // DPS는 그 종목의 통화 단위다 — 미국 종목은 달러라, 원화 영향으로 환산해야 한다
+    const isUsd = m ? m.currency === "USD" : !/\.KS$/.test(sym);
+    const rate = isUsd ? (fx ? fx.value : null) : 1;
+    const qty = held.has(sym) ? held.get(sym).qty : 0;
+    const base = { sym, name, qty, isUsd, rate };
+    if (p == null) { added.push({ ...base, c }); continue; }
+    if (c == null) { removed.push({ ...base, p }); continue; }
+    if (c > p) up.push({ ...base, p, c, diff: c - p, rate2: ((c - p) / p) * 100 });
+    else if (c < p) down.push({ ...base, p, c, diff: c - p, rate2: ((c - p) / p) * 100 });
+  }
+  /** DPS는 원(수백~수천)일 수도 달러(0.25)일 수도 있어 자릿수를 값에 맞춘다. */
+  const dpsFmt = (v, isUsd) => (isUsd ? `$${v.toFixed(3)}` : Math.round(v).toLocaleString("ko-KR"));
+  /** 월배당 영향 = 증감액 × 수량, 달러면 원화 환산. 환율을 모르면 "—". */
+  const impact = (r) => {
+    if (!(r.qty > 0)) return "미보유";
+    if (r.rate == null) return "환율 미상";
+    const krw = r.diff * r.qty * r.rate;
+    return (krw >= 0 ? "+" : "") + shortWon(krw);
+  };
+
+  console.log(`  ${prev.month} → ${cur.month}  ·  비교 대상 ${keys.length}종\n`);
+  const table = (title, list, fmt) => {
+    if (!list.length) return;
+    console.log(`  ${title}`);
+    console.log(`  ${padDisp("종목", 30)}${padL("이전", 10)}${padL("이번", 10)}${padL("증감", 10)}${padL("월배당 영향", 14)}`);
+    console.log(`  ${hr("·", 72)}`);
+    for (const r of list) console.log(fmt(r));
+    console.log("");
+  };
+  up.sort((a, b) => b.rate2 - a.rate2);
+  down.sort((a, b) => a.rate2 - b.rate2);
+  const fmtRow = (r) => `  ${padDisp(r.name.slice(0, 14), 30)}${padL(dpsFmt(r.p, r.isUsd), 10)}${padL(dpsFmt(r.c, r.isUsd), 10)}${padL(pct(r.rate2, 1), 10)}${padL(impact(r), 14)}`;
+
+  table(`🔺 분배금 상승 ${up.length}종`, up, fmtRow);
+  table(`🔻 분배금 하락 ${down.length}종`, down, fmtRow);
+  if (added.length) {
+    console.log(`  🆕 신규 확정 ${added.length}종`);
+    for (const r of added) console.log(`  ${padDisp(r.name.slice(0, 14), 30)}${padL(dpsFmt(r.c, r.isUsd), 10)}${r.qty > 0 ? "" : "  (미보유)"}`);
+    console.log("");
+  }
+  if (removed.length) {
+    console.log(`  ⚪ 이번 달 확정값 없음 ${removed.length}종`);
+    for (const r of removed) console.log(`  ${padDisp(r.name.slice(0, 14), 30)}${padL(dpsFmt(r.p, r.isUsd), 10)}  ← 이전 값`);
+    console.log("");
+  }
+  // 환율을 모르는 종목은 순변화 집계에서 제외한다(0으로 넣지 않음)
+  const netRows = [...up, ...down].filter((r) => r.qty > 0 && r.rate != null);
+  const net = netRows.reduce((s, r) => s + r.diff * r.qty * r.rate, 0);
+  const skipped = [...up, ...down].filter((r) => r.qty > 0 && r.rate == null).length;
+  console.log(`  보유분 월배당 순변화  ${net >= 0 ? "+" : ""}${won(net)}${skipped ? `  (환율 미상 ${skipped}종 제외)` : ""}`);
+  console.log(`\n  ℹ️ 확정DPS(주당 실지급액) 기준입니다 — 분배율(%)이 아니라 금액입니다.`);
+  console.log(`     "월배당 영향"은 증감액 × 현재 보유수량이라, 그 사이 수량이 변했으면 실제와 다릅니다.\n`);
+}
+
 /**
  * 과거 수익률을 연환산해 N년 뒤를 투영한다.
  *
@@ -520,24 +759,42 @@ asset-cli — 백업 JSON으로 자산 질문에 답하는 CLI
 사용법
   node scripts/asset-cli.mjs <명령> --file <백업.json> [옵션]
 
-명령
+내 자산 명령 (--file 필요)
   check                          데이터 가용성 + 질문별 답변 가능 여부
   accounts  [--asof YYYY-MM-DD]  계좌별 평가액·비중·수익률
   dividend  [--prev]             이번 달 배당(+ 전달 대비)
-  movers    [--period 6m] [--top 5]   종목 수익률 BEST/WORST
+  dps       [--month YYYY-MM]    확정 분배금(DPS) 전월 대비 증감
+  movers    [--period 6m] [--top 5]   보유 종목 수익률 BEST/WORST
   weights   [--prev]             성향·지역별 비중(+ 전달 대비)
   mdd                            MDD 추이
   project   --account <키워드> [--years 5] [--basis 6m]
                                  과거 수익률 연환산 → N년 뒤 투영
 
+시장 명령 (--file 불필요 — 저장소 수집 데이터만 사용)
+  market    [--period 1m] [--top 10]  등록 카탈로그 전체 수익률 랭킹
+  quarters  [--n 4] [--top 3]         분기별 BEST
+
 공통 옵션
-  --file <경로>   앱 「📤 내보내기」로 받은 JSON (필수)
+  --file <경로>   앱 「📤 내보내기」로 받은 JSON (내 자산 명령에 필요)
   --raw           계좌명을 마스킹하지 않음 (기본은 마스킹)
+
+시장 명령 옵션
+  --period        1m / 3m / 6m / 1y / 2y / 3y
+  --region        kr | us
+  --style         배당 | 성장 | 안전 …
+  --category      부분일치 (예: "반도체")
+  --fx            원화환산 기준 정렬 (미국 종목 포함 시 기본값)
+  --native        통화기준 정렬 (달러는 달러대로)
+  --include-stocks  개별주도 포함 (기본은 ETF만)
 
 예시
   node scripts/asset-cli.mjs check    --file ~/myassets-2026-08-25.json
   node scripts/asset-cli.mjs accounts --file ~/backup.json --asof 2026-07-25
   node scripts/asset-cli.mjs project  --file ~/backup.json --account DC --years 5 --basis 6m
+  node scripts/asset-cli.mjs market   --period 1m --region kr --top 10
+  node scripts/asset-cli.mjs market   --period 6m --style 배당 --fx
+  node scripts/asset-cli.mjs quarters --n 4
+  node scripts/asset-cli.mjs dps      --file ~/backup.json
 
 ⚠️ 백업 JSON은 개인 보유 데이터입니다 — 이 저장소에 커밋하지 마세요.
    출력의 계좌명은 기본 마스킹됩니다(--raw 로 해제, 로컬 확인용으로만).
@@ -547,16 +804,25 @@ asset-cli — 백업 JSON으로 자산 질문에 답하는 CLI
 const { cmd, opts } = parseArgs(process.argv);
 if (!cmd || cmd === "help" || opts.help) { usage(); process.exit(0); }
 
-const KNOWN = ["check", "accounts", "dividend", "movers", "weights", "mdd", "project"];
+// market·quarters는 저장소 수집 데이터만 쓰므로 백업 JSON 없이 동작한다
+const MARKET_CMDS = ["market", "quarters"];
+const HOLDING_CMDS = ["check", "accounts", "dividend", "movers", "weights", "mdd", "project", "dps"];
+const KNOWN = [...HOLDING_CMDS, ...MARKET_CMDS];
 if (!KNOWN.includes(cmd)) { console.error(`\n❌ 알 수 없는 명령: ${cmd}`); usage(); process.exit(1); }
 
-const backup = loadBackup(opts.file);
-switch (cmd) {
-  case "check": cmdCheck(backup); break;
-  case "accounts": cmdAccounts(backup, opts); break;
-  case "dividend": cmdDividend(backup, opts); break;
-  case "movers": cmdMovers(backup, opts); break;
-  case "weights": cmdWeights(backup, opts); break;
-  case "mdd": cmdMdd(backup); break;
-  case "project": cmdProject(backup, opts); break;
+if (MARKET_CMDS.includes(cmd)) {
+  if (cmd === "market") cmdMarket(opts);
+  else cmdQuarters(opts);
+} else {
+  const backup = loadBackup(opts.file);
+  switch (cmd) {
+    case "check": cmdCheck(backup); break;
+    case "accounts": cmdAccounts(backup, opts); break;
+    case "dividend": cmdDividend(backup, opts); break;
+    case "movers": cmdMovers(backup, opts); break;
+    case "weights": cmdWeights(backup, opts); break;
+    case "mdd": cmdMdd(backup); break;
+    case "project": cmdProject(backup, opts); break;
+    case "dps": cmdDps(backup, opts); break;
+  }
 }
