@@ -290,6 +290,119 @@ function filterCatalog(opts) {
   return items;
 }
 
+/* ---------------- A67: 이어서 물어볼 질문(넛지) ----------------
+   답변 끝에 "이런 것도 물어볼 수 있어요" 5개를 붙인다(`--nudge`).
+
+   n8n이 아니라 여기서 만드는 이유: **방금 어떤 명령이 돌았는지는 CLI만 안다.**
+   n8n에서 붙이면 그 지식을 한 벌 더 관리해야 하고 금방 어긋난다.
+
+   ⚠️ 제안 문구는 **텔레그램에 그대로 칠 말**이어야 하고, n8n "명령 분류" 노드의
+   ROUTES 정규식에 **반드시 걸려야 한다.** 라우팅 안 되는 걸 권하면 사용자는
+   봇이 고장난 걸로 받아들인다 — ROUTES를 고치면 이 목록도 함께 고칠 것.
+
+   보유 데이터가 필요한 제안은 BACKUP_JSON(또는 --file)이 있을 때만 내보낸다. */
+const NUDGE_POOL = {
+  sigma: [
+    { t: "이번달 수익률 1위 ETF" },
+    { t: "분기별 best" },
+    { t: "배당 ETF 랭킹" },
+    { t: "계좌 현황", backup: true },
+    { t: "내 종목 수익률", backup: true },
+  ],
+  market: [
+    { t: "분기별 best" },
+    { t: "배당 ETF 랭킹" },
+    { t: "SOXL 시그마" },
+    { t: "내 비중", backup: true },
+    { t: "내 종목 수익률", backup: true },
+  ],
+  quarters: [
+    { t: "이번달 수익률 1위 ETF" },
+    { t: "배당 ETF 랭킹" },
+    { t: "SOXL 시그마" },
+    { t: "계좌 현황", backup: true },
+    { t: "MDD 추이", backup: true },
+  ],
+  accounts: [
+    { t: "이번달 배당", backup: true },
+    { t: "내 비중", backup: true },
+    { t: "MDD 추이", backup: true },
+    { t: "내 종목 수익률", backup: true },
+    { t: "이번달 수익률 1위 ETF" },
+  ],
+  dividend: [
+    { t: "분배금 오른 종목", backup: true },
+    { t: "계좌 현황", backup: true },
+    { t: "내 비중", backup: true },
+    { t: "배당 ETF 랭킹" },
+    { t: "SOXL 시그마" },
+  ],
+  dps: [
+    { t: "이번달 배당", backup: true },
+    { t: "계좌 현황", backup: true },
+    { t: "내 종목 수익률", backup: true },
+    { t: "배당 ETF 랭킹" },
+    { t: "분기별 best" },
+  ],
+  movers: [
+    { t: "내 비중", backup: true },
+    { t: "계좌 현황", backup: true },
+    { t: "MDD 추이", backup: true },
+    { t: "이번달 수익률 1위 ETF" },
+    { t: "분기별 best" },
+  ],
+  weights: [
+    { t: "계좌 현황", backup: true },
+    { t: "이번달 배당", backup: true },
+    { t: "MDD 추이", backup: true },
+    { t: "내 종목 수익률", backup: true },
+    { t: "이번달 수익률 1위 ETF" },
+  ],
+  mdd: [
+    { t: "계좌 현황", backup: true },
+    { t: "내 종목 수익률", backup: true },
+    { t: "내 비중", backup: true },
+    { t: "이번달 배당", backup: true },
+    { t: "분기별 best" },
+  ],
+  project: [
+    { t: "계좌 현황", backup: true },
+    { t: "MDD 추이", backup: true },
+    { t: "내 비중", backup: true },
+    { t: "이번달 수익률 1위 ETF" },
+    { t: "분기별 best" },
+  ],
+  check: [
+    { t: "계좌 현황", backup: true },
+    { t: "이번달 배당", backup: true },
+    { t: "MDD 추이", backup: true },
+    { t: "SOXL 시그마" },
+    { t: "이번달 수익률 1위 ETF" },
+  ],
+};
+
+/** sigma는 방금 물어본 종목을 다시 권하지 않도록 다른 티커를 하나 끼워넣는다. */
+const SIGMA_ALTS = ["SOXL", "SOXX", "QQQ", "SCHD", "069500.KS"];
+
+function printNudges(cmd, opts) {
+  if (!opts.nudge) return;
+  const hasBackup = !!(opts.file && opts.file !== true) || !!process.env.BACKUP_JSON;
+  let pool = (NUDGE_POOL[cmd] || []).filter((n) => !n.backup || hasBackup);
+
+  if (cmd === "sigma" && typeof opts.symbol === "string") {
+    const cur = opts.symbol.toUpperCase();
+    const alt = SIGMA_ALTS.find((s) => s !== cur && loadPrices(s));
+    if (alt) pool = [{ t: `${alt} 시그마` }, ...pool];
+  }
+  pool = pool.slice(0, 5);
+  if (!pool.length) return;
+
+  console.log(`  ── 이어서 물어볼 수 있어요 ──`);
+  for (const n of pool) console.log(`  · ${n.t}`);
+  if (!hasBackup) console.log(`  (계좌·배당 질문은 백업 JSON이 연결돼야 답할 수 있습니다)`);
+  console.log("");
+}
+
 /* ---------------- 명령 ---------------- */
 
 function cmdCheck(backup) {
@@ -855,6 +968,7 @@ asset-cli — 백업 JSON으로 자산 질문에 답하는 CLI
 공통 옵션
   --file <경로>   앱 「📤 내보내기」로 받은 JSON (내 자산 명령에 필요)
   --raw           계좌명을 마스킹하지 않음 (기본은 마스킹)
+  --nudge         답변 끝에 "이어서 물어볼 수 있어요" 5개 추가 (봇용)
 
 시장 명령 옵션
   --period        1m / 3m / 6m / 1y / 2y / 3y
@@ -894,6 +1008,8 @@ if (MARKET_CMDS.includes(cmd)) {
   else if (cmd === "quarters") cmdQuarters(opts);
   else cmdSigma(opts);
 } else {
+  // --file 이 없으면 BACKUP_JSON 환경변수를 쓴다(n8n Execute Command에서 넘기는 경로)
+  if (!opts.file || opts.file === true) opts.file = process.env.BACKUP_JSON || opts.file;
   const backup = loadBackup(opts.file);
   switch (cmd) {
     case "check": cmdCheck(backup); break;
@@ -906,3 +1022,4 @@ if (MARKET_CMDS.includes(cmd)) {
     case "dps": cmdDps(backup, opts); break;
   }
 }
+printNudges(cmd, opts);
