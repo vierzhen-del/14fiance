@@ -696,6 +696,39 @@ function cmdSigma(opts) {
   console.log(`     "전일종가"는 주 1회 수집의 마지막 종가라 오늘 시세와 다를 수 있습니다.\n`);
 }
 
+/**
+ * A68: "그 질문은 못 답합니다" + 답할 수 있는 것 목록.
+ *
+ * 2026-08-25 사용자 보고: `비중`·`이번달배당`·`총수익` 세 질문 모두 라우팅에 안 걸려
+ * 문서 검색으로 흘러갔고, 봇이 엉뚱한 SOP 변경이력을 덤프했다. **못 답하는 것보다
+ * 못 답한다고 말하지 않는 게 더 나쁘다** — 사용자는 그게 답인 줄 알고 읽는다.
+ *
+ * n8n의 "명령 분류"가 아무 route에도 못 걸었을 때 이 명령을 부른다.
+ * 질문 원문은 **일부러 받지 않는다** — 셸에 사용자 문구를 넘길 일 자체를 없앤다.
+ */
+function cmdTopics(opts) {
+  const hasBackup = !!(opts.file && opts.file !== true) || !!process.env.BACKUP_JSON;
+  console.log(`\n❓ 그 질문은 아직 답할 수 없습니다.`);
+  console.log(`   아래 중 하나로 다시 물어봐 주세요.\n`);
+
+  console.log(`  📈 시장 — 바로 가능`);
+  for (const t of ["SOXL 시그마", "이번달 수익률 1위 ETF", "분기별 best", "배당 ETF 랭킹", "국내 ETF 6개월 랭킹"]) {
+    console.log(`  · ${t}`);
+  }
+
+  console.log(`\n  💼 내 자산 — ${hasBackup ? "가능" : "⚠️ 백업 JSON 미연결이라 지금은 불가"}`);
+  for (const t of ["계좌 현황", "이번달 배당", "내 비중", "MDD 추이", "내 종목 수익률", "분배금 오른 종목", "DC 5년 뒤 기대수익률"]) {
+    console.log(`  · ${t}`);
+  }
+  if (!hasBackup) console.log(`  (Tab S9에서 BACKUP_JSON 경로를 연결하면 열립니다)`);
+
+  console.log(`\n  ⛔ 구조상 아직 안 되는 것`);
+  console.log(`  · 실시간 시세 — 가격은 주 1회 수집분입니다`);
+  console.log(`  · 실현손익 — 매도이력 대장이 연동돼 있지 않습니다`);
+  console.log(`  · 미보유 ETF의 월별 분배금 — 수집 데이터에 가격만 있습니다`);
+  console.log(`  · "뭐 살까" 추천 — 랭킹은 과거 수익률일 뿐입니다\n`);
+}
+
 /** 등록 카탈로그 전체에서 기간 수익률 상위/하위 — 보유 여부와 무관(백업 JSON 불필요). */
 function cmdMarket(opts) {
   const period = typeof opts.period === "string" ? opts.period : "1m";
@@ -964,6 +997,7 @@ asset-cli — 백업 JSON으로 자산 질문에 답하는 CLI
   market    [--period 1m] [--top 10]  등록 카탈로그 전체 수익률 랭킹
   quarters  [--n 4] [--top 3]         분기별 BEST
   sigma     --symbol <티커>           1/2/3σ 매수가 (앱 「시그널」 탭과 동일 공식)
+  topics                              "못 답합니다" + 답할 수 있는 질문 목록 (봇 폴백용)
 
 공통 옵션
   --file <경로>   앱 「📤 내보내기」로 받은 JSON (내 자산 명령에 필요)
@@ -998,7 +1032,7 @@ const { cmd, opts } = parseArgs(process.argv);
 if (!cmd || cmd === "help" || opts.help) { usage(); process.exit(0); }
 
 // market·quarters는 저장소 수집 데이터만 쓰므로 백업 JSON 없이 동작한다
-const MARKET_CMDS = ["market", "quarters", "sigma"];
+const MARKET_CMDS = ["market", "quarters", "sigma", "topics"];
 const HOLDING_CMDS = ["check", "accounts", "dividend", "movers", "weights", "mdd", "project", "dps"];
 const KNOWN = [...HOLDING_CMDS, ...MARKET_CMDS];
 if (!KNOWN.includes(cmd)) { console.error(`\n❌ 알 수 없는 명령: ${cmd}`); usage(); process.exit(1); }
@@ -1006,6 +1040,7 @@ if (!KNOWN.includes(cmd)) { console.error(`\n❌ 알 수 없는 명령: ${cmd}`)
 if (MARKET_CMDS.includes(cmd)) {
   if (cmd === "market") cmdMarket(opts);
   else if (cmd === "quarters") cmdQuarters(opts);
+  else if (cmd === "topics") cmdTopics(opts);
   else cmdSigma(opts);
 } else {
   // --file 이 없으면 BACKUP_JSON 환경변수를 쓴다(n8n Execute Command에서 넘기는 경로)
