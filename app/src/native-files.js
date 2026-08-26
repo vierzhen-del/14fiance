@@ -114,8 +114,32 @@
           await writeTextTo(dir, path, note.text);
         }
       }
+      /* A69(2026-08-26): 볼트에도 latest-backup.json을 남긴다.
+
+         종전에는 이 파일이 `Documents/14fiance/` 에만 있었다 — writeJson이 FOLDER를
+         고정으로 붙여서 볼트 경로 설정을 타지 않았기 때문. 그래서 Obsidian Git이
+         동기화하는 `14fiance_asset` 레포에 들어가지 않았고, **Tab S9에는 도달하지
+         않았다.** Tab S9의 n8n(자산 CLI)이 계좌·배당·MDD 질문에 답하려면 이
+         파일이 필요한데 기기에 없어서 답할 수가 없었다.
+
+         내용은 Documents 사본과 동일한 serializeMyAssets() 출력이다. 볼트는
+         2계층 정책상 "기기 안" 계층이라 원문을 그대로 둔다(마스킹하지 않는다) —
+         마스킹하면 Tab S9에서 어느 계좌인지 대조가 안 돼 목적을 잃는다.
+
+         ⚠️ 볼트가 git 레포(`14fiance_asset`, private)와 연결돼 있으면 이 파일도
+         함께 푸시된다. 그 레포가 public이 되면 보유수량·매입단가 전체가 노출된다. */
+      if (typeof serializeMyAssets === "function") {
+        const backupPath = `${vault}/${FOLDER}/${BACKUP_NAME}`;
+        const backupText = JSON.stringify(serializeMyAssets(), null, 2);
+        try {
+          await writeTextTo(dir, backupPath, backupText);
+        } catch (primaryErr) {
+          dir = dir === DIR_PRIMARY ? DIR_FALLBACK : DIR_PRIMARY;
+          await writeTextTo(dir, backupPath, backupText);
+        }
+      }
       lastWorkingDir = dir;
-      console.log(`obsidian notes saved: ${vault}/${FOLDER}/ (${notes.length} files)`);
+      console.log(`obsidian notes saved: ${vault}/${FOLDER}/ (${notes.length} files + ${BACKUP_NAME})`);
       return true;
     } catch (err) {
       console.warn("옵시디안 백업 실패:", err.message);
