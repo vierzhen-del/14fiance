@@ -73,11 +73,25 @@ function fmtDate(d) { return d; }
 
 function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
 
+/* A71(2026-08-31 사용자 보고): raw.githubusercontent.com이 간헐적으로 400을 준다 —
+   실측: 442580.KS.json이 한 번 400으로 실패했다가 곧이어 같은 URL이 200을 줬다(파일
+   내용은 변함없음). CDN 엣지의 순간적 오류로 보이며 재시도하면 대개 해결된다.
+   최대 2회 재시도(짧은 backoff)하고, 그래도 실패하면 그대로 던진다 — 호출부가
+   "이 종목만 계산에서 제외"할지 "전체를 멈출지"를 결정한다(이 함수는 지어내지 않는다). */
 async function fetchJSON(path) {
   const sep = path.includes("?") ? "&" : "?";
-  const res = await fetch(`${path}${sep}_=${Date.now()}`, { cache: "no-store" });
-  if (!res.ok) throw new Error(`${path} 불러오기 실패 (${res.status})`);
-  return res.json();
+  let lastErr;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch(`${path}${sep}_=${Date.now()}`, { cache: "no-store" });
+      if (!res.ok) throw new Error(`${path} 불러오기 실패 (${res.status})`);
+      return await res.json();
+    } catch (err) {
+      lastErr = err;
+      if (attempt < 2) await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
+    }
+  }
+  throw lastErr;
 }
 
 // 차트 좌표계 상수·눈금 계산 — index.html 원본과 동일 값(A6에서 이식).

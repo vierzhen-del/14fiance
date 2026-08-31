@@ -3146,13 +3146,22 @@ async function renderMyAssets() {
   const items = [];
   let liveKr = null;
   let liveGlobal = null;
+  // A71(2026-08-31 사용자 보고): 종목 하나의 일시적 네트워크 오류(예: raw.githubusercontent.com
+  // 간헐적 400)가 전체 대시보드를 통째로 날려버렸다 — fetchJSON이 재시도(최대 2회)해도
+  // 안 되면 그 종목만 계산에서 빼고 나머지는 그대로 보여준다. "지어내지 않기"는 유지 —
+  // 실패한 종목을 0으로 채우지 않고 명시적으로 제외·안내한다.
+  const fetchFailedRows = [];
   try {
     fx = await loadFx();
     liveKr = await loadLiveKrQuotes(); // 켜져 있을 때만, 실패 시 null(주간 데이터 폴백)
     liveGlobal = await loadLiveGlobalQuotes(); // A57: 코스피 등 지수값 — 토글과 무관, 실패 시 null
     for (const r of knownRows) {
-      const full = await loadSymbol(r.symbol);
-      items.push({ ...r, full });
+      try {
+        const full = await loadSymbol(r.symbol);
+        items.push({ ...r, full });
+      } catch (err) {
+        fetchFailedRows.push(r);
+      }
     }
   } catch (err) {
     result.innerHTML = `<p class="compare-empty" style="color:var(--critical)">${err.message}</p>`;
@@ -3164,6 +3173,11 @@ async function renderMyAssets() {
     : "";
   const unknownHTML = unknownRows.length
     ? `<p class="stat-sub" style="color:var(--critical); margin-top:10px;">⚠️ 아직 수집 목록에 없는 종목 ${unknownRows.length}건은 계산에서 제외했습니다: ${unknownRows.map((r) => r.symbol).join(", ")} — 이 앱을 만든/배포해주신 분(또는 Claude)에게 종목명·코드와 함께 "이 종목 추가해줘"라고 요청하면 등록 후 다음 데이터 수집 때부터 반영됩니다. (데이터 기준: ${state.manifest.updated}) <button type="button" id="myManifestRefreshBtn">🔄 수집 목록 새로 확인</button></p>`
+    : "";
+  // A71: unknownRows(카탈로그에 아예 없음)와 달리, 이건 등록은 돼 있는데 이번 조회에서만
+  // 못 가져온 것 — 원인이 다르므로 안내도 "다시 시도"로 구분한다("등록해달라"고 하면 안 됨).
+  const fetchFailedHTML = fetchFailedRows.length
+    ? `<p class="stat-sub" style="color:var(--critical); margin-top:10px;">⚠️ 일시적인 통신 오류로 ${fetchFailedRows.length}건을 이번엔 불러오지 못해 계산에서 제외했습니다: ${fetchFailedRows.map((r) => r.symbol).join(", ")} — 잠시 후 새로고침하면 대개 해결됩니다.</p>`
     : "";
   if (result && !result.dataset.manifestBtnWired) {
     result.dataset.manifestBtnWired = "1";
@@ -3738,6 +3752,7 @@ async function renderMyAssets() {
     ${marketIndexBarHTML(liveGlobal)}
     ${excludedStockHTML}
     ${unknownHTML}
+    ${fetchFailedHTML}
 
     <div class="dash-tabs" id="myDashTabs">
       <button type="button" class="dash-tab-btn" data-tab="overview">📊 통합</button>
