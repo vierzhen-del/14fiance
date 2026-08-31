@@ -2924,6 +2924,51 @@ function buildDonutSVG(items, centerLabel) {
   </div>`;
 }
 
+/* A70(2026-08-26): 계좌별 월배당 도넛 — buildDonutSVG와 SVG 계산식은 같지만 색상을
+   PALETTE 순번이 아니라 accountColor(acc)로 고정한다. 같은 화면의 계좌별 막대 목록·TOP10
+   막대가 전부 accountColor를 쓰므로, 도넛만 다른 배색을 쓰면 같은 계좌인데 색이 안 맞는다.
+   items: [{ acc, color, monthlyDiv, pct, monthlyYield, etfPct, stockPct }] (byAccountDiv 순서,
+   이미 monthlyDiv 내림차순 정렬됨 — 재정렬하지 않는다). */
+function buildAccountColorDonutHTML(items, centerLabel) {
+  const total = items.reduce((a, b) => a + b.monthlyDiv, 0);
+  if (total <= 0) return "";
+  const R = 15.9155;
+  let offset = 25;
+  const circles = items.map((it) => {
+    const c = `<circle r="${R}" cx="21" cy="21" fill="transparent"
+      stroke="${it.color}" stroke-width="6"
+      stroke-dasharray="${it.pct.toFixed(2)} ${(100 - it.pct).toFixed(2)}" stroke-dashoffset="${offset.toFixed(2)}"></circle>`;
+    offset -= it.pct;
+    return c;
+  }).join("");
+  const legend = items.map((it) => `<div class="donut-legend-row">
+      <span class="donut-swatch" style="background:${it.color}"></span>
+      <span class="donut-name" title="${it.acc}">${it.acc}</span>
+      <span class="donut-pct">${it.pct.toFixed(1)}%</span>
+    </div>`).join("");
+  const rows = items.map((it) => `<tr>
+      <td data-label="계좌" style="text-align:left;"><span class="donut-swatch" style="background:${it.color}; margin-right:5px;"></span>${it.acc}</td>
+      <td data-label="월배당">${fmtPrice(it.monthlyDiv, "KRW")}</td>
+      <td data-label="월 수익률">${it.monthlyYield == null ? "—" : it.monthlyYield.toFixed(2) + "%"}</td>
+      <td data-label="ETF">${it.etfPct.toFixed(0)}%</td>
+      <td data-label="개별주">${it.stockPct.toFixed(0)}%</td>
+    </tr>`).join("");
+  return `<div class="donut-wrap">
+    <div class="donut-chart">
+      <svg viewBox="0 0 42 42" role="img" aria-label="계좌별 월배당 비중 도넛 차트">${circles}</svg>
+      <div class="donut-center">${centerLabel}</div>
+    </div>
+    <div class="donut-legend">${legend}</div>
+  </div>
+  <div style="overflow-x:auto; margin:6px 0 0;">
+    <table class="account-summary-table" style="font-size:12px;">
+      <thead><tr><th>계좌</th><th>월배당</th><th>월 수익률</th><th>ETF</th><th>개별주</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>
+  <p class="stat-sub">월 수익률 = 월배당 ÷ 평가액(연환산 아님) · ETF·개별주는 그 계좌 월배당 중 비중</p>`;
+}
+
 /* 통합 탭 — 월별 예상 배당금 12개월 바 (확정=divHistory 강조, 나머지=현재 월배당 추정) */
 function buildMonthBarsHTML(monthlyDiv, divHistory) {
   const year = todayStr().slice(0, 4);
@@ -3504,6 +3549,26 @@ async function renderMyAssets() {
     <div class="account-div-detail" data-account-key="${acc}" hidden></div>`;
   }).join("");
 
+  // A70(2026-08-26 사용자 요청): 계좌별 월배당을 파이(도넛)로도 보여주고, 계좌별 배당수익률
+  // (월배당÷평가액)과 ETF·개별주 구성비를 함께 낸다. 비중 데이터 자체는 바로 위 막대와
+  // 동일(byAccountDiv) — 표현만 도넛이 추가되는 것이지 집계를 새로 하지 않는다.
+  // 색상도 막대와 같은 accountColor()를 써서 같은 화면 안에서 계좌색이 어긋나지 않게 한다.
+  const accountDivPieRows = byAccountDiv.map(([acc, g]) => {
+    const accRows = perRow.filter((p) => (p.account || "계좌 미지정") === acc && p.monthlyDiv > 0);
+    // assetType이 "stock"이 아니면 ETF로 센다(카탈로그 값은 "etf"/"stock" 둘뿐 — 위에서 확인됨)
+    const etfDiv = accRows.filter((p) => !p.meta || p.meta.assetType !== "stock").reduce((s, p) => s + p.monthlyDiv, 0);
+    const stockDiv = g.monthlyDiv - etfDiv;
+    return {
+      acc, color: accountColor(acc), monthlyDiv: g.monthlyDiv,
+      pct: totalMonthlyDiv > 0 ? (g.monthlyDiv / totalMonthlyDiv) * 100 : 0,
+      // 배당수익률은 "월" 단위다(사용자 확정) — 연환산이 아니다. 평가액이 0이면 계산 불가(지어내지 않음).
+      monthlyYield: g.value > 0 ? (g.monthlyDiv / g.value) * 100 : null,
+      etfPct: g.monthlyDiv > 0 ? (etfDiv / g.monthlyDiv) * 100 : 0,
+      stockPct: g.monthlyDiv > 0 ? (stockDiv / g.monthlyDiv) * 100 : 0,
+    };
+  });
+  const accountDivDonutHTML = buildAccountColorDonutHTML(accountDivPieRows, fmtW(totalMonthlyDiv));
+
   // 투자대상 시장 비중(한국/미국/글로벌) + 성장·배당·안전 스타일 비중 + 자산 성격별(카테고리) 비중
   // — v534 "비중분석" 탭에 해당. 상장 통화(isUsd)가 아니라 실제 투자대상 시장(meta.region)
   // 기준으로 분류한다 — "TIGER 미국S&P500"처럼 국내 상장이라도 미국에 투자하면 미국 비중으로,
@@ -3864,6 +3929,9 @@ async function renderMyAssets() {
     </div>
 
     <div class="dash-panel" data-tab="divstatus" hidden>
+      ${accountDivDonutHTML ? `<p class="chart-title">🥧 계좌별 월배당 비중</p>
+      ${accountDivDonutHTML}` : ""}
+
       ${accountDivHTML ? `<p class="chart-title" style="margin-top:20px;">🏦 계좌별 월배당</p>
       <div class="bar-list">${accountDivHTML}</div>` : ""}
 
