@@ -540,6 +540,7 @@
   .ydb-bar { width: 22px; border-radius: 3px 3px 0 0; }
   .ydb-bar.est { background: color-mix(in srgb, var(--text-secondary) 55%, transparent); }
   .ydb-stack { width: 22px; display: flex; flex-direction: column-reverse; border-radius: 3px 3px 0 0; overflow: hidden; }
+  .ydb-stack.est { opacity: 0.7; } /* A78: 예상배당 스택은 확정과 구분되게 살짝 옅게 */
   .ydb-seg-general { background: var(--good); }
   .ydb-seg-cc { background: #e0a72e; }
   .ydb-seg-unknown { background: var(--gridline); }
@@ -2322,6 +2323,22 @@ function computeReturnBreakdown(csv) {
    정보도 없었다. 계좌를 갱신(캡처 반영·가져오기)하면 그 달 스냅샷이 자동으로 갱신되게 한다.
    비중(%)이 아니라 **평가액**을 저장한다 — 나중에 그룹이 늘어도 합이 깨지지 않고, 화면에서
    나눠 쓰면 되기 때문. 같은 달이면 덮어쓴다(수동 버튼과 동일 규칙). */
+/* A76(2026-09-01 사용자 요청 "연간 배당 히스토리 — 일반배당/커버드콜 구분")·A78(같은 날
+   사용자 보고 "커버드콜 표시안됨" — 스냅샷을 새로 안 찍으면 실시간 화면에 아무 색도 안 보임):
+   perRow의 이번 달 예상 월배당(p.monthlyDiv)을 카테고리(category.includes("커버드콜"))로
+   나눈 비율. upsertMonthlySnapshot(스냅샷 저장 시 이력에 기록)과 renderMyAssets(지금 이 순간
+   실시간 표시, 스냅샷 없이도 이번 달만은 항상 보여주기 위함)이 같은 계산을 공유한다. */
+function computeDivSplit(perRow) {
+  let general = 0, coveredCall = 0;
+  for (const p of perRow) {
+    if (!(p.monthlyDiv > 0)) continue;
+    const isCC = !!(p.meta && p.meta.category && p.meta.category.includes("커버드콜"));
+    if (isCC) coveredCall += p.monthlyDiv; else general += p.monthlyDiv;
+  }
+  const total = general + coveredCall;
+  return total > 0 ? { generalPct: general / total, coveredCallPct: coveredCall / total } : null;
+}
+
 /* mddOverride: pushAssetChangelog가 방금 계산해둔 afterSnap.mdd를 넘겨 재계산을 아낀다.
    수동 "📸 이번 달 스냅샷 저장" 버튼 경로는 인자 없이 불러 여기서 직접 계산한다. */
 function upsertMonthlySnapshot(mddOverride) {
@@ -2339,23 +2356,7 @@ function upsertMonthlySnapshot(mddOverride) {
   const dpsBySymbol = {};
   for (const p of csv.perRow) if (p.confirmedDps > 0) dpsBySymbol[p.symbol] = p.confirmedDps;
 
-  // A76(2026-09-01 사용자 요청 "연간 배당 히스토리 — 일반배당/커버드콜 구분"): divHistory(확정
-  // 총액)에는 종목·카테고리 정보가 없어 과거 연도는 구성을 알 수 없다(사용자 확인 완료 —
-  // "지금부터 새로 기록 시작"). 이 스냅샷 시점의 카테고리 비율(%)만 저장해두면, 나중에
-  // 그 달이 확정되었을 때(divHistory에 실제 금액이 들어오면) 그 비율을 실제 확정액에 곱해
-  // 일반배당/커버드콜 금액을 근사할 수 있다 — 카테고리 구성은 스냅샷 시점 그대로이므로
-  // 절대금액을 지어내는 게 아니라 이미 확정된 총액을 실측 비율로 나누는 것뿐이다.
-  let divSplit = null;
-  {
-    let general = 0, coveredCall = 0;
-    for (const p of csv.perRow) {
-      if (!(p.monthlyDiv > 0)) continue;
-      const isCC = !!(p.meta && p.meta.category && p.meta.category.includes("커버드콜"));
-      if (isCC) coveredCall += p.monthlyDiv; else general += p.monthlyDiv;
-    }
-    const total = general + coveredCall;
-    if (total > 0) divSplit = { generalPct: general / total, coveredCallPct: coveredCall / total };
-  }
+  const divSplit = computeDivSplit(csv.perRow);
 
   let hist = [];
   try { hist = JSON.parse(localStorage.getItem(MY_ASSETS_HISTORY_KEY) || "[]"); } catch (e) { hist = []; }
@@ -3430,16 +3431,32 @@ function buildDivGapHTML(divHistory, expectedMonthly, snapshotHistory) {
 }
 
 /* A76(2026-09-01 사용자 요청 — 인스타 인포그래픽 "연간 배당 히스토리" 참조), A77(같은 날
-   사용자 추가 요청 "월간도 추가 버튼추가"): 연도별 또는 월별로 ①예상배당(회색, 그 시점
-   스냅샷 예상액 합계) ②확정배당(일반배당/커버드콜 스택)을 나란히 보여준다. mode="year"면
-   연도 단위로 12개월을 합산, mode="month"면 달 단위로 그대로 그린다(최근 24개월 캡).
-   확정배당의 색상 구분은 divSplit(카테고리 비율, upsertMonthlySnapshot에서 스냅샷 시점에
-   저장)이 있는 달만 실측 비율로 나눈다 — 없는 달(이 기능 이전 과거 이력)은 "구분 데이터
-   없음" 회색 세그먼트로 남겨 값을 지어내지 않는다(2026-09-01 사용자 확인: "지금부터 새로
-   기록 시작"). */
-function buildDivHistoryBarsHTML(divHistory, snapshotHistory, mode) {
+   사용자 추가 요청 "월간도 추가 버튼추가"), A78(같은 날 사용자 보고 "커버드콜 표시안됨"):
+   연도별 또는 월별로 ①예상배당 ②확정배당을 나란히 보여주고, 각각을 일반배당/커버드콜로
+   색 구분한다. mode="year"면 연도 단위로 12개월을 합산, mode="month"면 달 단위로 그대로
+   그린다(최근 24개월 캡).
+
+   색 구분에 쓸 카테고리 비율(divSplit)은 그 달 스냅샷이 있어야만 알 수 있는데, A76 배포
+   시점부터 새로 기록하기 시작했다 — 그래서 배포 직후엔 "이번 달 스냅샷"도 아직 안 찍혀
+   있으면 예상배당조차 전혀 안 보이고(과거 이력에 이번 달이 없으니) 확정배당도 항상
+   회색이었다("커버드콜 표시안됨" 원인). live 인자로 지금 이 순간의 perRow 기준 예상
+   월배당·카테고리 비율을 넘기면, 그 값을 "이번 달"/"올해" 칸에 한해 실시간으로 채워
+   스냅샷을 안 찍어도 바로 보이게 한다 — 과거 확정 이력에는 적용하지 않는다(그건 실제
+   지급 데이터라 라이브 값으로 덮어쓰면 안 됨). live: { monthKey, monthlyDiv, divSplit }. */
+function buildDivHistoryBarsHTML(divHistory, snapshotHistory, mode, live) {
   const dh = divHistory || {};
   const snapByMonth = new Map((snapshotHistory || []).map((h) => [h.month, h]));
+  const liveKey = live && live.monthlyDiv > 0 ? live.monthKey : null;
+  const estFor = (key, snap) => {
+    if (snap && snap.monthlyDiv > 0) return snap.monthlyDiv;
+    if (key === liveKey) return live.monthlyDiv;
+    return 0;
+  };
+  const splitFor = (key, snap) => {
+    if (snap && snap.divSplit) return snap.divSplit;
+    if (key === liveKey && live.divSplit) return live.divSplit;
+    return null;
+  };
   let truncNote = "";
   let units;
 
@@ -3447,6 +3464,7 @@ function buildDivHistoryBarsHTML(divHistory, snapshotHistory, mode) {
     const allMonths = new Set();
     for (const k of Object.keys(dh)) if (/^\d{4}-\d{2}$/.test(k) && dh[k] > 0) allMonths.add(k);
     for (const h of snapshotHistory || []) if (h.monthlyDiv > 0) allMonths.add(h.month);
+    if (liveKey) allMonths.add(liveKey);
     let sortedMonths = [...allMonths].sort();
     if (sortedMonths.length > 24) {
       truncNote = `최근 24개월만 표시(전체 ${sortedMonths.length}개월 중). `;
@@ -3454,38 +3472,38 @@ function buildDivHistoryBarsHTML(divHistory, snapshotHistory, mode) {
     }
     units = sortedMonths.map((key) => {
       const snap = snapByMonth.get(key);
-      const est = snap && snap.monthlyDiv > 0 ? snap.monthlyDiv : 0;
+      const est = estFor(key, snap);
       const confirmed = dh[key] > 0 ? dh[key] : 0;
-      let splitGeneral = 0, splitCC = 0, splitKnown = 0;
-      if (confirmed > 0 && snap && snap.divSplit) {
-        splitGeneral = confirmed * snap.divSplit.generalPct;
-        splitCC = confirmed * snap.divSplit.coveredCallPct;
-        splitKnown = confirmed;
+      const ratio = splitFor(key, snap);
+      let splitGeneral = 0, splitCC = 0, splitKnown = 0, estGeneral = 0, estCC = 0, estKnown = 0;
+      if (ratio) {
+        if (confirmed > 0) { splitGeneral = confirmed * ratio.generalPct; splitCC = confirmed * ratio.coveredCallPct; splitKnown = confirmed; }
+        if (est > 0) { estGeneral = est * ratio.generalPct; estCC = est * ratio.coveredCallPct; estKnown = est; }
       }
-      return { label: key.slice(2).replace("-", "."), est, confirmed, splitGeneral, splitCC, splitUnknown: confirmed - splitKnown };
+      return { label: key.slice(2).replace("-", "."), est, confirmed, splitGeneral, splitCC, splitUnknown: confirmed - splitKnown, estGeneral, estCC, estUnknown: est - estKnown };
     });
   } else {
     const years = new Set();
     for (const k of Object.keys(dh)) if (/^\d{4}-\d{2}$/.test(k) && dh[k] > 0) years.add(k.slice(0, 4));
     for (const h of snapshotHistory || []) if (h.monthlyDiv > 0) years.add(h.month.slice(0, 4));
+    if (liveKey) years.add(liveKey.slice(0, 4));
     const sortedYears = [...years].sort();
     units = sortedYears.map((y) => {
-      let est = 0, confirmed = 0, splitGeneral = 0, splitCC = 0, splitKnown = 0;
+      let est = 0, confirmed = 0, splitGeneral = 0, splitCC = 0, splitKnown = 0, estGeneral = 0, estCC = 0, estKnown = 0;
       for (let m = 1; m <= 12; m++) {
         const key = `${y}-${String(m).padStart(2, "0")}`;
         const snap = snapByMonth.get(key);
-        if (snap && snap.monthlyDiv > 0) est += snap.monthlyDiv;
+        const mEst = estFor(key, snap);
+        if (mEst > 0) est += mEst;
         const conf = dh[key];
-        if (conf > 0) {
-          confirmed += conf;
-          if (snap && snap.divSplit) {
-            splitGeneral += conf * snap.divSplit.generalPct;
-            splitCC += conf * snap.divSplit.coveredCallPct;
-            splitKnown += conf;
-          }
+        if (conf > 0) confirmed += conf;
+        const ratio = splitFor(key, snap);
+        if (ratio) {
+          if (conf > 0) { splitGeneral += conf * ratio.generalPct; splitCC += conf * ratio.coveredCallPct; splitKnown += conf; }
+          if (mEst > 0) { estGeneral += mEst * ratio.generalPct; estCC += mEst * ratio.coveredCallPct; estKnown += mEst; }
         }
       }
-      return { label: y, est, confirmed, splitGeneral, splitCC, splitUnknown: confirmed - splitKnown };
+      return { label: y, est, confirmed, splitGeneral, splitCC, splitUnknown: confirmed - splitKnown, estGeneral, estCC, estUnknown: est - estKnown };
     });
   }
 
@@ -3494,25 +3512,39 @@ function buildDivHistoryBarsHTML(divHistory, snapshotHistory, mode) {
   const H = 130; // 컬럼 최대 높이(px) — 백분율 대신 픽셀로 직접 계산해 스택 중첩 백분율 문제를 피함
   const fmtShort = (v) => v >= 10000 ? `${Math.round(v / 10000).toLocaleString()}만` : v > 0 ? Math.round(v).toLocaleString() : "";
 
-  const groups = units.map(({ label, est, confirmed, splitGeneral, splitCC, splitUnknown }) => {
+  const groups = units.map(({ label, est, confirmed, splitGeneral, splitCC, splitUnknown, estGeneral, estCC, estUnknown }) => {
     const estPx = est > 0 ? Math.max(2, (est / max) * H) : 0;
     const confPx = confirmed > 0 ? Math.max(2, (confirmed / max) * H) : 0;
-    const ratio = confirmed > 0 ? confPx / confirmed : 0;
-    const generalPx = splitGeneral * ratio;
-    const ccPx = splitCC * ratio;
-    const unknownPx = Math.max(0, confPx - generalPx - ccPx);
+
+    const confRatio = confirmed > 0 ? confPx / confirmed : 0;
+    const confGeneralPx = splitGeneral * confRatio;
+    const confCcPx = splitCC * confRatio;
+    const confUnknownPx = Math.max(0, confPx - confGeneralPx - confCcPx);
+
+    const estRatio = est > 0 ? estPx / est : 0;
+    const estGeneralPx = estGeneral * estRatio;
+    const estCcPx = estCC * estRatio;
+    const estUnknownPx = Math.max(0, estPx - estGeneralPx - estCcPx);
+    const estHasSplit = (estGeneral + estCC) > 0;
+
     return `<div class="ydb-group">
       <div class="ydb-pair">
         <div class="ydb-col">
           ${est > 0 ? `<span class="ydb-val">${fmtShort(est)}</span>` : ""}
-          <div class="ydb-bar est" style="height:${estPx.toFixed(0)}px"></div>
+          ${estHasSplit
+            ? `<div class="ydb-stack est" style="height:${estPx.toFixed(0)}px">
+                 <div class="ydb-seg ydb-seg-unknown" style="height:${estUnknownPx.toFixed(0)}px"></div>
+                 <div class="ydb-seg ydb-seg-cc" style="height:${estCcPx.toFixed(0)}px"></div>
+                 <div class="ydb-seg ydb-seg-general" style="height:${estGeneralPx.toFixed(0)}px"></div>
+               </div>`
+            : `<div class="ydb-bar est" style="height:${estPx.toFixed(0)}px"></div>`}
         </div>
         <div class="ydb-col">
           ${confirmed > 0 ? `<span class="ydb-val total">${fmtShort(confirmed)}</span>` : ""}
           <div class="ydb-stack" style="height:${confPx.toFixed(0)}px">
-            <div class="ydb-seg ydb-seg-unknown" style="height:${unknownPx.toFixed(0)}px"></div>
-            <div class="ydb-seg ydb-seg-cc" style="height:${ccPx.toFixed(0)}px"></div>
-            <div class="ydb-seg ydb-seg-general" style="height:${generalPx.toFixed(0)}px"></div>
+            <div class="ydb-seg ydb-seg-unknown" style="height:${confUnknownPx.toFixed(0)}px"></div>
+            <div class="ydb-seg ydb-seg-cc" style="height:${confCcPx.toFixed(0)}px"></div>
+            <div class="ydb-seg ydb-seg-general" style="height:${confGeneralPx.toFixed(0)}px"></div>
           </div>
         </div>
       </div>
@@ -3520,15 +3552,15 @@ function buildDivHistoryBarsHTML(divHistory, snapshotHistory, mode) {
     </div>`;
   }).join("");
 
-  const hasUnknown = units.some((r) => r.splitUnknown > 0);
+  const hasUnknown = units.some((r) => r.splitUnknown > 0 || r.estUnknown > 0);
   return `<div class="ydb-row">${groups}</div>
-    <p class="stat-sub">${truncNote}예상배당(회색)은 그 ${mode === "month" ? "달" : "해"} 스냅샷 시점 예상액 합계, 확정배당(오른쪽 막대)은 일반배당/커버드콜로 스택. ${hasUnknown ? "2026-09-01 이전 확정 이력은 종목별 카테고리 기록이 없어 구분 없이 회색으로 표시됩니다(지어내지 않음) — 이후 스냅샷부터 자동으로 색이 채워집니다." : ""}</p>`;
+    <p class="stat-sub">${truncNote}예상배당(왼쪽)·확정배당(오른쪽) 모두 일반배당/커버드콜로 색 구분되며, 이번 ${mode === "month" ? "달" : "해"}은 지금 이 순간 보유 구성으로 실시간 표시됩니다. ${hasUnknown ? "2026-09-01 이전 확정 이력·스냅샷은 종목별 카테고리 기록이 없어 구분 없이 회색으로 표시됩니다(지어내지 않음)." : ""}</p>`;
 }
 
 /* A77: 연간/월간 전환 버튼 + 범례 + 실제 막대 컨테이너를 감싸는 섹션. 버튼 클릭은
    renderMyAssets() 재실행 없이 #divHistoryBody만 다시 그린다(mySignalSigmaWin류 패턴). */
-function buildDivHistorySectionHTML(divHistory, snapshotHistory) {
-  const yearHTML = buildDivHistoryBarsHTML(divHistory, snapshotHistory, "year");
+function buildDivHistorySectionHTML(divHistory, snapshotHistory, live) {
+  const yearHTML = buildDivHistoryBarsHTML(divHistory, snapshotHistory, "year", live);
   if (!yearHTML) return "";
   return `<div class="ydb-legend">
       <span><span class="ydb-legend-dot" style="background:color-mix(in srgb, var(--text-secondary) 55%, transparent)"></span>예상배당</span>
@@ -6127,7 +6159,10 @@ async function renderMyAssets() {
   const yearlyHTML = buildYearlyDivHTML(state.myAssetsDivHistory || {}, totalMonthlyDiv, history);
   // A76(2026-09-01 사용자 요청 "월배당탭에 예상배당/확정배당/일반배당/커버드콜 표기 추가"):
   // 연간 예상 vs 확정(일반배당/커버드콜 스택) 막대 — 월배당현황 탭용.
-  const annualDivHTML = buildDivHistorySectionHTML(state.myAssetsDivHistory || {}, history);
+  // A78(같은 날 사용자 보고 "커버드콜 표시안됨"): 이번 달만은 스냅샷 여부와 무관하게
+  // 지금 이 순간의 perRow 구성으로 즉시 색이 보이도록 live 값을 함께 넘긴다.
+  const liveDivHistory = { monthKey: todayStr().slice(0, 7), monthlyDiv: totalMonthlyDiv, divSplit: computeDivSplit(perRow) };
+  const annualDivHTML = buildDivHistorySectionHTML(state.myAssetsDivHistory || {}, history, liveDivHistory);
   // A72 개정(2026-09-01 사용자 요청 "좌우이격 심함·예상배당금 형태참조수정·년도별 버튼추가"):
   // SVG 막대(xAt를 막대 중심으로 재사용해 첫 막대가 y축 라벨을 덮던 버그)를 걷어내고, 이미
   // 검증된 "예상 배당금" flex 막대(buildMonthBarsHTML)와 같은 방식으로 재구성한다.
@@ -6731,7 +6766,7 @@ async function renderMyAssets() {
     const renderDivHistoryMode = () => {
       const body = document.getElementById("divHistoryBody");
       const mode = state.myDivHistoryMode || "year";
-      if (body) body.innerHTML = buildDivHistoryBarsHTML(state.myAssetsDivHistory || {}, history, mode);
+      if (body) body.innerHTML = buildDivHistoryBarsHTML(state.myAssetsDivHistory || {}, history, mode, liveDivHistory);
       divHistoryModeBtns.querySelectorAll("button").forEach((b) => {
         b.classList.toggle("active", b.dataset.mode === mode);
       });

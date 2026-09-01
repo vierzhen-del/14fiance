@@ -568,6 +568,7 @@
   .ydb-bar { width: 22px; border-radius: 3px 3px 0 0; }
   .ydb-bar.est { background: color-mix(in srgb, var(--text-secondary) 55%, transparent); }
   .ydb-stack { width: 22px; display: flex; flex-direction: column-reverse; border-radius: 3px 3px 0 0; overflow: hidden; }
+  .ydb-stack.est { opacity: 0.7; } /* A78: 예상배당 스택은 확정과 구분되게 살짝 옅게 */
   .ydb-seg-general { background: var(--good); }
   .ydb-seg-cc { background: #e0a72e; }
   .ydb-seg-unknown { background: var(--gridline); }
