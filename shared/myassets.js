@@ -1045,6 +1045,7 @@ function buildYearlyDivHTML(divHistory, expectedMonthly, snapshotHistory) {
   const fmtW = (v) => fmtPrice(v, "KRW");
   const years = [...new Set(keys.map((k) => k.slice(0, 4)))].sort();
   const nowMonth = todayStr().slice(0, 7);
+  const MONTH_LABELS = ["1월", "2월", "3월", "4월", "5월", "6월", "7월", "8월", "9월", "10월", "11월", "12월"];
   const yearTotals = new Map(); // 연도 → { sum, months } — months는 그 해 중 확정치가 있는 달 수(YoY 동기간 비교용)
   const rows = years.map((y) => {
     const cells = [];
@@ -1052,14 +1053,19 @@ function buildYearlyDivHTML(divHistory, expectedMonthly, snapshotHistory) {
     for (let m = 1; m <= 12; m++) {
       const key = `${y}-${String(m).padStart(2, "0")}`;
       const v = divHistory[key];
+      const label = MONTH_LABELS[m - 1];
       if (v > 0) {
-        cells.push(`<td style="font-weight:600;">${fmtW(v)}</td>`);
+        cells.push(`<td data-label="${label}" style="font-weight:600;">${fmtW(v)}</td>`);
         sum += v; months++;
-      } else if (key > nowMonth) cells.push(`<td style="color:var(--text-muted);">예정</td>`);
-      else cells.push(`<td style="color:var(--text-muted);">—</td>`);
+      } else if (key > nowMonth) cells.push(`<td data-label="${label}" style="color:var(--text-muted);">예정</td>`);
+      else cells.push(`<td data-label="${label}" style="color:var(--text-muted);">—</td>`);
     }
     yearTotals.set(y, { sum, months });
-    return `<tr><td>${y}</td>${cells.join("")}<td style="font-weight:700; border-left:1px solid var(--border);">${sum > 0 ? fmtW(sum) : "—"}</td></tr>`;
+    // A72(2026-08-31 사용자 보고 "숫자 안 보임"): 14열(연도+12개월+합계) 표가 좁은 화면에서
+    // 가로 스크롤 없인 뒤쪽 열(특히 합계)이 화면 밖으로 밀려 안 보였다. stack-narrow를 쓰면
+    // 640px 이하에서 각 달을 "1월 ─ ₩..." 줄로 세로 나열해 스크롤 없이 전부 보인다
+    // (넓은 화면에서는 기존처럼 표+가로스크롤 그대로).
+    return `<tr><td>${y}</td>${cells.join("")}<td data-label="합계" style="font-weight:700; border-left:1px solid var(--border);">${sum > 0 ? fmtW(sum) : "—"}</td></tr>`;
   }).join("");
   // 전월 대비(확정치가 연속 2개 이상일 때)
   const sorted = keys.sort();
@@ -1090,7 +1096,7 @@ function buildYearlyDivHTML(divHistory, expectedMonthly, snapshotHistory) {
   }
   return `<p class="chart-title" style="margin-top:20px;">📅 연도별 확정 월배당 (가져온 이력 기준)</p>
     <div style="overflow-x:auto;">
-    <table class="account-summary-table">
+    <table class="account-summary-table stack-narrow">
       <thead><tr><th>연도</th><th>1월</th><th>2월</th><th>3월</th><th>4월</th><th>5월</th><th>6월</th><th>7월</th><th>8월</th><th>9월</th><th>10월</th><th>11월</th><th>12월</th><th style="border-left:1px solid var(--border);">합계</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
@@ -4214,13 +4220,16 @@ async function renderMyAssets() {
   renderMyOverview();
 
   if (history.length >= 2) {
+    // A72(2026-08-31 사용자 요청): 선 그래프는 몇 % 변화인지 눈에 잘 안 들어온다는 지적 —
+    // 막대로 바꾸고 막대 끝에 값을 직접 표시(labelFmt는 축약형, 툴팁은 기존처럼 전액 표시).
     buildChart(document.getElementById("myAssetTrendChart"), {
       dates: history.map((h) => h.month + "-01"),
       values: history.map((h) => h.value),
       color: cssVar("--series-price"),
-      mode: "price", currency: "KRW",
+      mode: "price", currency: "KRW", type: "bar",
       markers: [],
       valueFmt: (v) => fmtW(v),
+      labelFmt: (v) => fmtKrwShort(v),
       seriesLabel: "평가액",
     });
   }
