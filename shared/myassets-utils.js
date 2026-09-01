@@ -287,15 +287,8 @@ function buildCompareChart(container, seriesList, opts = {}) {
   svg.addEventListener("click", onClick);
 }
 
-/* A72(2026-08-31 사용자 요청): "숫자가 안 보임 · 바 형식으로 깔끔하게" —
-   opts.type === "bar"이면 선(line) 대신 막대로 그리고, 각 막대 끝(위)에 값을 직접
-   표시한다(라이브러리 없이 기존 stroke-dasharray 패턴과 같은 순수 SVG). 호출부가
-   없던 옵션이라 기본값은 그대로 "line"이라 다른 화면에 영향 없다(현재 이 함수의
-   유일한 호출부는 "평가액·월배당 추이" 한 곳). */
 function buildChart(container, opts) {
   const { dates, values, color, mode, markers, valueFmt, seriesLabel } = opts;
-  const type = opts.type || "line";
-  const labelFmt = opts.labelFmt || valueFmt;
   const axisPrefix = opts.currency === "KRW" ? "₩" : "$";
   const n = values.length;
   const xAt = (i) => PAD_L + (i / (n - 1)) * (CHART_W - PAD_L - PAD_R);
@@ -313,26 +306,6 @@ function buildChart(container, opts) {
   if (mode === "drawdown") {
     const zeroY = yAt(0).toFixed(2);
     areaPath = `M${xAt(0).toFixed(2)},${zeroY} ` + path.replace(/^M/, "L") + `L${xAt(n - 1).toFixed(2)},${zeroY} Z`;
-  }
-
-  // 막대: 값 라벨이 여럿 겹치지 않게, 막대 수가 많으면(월이 쌓여 8개 초과) 몇 개씩 건너뛰고
-  // 표시하되 마지막(가장 최근) 막대는 항상 라벨을 보여준다 — 가장 궁금한 값이므로.
-  let barSvg = "";
-  if (type === "bar") {
-    const slot = (CHART_W - PAD_L - PAD_R) / n;
-    const barW = Math.max(2, slot * 0.62);
-    const baseY = CHART_H - PAD_B;
-    const labelStep = n > 8 ? Math.ceil(n / 8) : 1;
-    barSvg = values.map((v, i) => {
-      const cx = xAt(i);
-      const y = yAt(v);
-      const h = Math.max(1, baseY - y);
-      const showLabel = i % labelStep === 0 || i === n - 1;
-      const label = showLabel
-        ? `<text class="chart-bar-label" x="${cx.toFixed(2)}" y="${Math.max(PAD_T - 2, y - 6).toFixed(2)}" text-anchor="middle">${labelFmt(v)}</text>`
-        : "";
-      return `<rect class="chart-bar" x="${(cx - barW / 2).toFixed(2)}" y="${y.toFixed(2)}" width="${barW.toFixed(2)}" height="${h.toFixed(2)}" rx="2"/>${label}`;
-    }).join("");
   }
 
   const gridSvg = ticks
@@ -371,7 +344,7 @@ function buildChart(container, opts) {
       <svg class="chart" viewBox="0 0 ${CHART_W} ${CHART_H}" preserveAspectRatio="xMidYMid meet">
         ${gridSvg}
         <line class="baseline" x1="${PAD_L}" x2="${CHART_W - PAD_R}" y1="${CHART_H - PAD_B}" y2="${CHART_H - PAD_B}"/>
-        ${type === "bar" ? barSvg : `${areaPath ? `<path class="dd-area" d="${areaPath}"/>` : ""}<path class="${mode === "drawdown" ? "dd-line" : "price-line"}" d="${path}"/>`}
+        ${areaPath ? `<path class="dd-area" d="${areaPath}"/>` : ""}<path class="${mode === "drawdown" ? "dd-line" : "price-line"}" d="${path}"/>
         ${markerSvg}
         ${xLabelsSvg}
         <g class="hover-layer" style="display:none">

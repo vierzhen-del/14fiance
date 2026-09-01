@@ -3002,6 +3002,38 @@ function buildMonthBarsHTML(monthlyDiv, divHistory) {
   <p class="stat-sub">진한 막대 = 확정 이력(가져온 데이터), 중간 막대 = 이번 달 추정(현재 월배당 기준), 표시 없음 = 데이터 없음(${year}년).</p>`;
 }
 
+/* A72 개정 — "평가액·월배당 추이"를 buildMonthBarsHTML과 같은 flex 막대(.month-bars/.mb-col)로
+   그린다. flex:1 컬럼은 개수와 무관하게 항상 균등폭이라 A72의 SVG 버전에서 있었던 "첫 막대가
+   y축 라벨을 덮고 이후 막대 간격이 들쭉날쭉"한 문제가 구조적으로 생기지 않는다.
+   선택한 연도의 1~12월만 그린다(년도별 버튼추가 요청) — 기록 없는 달은 빈 막대로 표시.
+   높이는 0원 기준이 아니라 그 해 최소~최대 구간을 20%~100%로 정규화한다 — 평가액처럼
+   달마다 변화폭이 좁은 값(예: 7.9억~8.6억)은 0원 기준이면 막대 높이가 거의 같아 보여
+   추이를 읽기 어렵기 때문(사용자 스크린샷 참조 대상이었던 SVG 버전은 min/max 축 확대를
+   썼는데, 그 시각적 구분력만 flex 막대에 옮겨온 것 — 좌우 간격 버그와는 무관). */
+function buildAssetTrendBarsHTML(history, year) {
+  const rows = [];
+  for (let m = 1; m <= 12; m++) {
+    const key = `${year}-${String(m).padStart(2, "0")}`;
+    const entry = history.find((h) => h.month === key);
+    rows.push({ m, value: entry ? entry.value : null });
+  }
+  const present = rows.filter((r) => r.value != null).map((r) => r.value);
+  if (!present.length) return `<p class="compare-empty">${year}년 기록이 없습니다.</p>`;
+  const min = Math.min(...present), max = Math.max(...present);
+  const FLOOR = 20; // 데이터가 있는 달이 0%로 안 보이게 하는 최소 높이(%)
+  const bars = rows.map(({ m, value }) => {
+    const h = value == null ? 0 : max === min ? 100 : FLOOR + ((value - min) / (max - min)) * (100 - FLOOR);
+    const label = value == null ? "" : fmtKrwShort(value);
+    return `<div class="mb-col">
+      <span class="mb-val">${label}</span>
+      <div class="mb-bar${value != null ? " confirmed" : ""}" style="height:${h.toFixed(0)}%"></div>
+      <span class="mb-label">${m}월</span>
+    </div>`;
+  }).join("");
+  return `<div class="month-bars">${bars}</div>
+  <p class="stat-sub">막대 높이는 ${year}년 내 최소~최대 평가액 구간 기준(0원 기준 아님) · 빈 칸 = 그 달 스냅샷 없음.</p>`;
+}
+
 /* 통합 탭 — 자산 유형별(카테고리) 1줄 스택바 */
 function buildCategoryStackHTML(perRow) {
   const totals = new Map();
@@ -3657,8 +3689,12 @@ async function renderMyAssets() {
   const history = JSON.parse(localStorage.getItem(MY_ASSETS_HISTORY_KEY) || "[]");
   // 연도별 확정 배당 이력 + 예상 대비 괴리율(A25c) — history를 쓰므로 반드시 그 뒤에서 호출
   const yearlyHTML = buildYearlyDivHTML(state.myAssetsDivHistory || {}, totalMonthlyDiv, history);
+  // A72 개정(2026-09-01 사용자 요청 "좌우이격 심함·예상배당금 형태참조수정·년도별 버튼추가"):
+  // SVG 막대(xAt를 막대 중심으로 재사용해 첫 막대가 y축 라벨을 덮던 버그)를 걷어내고, 이미
+  // 검증된 "예상 배당금" flex 막대(buildMonthBarsHTML)와 같은 방식으로 재구성한다.
+  const trendYears = [...new Set(history.map((h) => h.month.slice(0, 4)))].sort();
   const trendHTML = history.length >= 2
-    ? `<div id="myAssetTrendChart"></div>`
+    ? `${trendYears.length > 1 ? `<div id="myAssetTrendYearBtns" class="seg" style="margin-bottom:8px;">${trendYears.map((y) => `<button type="button" data-year="${y}">${y}</button>`).join("")}</div>` : ""}<div id="myAssetTrendChart"></div>`
     : `<p class="compare-empty">"이번 달 스냅샷 저장"을 매달 눌러두면 평가액·월배당 추이 그래프가 여기 쌓입니다(현재 ${history.length}개월 기록).</p>`;
   // 일별 자산변동 캡처 이력 — "오늘 자산 스냅샷" 버튼으로 누적(기기 저장, 매일 직접 눌러야 함)
   const dailyHistory = JSON.parse(localStorage.getItem(MY_ASSETS_DAILY_HISTORY_KEY) || "[]");
@@ -4220,18 +4256,22 @@ async function renderMyAssets() {
   renderMyOverview();
 
   if (history.length >= 2) {
-    // A72(2026-08-31 사용자 요청): 선 그래프는 몇 % 변화인지 눈에 잘 안 들어온다는 지적 —
-    // 막대로 바꾸고 막대 끝에 값을 직접 표시(labelFmt는 축약형, 툴팁은 기존처럼 전액 표시).
-    buildChart(document.getElementById("myAssetTrendChart"), {
-      dates: history.map((h) => h.month + "-01"),
-      values: history.map((h) => h.value),
-      color: cssVar("--series-price"),
-      mode: "price", currency: "KRW", type: "bar",
-      markers: [],
-      valueFmt: (v) => fmtW(v),
-      labelFmt: (v) => fmtKrwShort(v),
-      seriesLabel: "평가액",
+    // A72 개정: 연도 버튼 클릭 시 renderMyAssets() 전체 재실행(시세 재조회) 없이
+    // 이 위젯만 다시 그린다 — state.myAssetTrendYear 패턴은 mySignalSigmaWin 등과 동일.
+    if (!state.myAssetTrendYear || !trendYears.includes(state.myAssetTrendYear)) {
+      state.myAssetTrendYear = trendYears[trendYears.length - 1];
+    }
+    const renderAssetTrendBars = () => {
+      const el = document.getElementById("myAssetTrendChart");
+      if (el) el.innerHTML = buildAssetTrendBarsHTML(history, state.myAssetTrendYear);
+      document.querySelectorAll("#myAssetTrendYearBtns button").forEach((b) => {
+        b.classList.toggle("active", b.dataset.year === state.myAssetTrendYear);
+      });
+    };
+    document.querySelectorAll("#myAssetTrendYearBtns button").forEach((b) => {
+      b.addEventListener("click", () => { state.myAssetTrendYear = b.dataset.year; renderAssetTrendBars(); });
     });
+    renderAssetTrendBars();
   }
   document.getElementById("mySnapshotBtn").addEventListener("click", async () => {
     const month = todayStr().slice(0, 7);
