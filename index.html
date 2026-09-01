@@ -5254,13 +5254,18 @@ function buildMonthBarsHTML(monthlyDiv, divHistory) {
    높이는 0원 기준이 아니라 그 해 최소~최대 구간을 20%~100%로 정규화한다 — 평가액처럼
    달마다 변화폭이 좁은 값(예: 7.9억~8.6억)은 0원 기준이면 막대 높이가 거의 같아 보여
    추이를 읽기 어렵기 때문(사용자 스크린샷 참조 대상이었던 SVG 버전은 min/max 축 확대를
-   썼는데, 그 시각적 구분력만 flex 막대에 옮겨온 것 — 좌우 간격 버그와는 무관). */
-function buildAssetTrendBarsHTML(history, year) {
+   썼는데, 그 시각적 구분력만 flex 막대에 옮겨온 것 — 좌우 간격 버그와는 무관).
+   A73(2026-09-01 사용자 요청 "월배당 누락 추가 · 다른 도표로"): 이 함수 하나로 평가액과
+   월배당을 둘 다 그린다 — field로 history 엔트리의 어느 키(value/monthlyDiv)를 볼지만
+   바꾸고, 두 지표는 서로 다른 컨테이너에 각각 렌더링해 하나의 막대에 두 값을 욱여넣지
+   않는다(단위·스케일이 달라 겹치면 어느 쪽 기준인지 헷갈림). */
+function buildAssetTrendBarsHTML(history, year, field) {
+  field = field || "value";
   const rows = [];
   for (let m = 1; m <= 12; m++) {
     const key = `${year}-${String(m).padStart(2, "0")}`;
     const entry = history.find((h) => h.month === key);
-    rows.push({ m, value: entry ? entry.value : null });
+    rows.push({ m, value: entry ? entry[field] : null });
   }
   const present = rows.filter((r) => r.value != null).map((r) => r.value);
   if (!present.length) return `<p class="compare-empty">${year}년 기록이 없습니다.</p>`;
@@ -5275,8 +5280,9 @@ function buildAssetTrendBarsHTML(history, year) {
       <span class="mb-label">${m}월</span>
     </div>`;
   }).join("");
+  const fieldLabel = field === "monthlyDiv" ? "월배당" : "평가액";
   return `<div class="month-bars">${bars}</div>
-  <p class="stat-sub">막대 높이는 ${year}년 내 최소~최대 평가액 구간 기준(0원 기준 아님) · 빈 칸 = 그 달 스냅샷 없음.</p>`;
+  <p class="stat-sub">막대 높이는 ${year}년 내 최소~최대 ${fieldLabel} 구간 기준(0원 기준 아님) · 빈 칸 = 그 달 스냅샷 없음.</p>`;
 }
 
 /* 통합 탭 — 자산 유형별(카테고리) 1줄 스택바 */
@@ -5937,8 +5943,14 @@ async function renderMyAssets() {
   // SVG 막대(xAt를 막대 중심으로 재사용해 첫 막대가 y축 라벨을 덮던 버그)를 걷어내고, 이미
   // 검증된 "예상 배당금" flex 막대(buildMonthBarsHTML)와 같은 방식으로 재구성한다.
   const trendYears = [...new Set(history.map((h) => h.month.slice(0, 4)))].sort();
+  // A73(2026-09-01 사용자 요청): 평가액 막대에 월배당이 안 보인다는 지적 — 한 막대에
+  // 두 지표를 욱여넣지 않고(스케일이 다름) 같은 연도 버튼을 공유하는 별도 도표로 추가.
   const trendHTML = history.length >= 2
-    ? `${trendYears.length > 1 ? `<div id="myAssetTrendYearBtns" class="seg" style="margin-bottom:8px;">${trendYears.map((y) => `<button type="button" data-year="${y}">${y}</button>`).join("")}</div>` : ""}<div id="myAssetTrendChart"></div>`
+    ? `${trendYears.length > 1 ? `<div id="myAssetTrendYearBtns" class="seg" style="margin-bottom:8px;">${trendYears.map((y) => `<button type="button" data-year="${y}">${y}</button>`).join("")}</div>` : ""}
+       <p class="chart-title">평가액</p>
+       <div id="myAssetTrendChart"></div>
+       <p class="chart-title" style="margin-top:14px;">월배당</p>
+       <div id="myAssetDivTrendChart"></div>`
     : `<p class="compare-empty">"이번 달 스냅샷 저장"을 매달 눌러두면 평가액·월배당 추이 그래프가 여기 쌓입니다(현재 ${history.length}개월 기록).</p>`;
   // 일별 자산변동 캡처 이력 — "오늘 자산 스냅샷" 버튼으로 누적(기기 저장, 매일 직접 눌러야 함)
   const dailyHistory = JSON.parse(localStorage.getItem(MY_ASSETS_DAILY_HISTORY_KEY) || "[]");
@@ -6507,7 +6519,9 @@ async function renderMyAssets() {
     }
     const renderAssetTrendBars = () => {
       const el = document.getElementById("myAssetTrendChart");
-      if (el) el.innerHTML = buildAssetTrendBarsHTML(history, state.myAssetTrendYear);
+      if (el) el.innerHTML = buildAssetTrendBarsHTML(history, state.myAssetTrendYear, "value");
+      const elDiv = document.getElementById("myAssetDivTrendChart");
+      if (elDiv) elDiv.innerHTML = buildAssetTrendBarsHTML(history, state.myAssetTrendYear, "monthlyDiv");
       document.querySelectorAll("#myAssetTrendYearBtns button").forEach((b) => {
         b.classList.toggle("active", b.dataset.year === state.myAssetTrendYear);
       });
