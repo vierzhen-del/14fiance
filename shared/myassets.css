@@ -543,13 +543,18 @@
   .donut-swatch { width: 9px; height: 9px; border-radius: 2px; flex-shrink: 0; display: inline-block; }
   .donut-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .donut-pct { font-weight: 600; }
-  .month-bars { display: flex; align-items: flex-end; gap: 4px; height: 130px; margin: 8px 0 4px; }
+  .month-bars { display: flex; align-items: flex-end; gap: 4px; height: 148px; margin: 8px 0 4px; }
   .mb-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: 3px; }
   .mb-val { font-size: 9.5px; color: var(--text-muted); white-space: nowrap; }
   .mb-bar { width: 100%; max-width: 34px; border-radius: 4px 4px 0 0; background: var(--gridline); }
   .mb-bar.estimated { background: color-mix(in srgb, var(--series-price) 45%, transparent); }
   .mb-bar.confirmed { background: var(--series-price); }
   .mb-label { font-size: 10px; color: var(--text-muted); }
+  /* A75: 막대 위 증가율 배지 — 인스타 인포그래픽(국가예산 추이) 참조, 직전 실값 대비 %만
+     표시(비교 대상 없으면 생략, 지어내지 않음) */
+  .mb-pct { font-size: 9px; font-weight: 700; white-space: nowrap; }
+  .mb-pct.up { color: var(--good); }
+  .mb-pct.down { color: var(--critical); }
   .stack-bar { display: flex; height: 18px; border-radius: 6px; overflow: hidden; margin: 8px 0 8px; }
   .stack-seg { height: 100%; }
   .stack-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; }

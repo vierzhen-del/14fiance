@@ -2993,17 +2993,30 @@ function buildMonthBarsHTML(monthlyDiv, divHistory) {
     vals.push({ m, v, confirmed: confirmed != null, estimated: confirmed == null && m === nowMonth });
   }
   const max = Math.max(...vals.map((x) => x.v), 1);
-  const bars = vals.map(({ m, v, confirmed, estimated }) => {
+  // A75(2026-09-01 사용자 요청 "바그래프에 증가율표시" — 인스타 인포그래픽 참조): 막대 위에
+  // 직전 실값(0 채움이 아닌 확정/추정) 대비 증감률을 함께 보여준다. 앞선 실값이 없으면(연초·
+  // 데이터 공백 이후 첫 달) 비교 대상이 없으므로 %를 지어내지 않고 생략한다.
+  const bars = vals.map(({ m, v, confirmed, estimated }, i) => {
     const h = v > 0 ? Math.max(4, (v / max) * 100) : 0;
     const label = v >= 10000 ? `${Math.round(v / 10000)}만` : v > 0 ? Math.round(v).toLocaleString() : "";
+    let pct = null;
+    if (v > 0) {
+      for (let j = i - 1; j >= 0; j--) {
+        if (vals[j].v > 0) { pct = ((v - vals[j].v) / vals[j].v) * 100; break; }
+      }
+    }
+    const pctHTML = pct != null
+      ? `<span class="mb-pct ${pct >= 0 ? "up" : "down"}">${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%</span>`
+      : "";
     return `<div class="mb-col">
+      ${pctHTML}
       <span class="mb-val">${label}</span>
       <div class="mb-bar${confirmed ? " confirmed" : estimated ? " estimated" : ""}" style="height:${h.toFixed(0)}%"></div>
       <span class="mb-label">${m}월</span>
     </div>`;
   }).join("");
   return `<div class="month-bars">${bars}</div>
-  <p class="stat-sub">진한 막대 = 확정 이력(가져온 데이터), 중간 막대 = 이번 달 추정(현재 월배당 기준), 표시 없음 = 데이터 없음(${year}년).</p>`;
+  <p class="stat-sub">진한 막대 = 확정 이력(가져온 데이터), 중간 막대 = 이번 달 추정(현재 월배당 기준), 표시 없음 = 데이터 없음(${year}년). %는 직전 실값 대비 증감률.</p>`;
 }
 
 /* A72 개정 — "평가액·월배당 추이"를 buildMonthBarsHTML과 같은 flex 막대(.month-bars/.mb-col)로
@@ -3020,20 +3033,35 @@ function buildMonthBarsHTML(monthlyDiv, divHistory) {
    않는다(단위·스케일이 달라 겹치면 어느 쪽 기준인지 헷갈림). */
 function buildAssetTrendBarsHTML(history, year, field) {
   field = field || "value";
+  // A75(2026-09-01 사용자 요청 "바그래프에 증가율표시"): 연도 경계와 무관하게 시간순으로
+  // "바로 직전 스냅샷" 대비 증감률을 계산해야 해서(1월이면 전년 12월과 비교), year로
+  // 자르기 전의 전체 history를 시간순 정렬해 인덱스로 이전 항목을 찾는다.
+  const sortedHistory = history.slice().sort((a, b) => a.month.localeCompare(b.month));
   const rows = [];
   for (let m = 1; m <= 12; m++) {
     const key = `${year}-${String(m).padStart(2, "0")}`;
-    const entry = history.find((h) => h.month === key);
-    rows.push({ m, value: entry ? entry[field] : null });
+    const idx = sortedHistory.findIndex((h) => h.month === key);
+    const entry = idx >= 0 ? sortedHistory[idx] : null;
+    const value = entry ? entry[field] : null;
+    let pct = null;
+    if (value != null && idx > 0) {
+      const prevValue = sortedHistory[idx - 1][field];
+      if (prevValue != null && prevValue !== 0) pct = ((value - prevValue) / prevValue) * 100;
+    }
+    rows.push({ m, value, pct });
   }
   const present = rows.filter((r) => r.value != null).map((r) => r.value);
   if (!present.length) return `<p class="compare-empty">${year}년 기록이 없습니다.</p>`;
   const min = Math.min(...present), max = Math.max(...present);
   const FLOOR = 20; // 데이터가 있는 달이 0%로 안 보이게 하는 최소 높이(%)
-  const bars = rows.map(({ m, value }) => {
+  const bars = rows.map(({ m, value, pct }) => {
     const h = value == null ? 0 : max === min ? 100 : FLOOR + ((value - min) / (max - min)) * (100 - FLOOR);
     const label = value == null ? "" : fmtKrwShort(value);
+    const pctHTML = pct != null
+      ? `<span class="mb-pct ${pct >= 0 ? "up" : "down"}">${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%</span>`
+      : "";
     return `<div class="mb-col">
+      ${pctHTML}
       <span class="mb-val">${label}</span>
       <div class="mb-bar${value != null ? " confirmed" : ""}" style="height:${h.toFixed(0)}%"></div>
       <span class="mb-label">${m}월</span>
@@ -3041,7 +3069,7 @@ function buildAssetTrendBarsHTML(history, year, field) {
   }).join("");
   const fieldLabel = field === "monthlyDiv" ? "월배당" : "평가액";
   return `<div class="month-bars">${bars}</div>
-  <p class="stat-sub">막대 높이는 ${year}년 내 최소~최대 ${fieldLabel} 구간 기준(0원 기준 아님) · 빈 칸 = 그 달 스냅샷 없음.</p>`;
+  <p class="stat-sub">막대 높이는 ${year}년 내 최소~최대 ${fieldLabel} 구간 기준(0원 기준 아님) · 빈 칸 = 그 달 스냅샷 없음 · %는 직전 스냅샷 대비 증감률.</p>`;
 }
 
 /* 통합 탭 — 자산 유형별(카테고리) 1줄 스택바 */
