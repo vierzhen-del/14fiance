@@ -129,6 +129,22 @@ function computeReturnBreakdown(csv) {
    정보도 없었다. 계좌를 갱신(캡처 반영·가져오기)하면 그 달 스냅샷이 자동으로 갱신되게 한다.
    비중(%)이 아니라 **평가액**을 저장한다 — 나중에 그룹이 늘어도 합이 깨지지 않고, 화면에서
    나눠 쓰면 되기 때문. 같은 달이면 덮어쓴다(수동 버튼과 동일 규칙). */
+/* A76(2026-09-01 사용자 요청 "연간 배당 히스토리 — 일반배당/커버드콜 구분")·A78(같은 날
+   사용자 보고 "커버드콜 표시안됨" — 스냅샷을 새로 안 찍으면 실시간 화면에 아무 색도 안 보임):
+   perRow의 이번 달 예상 월배당(p.monthlyDiv)을 카테고리(category.includes("커버드콜"))로
+   나눈 비율. upsertMonthlySnapshot(스냅샷 저장 시 이력에 기록)과 renderMyAssets(지금 이 순간
+   실시간 표시, 스냅샷 없이도 이번 달만은 항상 보여주기 위함)이 같은 계산을 공유한다. */
+function computeDivSplit(perRow) {
+  let general = 0, coveredCall = 0;
+  for (const p of perRow) {
+    if (!(p.monthlyDiv > 0)) continue;
+    const isCC = !!(p.meta && p.meta.category && p.meta.category.includes("커버드콜"));
+    if (isCC) coveredCall += p.monthlyDiv; else general += p.monthlyDiv;
+  }
+  const total = general + coveredCall;
+  return total > 0 ? { generalPct: general / total, coveredCallPct: coveredCall / total } : null;
+}
+
 /* mddOverride: pushAssetChangelog가 방금 계산해둔 afterSnap.mdd를 넘겨 재계산을 아낀다.
    수동 "📸 이번 달 스냅샷 저장" 버튼 경로는 인자 없이 불러 여기서 직접 계산한다. */
 function upsertMonthlySnapshot(mddOverride) {
@@ -146,13 +162,25 @@ function upsertMonthlySnapshot(mddOverride) {
   const dpsBySymbol = {};
   for (const p of csv.perRow) if (p.confirmedDps > 0) dpsBySymbol[p.symbol] = p.confirmedDps;
 
+  const divSplit = computeDivSplit(csv.perRow);
+
   let hist = [];
   try { hist = JSON.parse(localStorage.getItem(MY_ASSETS_HISTORY_KEY) || "[]"); } catch (e) { hist = []; }
   // A26b: 월 단위 MDD 이력이 비중 이력과 같은 주기로 쌓인다(추이 탭 "MDD 이력" 표의 재료).
   let mdd = mddOverride;
   if (mdd === undefined) { const m = portfolioMDD(csv.perRow); mdd = m ? m.mdd : null; }
-  const entry = { month, value: csv.totalValue, monthlyDiv: csv.totalMonthlyDiv, mdd, dpsBySymbol, byAccount, byCategory, returnBreakdown: computeReturnBreakdown(csv) };
+  // A57(2026-08-14 사용자 요청): 스냅샷 시점의 코스피도 함께 남긴다 — 나중에 "이때 시장이
+  // 어땠는지"를 자산 변동과 바로 대조할 수 있게. 조회 시점에 지수를 못 가져왔으면 이전에
+  // 이 달에 이미 기록해둔 값을 유지한다(값을 지어내지도, 있던 값을 지우지도 않는다).
+  // A61(2026-08-20 사용자 보고 "코스피 고정오류"): latest_global.json은 30분 주기 수집이라
+  // 서로 다른 달의 스냅샷이 같은 값을 담는 것 자체는 정상일 수 있다(그사이 수집이 안 갱신됐을
+  // 때) — 다만 그게 진짜 최신값인지 오래된 값을 물고 있는 건지 구분할 방법이 없었다.
+  // kospiAsOf(수집 시각)를 함께 저장해 화면에서 "이 코스피는 언제 기준"인지 밝힌다.
   const idx = hist.findIndex((h) => h.month === month);
+  const marketSnap = marketIndexSnapshot(state.liveGlobal ? state.liveGlobal.data : null);
+  const kospi = (marketSnap && marketSnap.kospi) ? marketSnap.kospi.price : (idx >= 0 ? hist[idx].kospi ?? null : null);
+  const kospiAsOf = (marketSnap && marketSnap.kospi) ? marketSnap.updated : (idx >= 0 ? hist[idx].kospiAsOf ?? null : null);
+  const entry = { month, value: csv.totalValue, monthlyDiv: csv.totalMonthlyDiv, mdd, dpsBySymbol, byAccount, byCategory, kospi, kospiAsOf, divSplit, returnBreakdown: computeReturnBreakdown(csv) };
   if (idx >= 0) hist[idx] = entry; else hist.push(entry);
   hist.sort((a, b) => a.month.localeCompare(b.month));
   localStorage.setItem(MY_ASSETS_HISTORY_KEY, JSON.stringify(hist));
@@ -216,11 +244,15 @@ function updateLiveQuotesBtn() {
 }
 
 
-function addMyAssetRow(a = {}) {
+/* A52: dynamicAccounts를 안 넘기면 accountOptionsHTML 자체가 state.myAccountsExplicit
+   (가져온 JSON의 accounts 필드, applyMyAssets가 세팅)로 폴백한다 — 개별 upsert 호출부
+   (캡처 반영 등)까지 일일이 인자를 넘기게 하지 않으면서도 "가져온 JSON 기준 계좌 목록"이
+   기본으로 적용되게 한다. */
+function addMyAssetRow(a = {}, dynamicAccounts) {
   const row = document.createElement("div");
   row.className = "portfolio-row";
   row.innerHTML = `
-    <select class="my-account" aria-label="계좌 구분">${accountOptionsHTML(a.account)}</select>
+    <select class="my-account" aria-label="계좌 구분">${accountOptionsHTML(a.account, dynamicAccounts)}</select>
     <select class="my-symbol portfolio-symbol" aria-label="종목 선택">${etfOptionsHTML(a.symbol)}</select>
     <div class="portfolio-weight-wrap">
       <input type="number" class="my-qty portfolio-weight" style="width:90px" min="0" step="1" value="${a.qty ?? ""}" placeholder="수량"> 주
@@ -283,6 +315,9 @@ function serializeMyAssets() {
     livingExpense: parseFloat(document.getElementById("myLivingExpense").value) || 0,
     inflationOn: document.getElementById("myInflationOn") ? document.getElementById("myInflationOn").checked : false,
     inflationRate: document.getElementById("myInflationRate") ? document.getElementById("myInflationRate").value : "",
+    // A52: 계좌 드롭다운 선택지 — 명시적으로 세팅된 적 있으면(가져온 JSON에 accounts가
+    // 있었거나 행에서 파생됐으면) 그대로 내보내 다음 가져오기·재실행에도 유지되게 한다.
+    accounts: state.myAccountsExplicit || [],
     contributions: serializeMyContributions(),
     dataAsOf: state.myAssetsDataAsOf || "",
     importedAt: state.myAssetsImportedAt || "",
@@ -352,6 +387,14 @@ function updateMyAssetsVersionBadge() {
 
 function applyMyAssets(data) {
   if (!data || !Array.isArray(data.rows)) return false;
+  /* A52: 계좌 드롭다운 선택지를 이 JSON 기준으로 고정한다 — data.accounts를 명시하면
+     그 순서 그대로, 없으면 rows에 실제 쓰인 계좌명을 등장 순서로 뽑아 쓴다. 둘 다 비어
+     있으면(완전 빈 템플릿) undefined로 둬서 accountOptionsHTML이 ACCOUNT_TYPES로
+     폴백하게 한다. */
+  const derived = (Array.isArray(data.accounts) && data.accounts.length)
+    ? data.accounts
+    : deriveAccountListFromRows(data.rows);
+  state.myAccountsExplicit = derived.length ? derived : undefined;
   state.myContribSeed = data.contributions || {};
   state.myContribAccounts = null; // 계좌 구성이 바뀌었을 수 있으니 다음 렌더에서 강제로 다시 빌드
   state.myAssetsDataAsOf = data.dataAsOf || state.myAssetsDataAsOf || "";
@@ -589,13 +632,20 @@ const TREEMAP_GROUP_FIELDS = {
   style: (p) => (p.meta && p.meta.style) || "미분류",
 };
 
-/* 등락률 — 라이브 시세가 적용됐으면 라이브가 vs 마지막 수집 종가, 아니면 마지막 두
-   수집 종가 간 변화. 주가 수집이 주 1회라 "일간" 등락이 아닐 수 있음(화면 문구로 명시). */
+/* 등락률 — A51(2026-08-13 사용자 보고): 라이브가 적용 시 종전엔 "라이브가 vs 마지막
+   주간 수집 종가"를 비교해서, 수집 이후 며칠 치 누적 변화가 섞여 오늘 실제로 상승 중인
+   종목이 하락으로 뜨는 문제가 있었다. p.livePrevClose(intraday-kr.yml이 매일 첫 실행
+   때 확정하는 전일종가, scripts/fetch_intraday_kr.py 참조)가 있으면 그걸 기준으로
+   써서 진짜 "오늘 하루"만큼의 등락만 반영한다. 아직 파이프라인이 그 값을 못 준 종목은
+   기존처럼 마지막 수집 종가로 폴백(주 1회 수집이라 "일간" 등락이 아닐 수 있음 — 화면 문구로 명시). */
 function lastChangePct(p) {
   const closes = p.full && p.full.closes;
   if (!closes || closes.length < 2) return null;
   const lastStored = closes[closes.length - 1];
-  if (p.close !== lastStored) return p.close / lastStored - 1;
+  if (p.close !== lastStored) {
+    const base = p.livePrevClose > 0 ? p.livePrevClose : lastStored;
+    return p.close / base - 1;
+  }
   return lastStored / closes[closes.length - 2] - 1;
 }
 
@@ -770,9 +820,12 @@ function buildSelfSuffHTML(accountMap, contributions) {
     const advice = g.monthlyBuy === 0 ? "월매수 미설정"
       : diff >= 0 ? `여유 ${fmtW(diff)}`
       : `월매수를 ${fmtW(-diff)} 줄이면 자급률 100%`;
+    /* A48(2026-08-13 사용자 결정): 스택 레이아웃(A45c) 대신 원래 표 형태로 되돌리되, 폭을
+       키우던 원인이던 "(납입 X 포함)" 문구만 <br>로 다음 줄에 내려 셀 폭을 줄인다 — 표 전체가
+       가로로 길어지지 않게 하는 게 목적이라 다른 열은 손대지 않는다. */
     return `<tr>
       <td>${acc}</td>
-      <td>${fmtW(income)}${contributions[acc] ? ` <span style="color:var(--text-muted); font-size:11px;">(납입 ${fmtW(contributions[acc])} 포함)</span>` : ""}</td>
+      <td>${fmtW(income)}${contributions[acc] ? `<br><span style="color:var(--text-muted); font-size:11px;">(납입 ${fmtW(contributions[acc])} 포함)</span>` : ""}</td>
       <td>${g.monthlyBuy > 0 ? fmtW(g.monthlyBuy) : "—"}</td>
       <td style="color:${diff >= 0 ? "var(--good)" : "var(--critical)"}">${g.monthlyBuy > 0 ? (diff >= 0 ? "+" : "") + fmtW(diff) : "—"}</td>
       <td>${rate != null ? (rate * 100).toFixed(1) + "%" : "—"}</td>
@@ -807,12 +860,12 @@ function buildBuyPlanHTML(perRow) {
       subtotal += p.monthlyBuy;
       const freqLabel = p.buyDay ? `${p.buyFreq}/${p.buyDay}` : p.buyFreq;
       return `<tr>
-        <td style="text-align:left;">${p.meta ? p.meta.name : p.symbol}</td>
-        <td>${freqLabel}</td>
-        <td>${p.monthlyQty.toLocaleString()}</td>
-        <td>${fmtW(onceKrw)}</td>
-        <td>${times}</td>
-        <td>${fmtW(p.monthlyBuy)}</td>
+        <td data-label="종목" style="text-align:left;">${p.meta ? p.meta.name : p.symbol}</td>
+        <td data-label="매수주기">${freqLabel}</td>
+        <td data-label="1회수량">${p.monthlyQty.toLocaleString()}</td>
+        <td data-label="1회매수액">${fmtW(onceKrw)}</td>
+        <td data-label="월횟수">${times}</td>
+        <td data-label="월매수액">${fmtW(p.monthlyBuy)}</td>
       </tr>`;
     }).join("");
     return `<p class="hm-account-title">${acc} <span style="color:var(--text-muted); font-weight:400;">— 월매수 합계 ${fmtW(subtotal)}</span></p>
@@ -832,31 +885,89 @@ function saveMyGoals(list) {
   localStorage.setItem(MY_ASSETS_GOALS_KEY, JSON.stringify(list));
 }
 
+/* A46(2026-08-13): 목표 카드의 "현재 종목수익률"을 ETF/일반종목(개별주)/종합으로 나눠 볼 수 있게
+   한다. 실측(2026-08-12): 삼성전자·SK하이닉스 두 개별주(비중 25.3%)가 종목수익률 93%p 중 38%p를
+   만들어, 종합 수치만으로는 "커버드콜·배당 ETF 전략 자체가 잘 되고 있는지"를 개별주 폭등과
+   분리해서 볼 수 없었다. "통합" 탭의 assetType 필터(myOverviewAssetType, __all__/etf/stock)와
+   같은 값 체계를 그대로 쓴다 — 새 개념을 만들지 않고 기존 구분을 재사용. */
+const MY_GOAL_TRAIL_TYPE_KEY = "my_goal_trail_type_v1";
+function loadGoalTrailType() {
+  const v = localStorage.getItem(MY_GOAL_TRAIL_TYPE_KEY);
+  return v === "etf" || v === "stock" ? v : "__all__";
+}
+function saveGoalTrailType(v) {
+  localStorage.setItem(MY_GOAL_TRAIL_TYPE_KEY, v);
+}
+function matchesGoalTrailType(p, type) {
+  if (type === "__all__") return true;
+  const isStock = !!(p.meta && p.meta.assetType === "stock");
+  return type === "stock" ? isStock : !isStock;
+}
+
 /* A44: 🎯 ETF별 목표주식수 추적 — 종목(symbol) 단위로 저장하고, 그 종목을 보유·매수 중인 모든
    계좌를 합산해 "현재수량 + 월매수 유지 시 도달 시점"과 "도달 시 예상 배당금"을 계산한다.
-   목표를 추가할 종목은 보유 중(qty>0)이거나 월매수 설정(monthlyQty>0)이거나 배당기준
-   SOP에 등록(divRate>0)된 항목 중에서만 고르게 해, 오타로 존재하지 않는 종목을 목표로
-   잡는 실수를 막는다(2026-08-11: 월매수 항목으로만 한정하던 것을 넓힘). */
-function buildGoalTrackerHTML(perRow) {
+   목표를 추가할 종목은 수집 카탈로그에 있는 것만 고르게 해, 오타로 존재하지 않는 종목을
+   목표로 잡는 실수를 막는다(2026-08-11: 월매수 항목으로만 한정하던 것을 보유·배당등록까지
+   넓힘 → 2026-08-12 A45c: 미보유 카탈로그 종목까지 열어 "앞으로 모을 종목"도 목표가 됨). */
+async function buildGoalTrackerHTML(perRow, latestRate) {
   const goals = loadMyGoals();
   const candidateSymbols = [...new Map(
     perRow.filter((p) => p.qty > 0 || p.monthlyQty > 0 || p.divRate > 0).map((p) => [p.symbol, p.meta ? p.meta.name : p.symbol])
   ).entries()];
-  const optionsHTML = candidateSymbols
-    .filter(([sym]) => !goals.some((g) => g.symbol === sym))
+  const taken = new Set(goals.map((g) => g.symbol));
+  const mineHTML = candidateSymbols
+    .filter(([sym]) => !taken.has(sym))
     .map(([sym, name]) => `<option value="${sym}">${name} (${sym})</option>`).join("");
+  /* A45c(2026-08-12): 아직 보유하지 않은 종목도 목표로 잡을 수 있어야 한다 — 사용자가
+     "KODEX 금융고배당TOP10타겟위클리커버드콜(498410)을 목표에 추가하고 싶다"고 요청했는데,
+     그 종목은 카탈로그에는 있지만 보유·매수계획·배당등록 어디에도 없어 목록에 안 떴다.
+     "앞으로 모을 종목"을 목표로 세우는 건 이 기능의 정당한 용법이므로, 수집 카탈로그
+     (state.listedEtfs) 전체를 두 번째 그룹으로 연다. 카탈로그 밖 임의 문자열은 여전히
+     고를 수 없어 오타 종목이 목표가 되는 일은 막힌다(원래 제한의 취지 유지). */
+  const mineSet = new Set(candidateSymbols.map(([sym]) => sym));
+  const othersHTML = (state.listedEtfs || [])
+    .filter((e) => !mineSet.has(e.symbol) && !taken.has(e.symbol))
+    .map((e) => `<option value="${e.symbol}">${e.name} (${e.symbol})</option>`).join("");
   const pickerHTML = `
     <div class="controls" style="margin-bottom:10px;">
       <select id="myGoalSymbolPick" aria-label="목표 추가할 종목 선택">
-        <option value="">보유·매수계획·배당등록 종목에서 선택…</option>
-        ${optionsHTML}
+        <option value="">목표로 삼을 종목 선택…</option>
+        ${mineHTML ? `<optgroup label="보유·매수계획·배당등록 종목">${mineHTML}</optgroup>` : ""}
+        ${othersHTML ? `<optgroup label="그 외 수집 종목(아직 미보유)">${othersHTML}</optgroup>` : ""}
       </select>
       <button type="button" id="myGoalAddBtn" class="btn-action">+ 목표 추가</button>
     </div>`;
 
   if (!goals.length) {
-    return pickerHTML + `<p class="compare-empty">${candidateSymbols.length ? "위에서 종목을 선택해 목표 주식수를 설정하세요." : "보유 수량·월매수·배당률 중 하나라도 입력하면 목표로 고를 수 있는 종목이 여기 나타납니다."}</p>`;
+    return pickerHTML + `<p class="compare-empty">${mineHTML || othersHTML ? "위에서 종목을 선택해 목표 주식수를 설정하세요 — 아직 보유하지 않은 종목도 고를 수 있습니다." : "수집 종목 목록을 불러오는 중입니다."}</p>`;
   }
+
+  /* A50(2026-08-13 사용자 보고): 아직 보유·매수계획이 전혀 없는 순수 목표 종목(예:
+     KODEX 금융고배당TOP10타겟위클리커버드콜/498410)은 perRow에 행 자체가 없어 divRate를
+     등록할 방법이 없고, 그 결과 항상 "배당률 미등록"으로 떴다. 카탈로그(manifest)엔
+     TTM 배당액·배당수익률이 이미 있는 경우가 많으므로(498410: ttmDividend 1892원,
+     dividendYield 16.45%), 메인 계산 루프의 ttmRate 폴백(ttm÷12÷종가)과 같은 공식으로
+     추정치를 보여준다 — 사용자가 등록한 값이 아니므로 "TTM 추정"이라고 밝힌다. */
+  const unmatchedSymbols = goals
+    .filter((g) => !perRow.some((p) => p.symbol === g.symbol))
+    .map((g) => g.symbol);
+  const fallbackBySymbol = new Map(); // symbol -> { priceKrw, effRate }
+  await Promise.all(unmatchedSymbols.map(async (sym) => {
+    const meta = state.metaBySymbol.get(sym);
+    if (!meta) return;
+    try {
+      const full = await loadSymbol(sym);
+      const close = full.closes[full.closes.length - 1];
+      if (!(close > 0)) return;
+      const isUsd = (full.currency || "KRW") === "USD";
+      if (isUsd && latestRate == null) return;
+      const priceKrw = isUsd ? close * latestRate : close;
+      const ttm = meta.ttmDividend || 0;
+      const divYield = meta.dividendYield || 0;
+      const effRate = ttm > 0 ? ttm / 12 / close : divYield > 0 ? divYield / 12 : 0;
+      if (effRate > 0) fallbackBySymbol.set(sym, { priceKrw, effRate });
+    } catch (err) { /* 조회 실패 시 그냥 "배당률 미등록"으로 남김 — best-effort */ }
+  }));
 
   const fmtW = (v) => fmtPrice(v, "KRW");
   const goalCalcs = goals.map((g) => {
@@ -865,14 +976,16 @@ function buildGoalTrackerHTML(perRow) {
     const name = meta ? meta.name : g.symbol;
     const curQty = matched.reduce((s, p) => s + (p.qty || 0), 0);
     const monthlyShares = matched.reduce((s, p) => s + (p.monthlyQty || 0) * (BUY_FREQ_TIMES[p.buyFreq] || 1), 0);
-    // 단가: 보유 평가액에서 역산(가장 정확) → 없으면 월매수액에서 역산
+    // 단가: 보유 평가액에서 역산(가장 정확) → 없으면 월매수액에서 역산 → 그마저 없으면 TTM 폴백
     const priceRow = matched.find((p) => p.qty > 0) || matched.find((p) => p.monthlyQty > 0);
+    const fallback = fallbackBySymbol.get(g.symbol);
     const priceKrw = priceRow
       ? (priceRow.qty > 0 ? priceRow.value / priceRow.qty
         : priceRow.monthlyBuy / (priceRow.monthlyQty * (BUY_FREQ_TIMES[priceRow.buyFreq] || 1)))
-      : null;
+      : (fallback ? fallback.priceKrw : null);
     const rateRow = matched.find((p) => p.effRate > 0);
-    const effRate = rateRow ? rateRow.effRate : 0;
+    const effRate = rateRow ? rateRow.effRate : (fallback ? fallback.effRate : 0);
+    const isEstimated = !rateRow && !!fallback;
     const dpsRow = matched.find((p) => p.confirmedDps > 0);
     const confirmedDps = dpsRow ? dpsRow.confirmedDps : 0;
 
@@ -898,26 +1011,26 @@ function buildGoalTrackerHTML(perRow) {
     // A47 수정(2026-08-12): 목표 도달은 먼 미래 시점 예측이라 "그날의 현재가×등록분배율"보다
     // 확정 DPS(원/주, 노션 배당기준 마스터에서 매달 실지급액으로 확정한 값)를 그대로 쓰는 게
     // 더 안정적이다(사용자 결정 — 확정 배당금 계산에 실제로 쓰인 값을 예측에도 반영). 확정
-    // DPS가 없는 종목(배당 미등록·성장형)만 기존 현재가×등록분배율로 폴백한다.
+    // DPS가 없는 종목(배당 미등록·성장형)만 기존 현재가×등록분배율(TTM 폴백 포함)로 폴백한다.
     // A48: 목표 도달시 예상 월배당 합계(아래 총액 요약)를 위해 금액을 숫자로도 남긴다.
     const monthlyDiv = g.targetQty > 0 && confirmedDps > 0 ? g.targetQty * confirmedDps
       : g.targetQty > 0 && priceKrw != null && effRate > 0 ? g.targetQty * priceKrw * effRate
       : null;
     const divLabel = monthlyDiv != null
-      ? `월 ${fmtW(monthlyDiv)} (${confirmedDps > 0 ? `확정 DPS ${confirmedDps.toLocaleString()}원/주 기준` : `월 ${(effRate * 100).toFixed(2)}% · 연환산 ${(effRate * 1200).toFixed(1)}%`})`
+      ? `월 ${fmtW(monthlyDiv)} (${confirmedDps > 0 ? `확정 DPS ${confirmedDps.toLocaleString()}원/주 기준` : `월 ${(effRate * 100).toFixed(2)}% · 연환산 ${(effRate * 1200).toFixed(1)}%${isEstimated ? " · TTM 추정" : ""}`})`
       : (effRate > 0 ? "단가 확인 불가" : "배당률 미등록");
 
     // A49: 목표 도달시 예상 평가액(목표주수×단가)도 월배당과 같이 합계로 보여준다.
     const targetValue = g.targetQty > 0 && priceKrw != null ? g.targetQty * priceKrw : null;
 
     const html = `<tr>
-      <td style="text-align:left;">${name}<br><span style="color:var(--text-muted); font-size:11px;">${g.symbol}</span></td>
-      <td>${curQty.toLocaleString()}주</td>
-      <td>${monthlyShares > 0 ? monthlyShares.toLocaleString(undefined, { maximumFractionDigits: 2 }) + "주" : "—"}</td>
-      <td><input type="number" class="my-goal-target portfolio-weight" style="width:90px" min="0" step="1" value="${g.targetQty || ""}" data-symbol="${g.symbol}" aria-label="목표 주식수"></td>
-      <td>${etaLabel}</td>
-      <td>${divLabel}${targetValue != null ? `<br><span class="stat-sub" style="font-size:11px;">평가액 ${fmtW(targetValue)}</span>` : ""}</td>
-      <td><button type="button" class="my-goal-remove btn-action" data-symbol="${g.symbol}" title="목표 삭제">🗑️</button></td>
+      <td data-label="종목" style="text-align:left;">${name}<br><span style="color:var(--text-muted); font-size:11px;">${g.symbol}</span></td>
+      <td data-label="현재 보유(전계좌)">${curQty.toLocaleString()}주</td>
+      <td data-label="월매수(전계좌 합산)">${monthlyShares > 0 ? monthlyShares.toLocaleString(undefined, { maximumFractionDigits: 2 }) + "주" : "—"}</td>
+      <td data-label="목표 주식수"><input type="number" class="my-goal-target portfolio-weight" style="width:90px" min="0" step="1" value="${g.targetQty || ""}" data-symbol="${g.symbol}" aria-label="목표 주식수"></td>
+      <td data-label="도달 예상">${etaLabel}</td>
+      <td data-label="목표 도달시 예상 배당">${divLabel}${targetValue != null ? `<br><span class="stat-sub" style="font-size:11px;">평가액 ${fmtW(targetValue)}</span>` : ""}</td>
+      <td data-label=""><button type="button" class="my-goal-remove btn-action" data-symbol="${g.symbol}" title="목표 삭제">🗑️</button></td>
     </tr>`;
     return { html, monthlyDiv, targetValue };
   });
@@ -950,6 +1063,7 @@ function buildYearlyDivHTML(divHistory, expectedMonthly, snapshotHistory) {
   const fmtW = (v) => fmtPrice(v, "KRW");
   const years = [...new Set(keys.map((k) => k.slice(0, 4)))].sort();
   const nowMonth = todayStr().slice(0, 7);
+  const MONTH_LABELS = ["1월", "2월", "3월", "4월", "5월", "6월", "7월", "8월", "9월", "10월", "11월", "12월"];
   const yearTotals = new Map(); // 연도 → { sum, months } — months는 그 해 중 확정치가 있는 달 수(YoY 동기간 비교용)
   const rows = years.map((y) => {
     const cells = [];
@@ -957,14 +1071,19 @@ function buildYearlyDivHTML(divHistory, expectedMonthly, snapshotHistory) {
     for (let m = 1; m <= 12; m++) {
       const key = `${y}-${String(m).padStart(2, "0")}`;
       const v = divHistory[key];
+      const label = MONTH_LABELS[m - 1];
       if (v > 0) {
-        cells.push(`<td style="font-weight:600;">${fmtW(v)}</td>`);
+        cells.push(`<td data-label="${label}" style="font-weight:600;">${fmtW(v)}</td>`);
         sum += v; months++;
-      } else if (key > nowMonth) cells.push(`<td style="color:var(--text-muted);">예정</td>`);
-      else cells.push(`<td style="color:var(--text-muted);">—</td>`);
+      } else if (key > nowMonth) cells.push(`<td data-label="${label}" style="color:var(--text-muted);">예정</td>`);
+      else cells.push(`<td data-label="${label}" style="color:var(--text-muted);">—</td>`);
     }
     yearTotals.set(y, { sum, months });
-    return `<tr><td>${y}</td>${cells.join("")}<td style="font-weight:700; border-left:1px solid var(--border);">${sum > 0 ? fmtW(sum) : "—"}</td></tr>`;
+    // A72(2026-08-31 사용자 보고 "숫자 안 보임"): 14열(연도+12개월+합계) 표가 좁은 화면에서
+    // 가로 스크롤 없인 뒤쪽 열(특히 합계)이 화면 밖으로 밀려 안 보였다. stack-narrow를 쓰면
+    // 640px 이하에서 각 달을 "1월 ─ ₩..." 줄로 세로 나열해 스크롤 없이 전부 보인다
+    // (넓은 화면에서는 기존처럼 표+가로스크롤 그대로).
+    return `<tr><td>${y}</td>${cells.join("")}<td data-label="합계" style="font-weight:700; border-left:1px solid var(--border);">${sum > 0 ? fmtW(sum) : "—"}</td></tr>`;
   }).join("");
   // 전월 대비(확정치가 연속 2개 이상일 때)
   const sorted = keys.sort();
@@ -995,7 +1114,7 @@ function buildYearlyDivHTML(divHistory, expectedMonthly, snapshotHistory) {
   }
   return `<p class="chart-title" style="margin-top:20px;">📅 연도별 확정 월배당 (가져온 이력 기준)</p>
     <div style="overflow-x:auto;">
-    <table class="account-summary-table">
+    <table class="account-summary-table stack-narrow">
       <thead><tr><th>연도</th><th>1월</th><th>2월</th><th>3월</th><th>4월</th><th>5월</th><th>6월</th><th>7월</th><th>8월</th><th>9월</th><th>10월</th><th>11월</th><th>12월</th><th style="border-left:1px solid var(--border);">합계</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
@@ -1043,6 +1162,151 @@ function buildDivGapHTML(divHistory, expectedMonthly, snapshotHistory) {
   return `${card}${table}<p class="stat-sub" style="margin-top:6px;">예상 &gt; 확정이면 주가 기준 분배율이 실제 지급보다 높게 잡힌 것입니다. 예상액은 각 종목의 배당기준일 종가(기준일 미도래 시 현재가) × 분배율로 계산합니다.</p>`;
 }
 
+/* A76(2026-09-01 사용자 요청 — 인스타 인포그래픽 "연간 배당 히스토리" 참조), A77(같은 날
+   사용자 추가 요청 "월간도 추가 버튼추가"), A78(같은 날 사용자 보고 "커버드콜 표시안됨"):
+   연도별 또는 월별로 ①예상배당 ②확정배당을 나란히 보여주고, 각각을 일반배당/커버드콜로
+   색 구분한다. mode="year"면 연도 단위로 12개월을 합산, mode="month"면 달 단위로 그대로
+   그린다(최근 24개월 캡).
+
+   색 구분에 쓸 카테고리 비율(divSplit)은 그 달 스냅샷이 있어야만 알 수 있는데, A76 배포
+   시점부터 새로 기록하기 시작했다 — 그래서 배포 직후엔 "이번 달 스냅샷"도 아직 안 찍혀
+   있으면 예상배당조차 전혀 안 보이고(과거 이력에 이번 달이 없으니) 확정배당도 항상
+   회색이었다("커버드콜 표시안됨" 원인). live 인자로 지금 이 순간의 perRow 기준 예상
+   월배당·카테고리 비율을 넘기면, 그 값을 "이번 달"/"올해" 칸에 한해 실시간으로 채워
+   스냅샷을 안 찍어도 바로 보이게 한다 — 과거 확정 이력에는 적용하지 않는다(그건 실제
+   지급 데이터라 라이브 값으로 덮어쓰면 안 됨). live: { monthKey, monthlyDiv, divSplit }. */
+function buildDivHistoryBarsHTML(divHistory, snapshotHistory, mode, live) {
+  const dh = divHistory || {};
+  const snapByMonth = new Map((snapshotHistory || []).map((h) => [h.month, h]));
+  const liveKey = live && live.monthlyDiv > 0 ? live.monthKey : null;
+  const estFor = (key, snap) => {
+    if (snap && snap.monthlyDiv > 0) return snap.monthlyDiv;
+    if (key === liveKey) return live.monthlyDiv;
+    return 0;
+  };
+  const splitFor = (key, snap) => {
+    if (snap && snap.divSplit) return snap.divSplit;
+    if (key === liveKey && live.divSplit) return live.divSplit;
+    return null;
+  };
+  let truncNote = "";
+  let units;
+
+  if (mode === "month") {
+    const allMonths = new Set();
+    for (const k of Object.keys(dh)) if (/^\d{4}-\d{2}$/.test(k) && dh[k] > 0) allMonths.add(k);
+    for (const h of snapshotHistory || []) if (h.monthlyDiv > 0) allMonths.add(h.month);
+    if (liveKey) allMonths.add(liveKey);
+    let sortedMonths = [...allMonths].sort();
+    if (sortedMonths.length > 24) {
+      truncNote = `최근 24개월만 표시(전체 ${sortedMonths.length}개월 중). `;
+      sortedMonths = sortedMonths.slice(-24);
+    }
+    units = sortedMonths.map((key) => {
+      const snap = snapByMonth.get(key);
+      const est = estFor(key, snap);
+      const confirmed = dh[key] > 0 ? dh[key] : 0;
+      const ratio = splitFor(key, snap);
+      let splitGeneral = 0, splitCC = 0, splitKnown = 0, estGeneral = 0, estCC = 0, estKnown = 0;
+      if (ratio) {
+        if (confirmed > 0) { splitGeneral = confirmed * ratio.generalPct; splitCC = confirmed * ratio.coveredCallPct; splitKnown = confirmed; }
+        if (est > 0) { estGeneral = est * ratio.generalPct; estCC = est * ratio.coveredCallPct; estKnown = est; }
+      }
+      return { label: key.slice(2).replace("-", "."), est, confirmed, splitGeneral, splitCC, splitUnknown: confirmed - splitKnown, estGeneral, estCC, estUnknown: est - estKnown };
+    });
+  } else {
+    const years = new Set();
+    for (const k of Object.keys(dh)) if (/^\d{4}-\d{2}$/.test(k) && dh[k] > 0) years.add(k.slice(0, 4));
+    for (const h of snapshotHistory || []) if (h.monthlyDiv > 0) years.add(h.month.slice(0, 4));
+    if (liveKey) years.add(liveKey.slice(0, 4));
+    const sortedYears = [...years].sort();
+    units = sortedYears.map((y) => {
+      let est = 0, confirmed = 0, splitGeneral = 0, splitCC = 0, splitKnown = 0, estGeneral = 0, estCC = 0, estKnown = 0;
+      for (let m = 1; m <= 12; m++) {
+        const key = `${y}-${String(m).padStart(2, "0")}`;
+        const snap = snapByMonth.get(key);
+        const mEst = estFor(key, snap);
+        if (mEst > 0) est += mEst;
+        const conf = dh[key];
+        if (conf > 0) confirmed += conf;
+        const ratio = splitFor(key, snap);
+        if (ratio) {
+          if (conf > 0) { splitGeneral += conf * ratio.generalPct; splitCC += conf * ratio.coveredCallPct; splitKnown += conf; }
+          if (mEst > 0) { estGeneral += mEst * ratio.generalPct; estCC += mEst * ratio.coveredCallPct; estKnown += mEst; }
+        }
+      }
+      return { label: y, est, confirmed, splitGeneral, splitCC, splitUnknown: confirmed - splitKnown, estGeneral, estCC, estUnknown: est - estKnown };
+    });
+  }
+
+  if (!units.length) return "";
+  const max = Math.max(...units.map((r) => Math.max(r.est, r.confirmed)), 1);
+  const H = 130; // 컬럼 최대 높이(px) — 백분율 대신 픽셀로 직접 계산해 스택 중첩 백분율 문제를 피함
+  const fmtShort = (v) => v >= 10000 ? `${Math.round(v / 10000).toLocaleString()}만` : v > 0 ? Math.round(v).toLocaleString() : "";
+
+  const groups = units.map(({ label, est, confirmed, splitGeneral, splitCC, splitUnknown, estGeneral, estCC, estUnknown }) => {
+    const estPx = est > 0 ? Math.max(2, (est / max) * H) : 0;
+    const confPx = confirmed > 0 ? Math.max(2, (confirmed / max) * H) : 0;
+
+    const confRatio = confirmed > 0 ? confPx / confirmed : 0;
+    const confGeneralPx = splitGeneral * confRatio;
+    const confCcPx = splitCC * confRatio;
+    const confUnknownPx = Math.max(0, confPx - confGeneralPx - confCcPx);
+
+    const estRatio = est > 0 ? estPx / est : 0;
+    const estGeneralPx = estGeneral * estRatio;
+    const estCcPx = estCC * estRatio;
+    const estUnknownPx = Math.max(0, estPx - estGeneralPx - estCcPx);
+    const estHasSplit = (estGeneral + estCC) > 0;
+
+    return `<div class="ydb-group">
+      <div class="ydb-pair">
+        <div class="ydb-col">
+          ${est > 0 ? `<span class="ydb-val">${fmtShort(est)}</span>` : ""}
+          ${estHasSplit
+            ? `<div class="ydb-stack est" style="height:${estPx.toFixed(0)}px">
+                 <div class="ydb-seg ydb-seg-unknown" style="height:${estUnknownPx.toFixed(0)}px"></div>
+                 <div class="ydb-seg ydb-seg-cc" style="height:${estCcPx.toFixed(0)}px"></div>
+                 <div class="ydb-seg ydb-seg-general" style="height:${estGeneralPx.toFixed(0)}px"></div>
+               </div>`
+            : `<div class="ydb-bar est" style="height:${estPx.toFixed(0)}px"></div>`}
+        </div>
+        <div class="ydb-col">
+          ${confirmed > 0 ? `<span class="ydb-val total">${fmtShort(confirmed)}</span>` : ""}
+          <div class="ydb-stack" style="height:${confPx.toFixed(0)}px">
+            <div class="ydb-seg ydb-seg-unknown" style="height:${confUnknownPx.toFixed(0)}px"></div>
+            <div class="ydb-seg ydb-seg-cc" style="height:${confCcPx.toFixed(0)}px"></div>
+            <div class="ydb-seg ydb-seg-general" style="height:${confGeneralPx.toFixed(0)}px"></div>
+          </div>
+        </div>
+      </div>
+      <span class="ydb-year">${label}</span>
+    </div>`;
+  }).join("");
+
+  const hasUnknown = units.some((r) => r.splitUnknown > 0 || r.estUnknown > 0);
+  return `<div class="ydb-row">${groups}</div>
+    <p class="stat-sub">${truncNote}예상배당(왼쪽)·확정배당(오른쪽) 모두 일반배당/커버드콜로 색 구분되며, 이번 ${mode === "month" ? "달" : "해"}은 지금 이 순간 보유 구성으로 실시간 표시됩니다. ${hasUnknown ? "2026-09-01 이전 확정 이력·스냅샷은 종목별 카테고리 기록이 없어 구분 없이 회색으로 표시됩니다(지어내지 않음)." : ""}</p>`;
+}
+
+/* A77: 연간/월간 전환 버튼 + 범례 + 실제 막대 컨테이너를 감싸는 섹션. 버튼 클릭은
+   renderMyAssets() 재실행 없이 #divHistoryBody만 다시 그린다(mySignalSigmaWin류 패턴). */
+function buildDivHistorySectionHTML(divHistory, snapshotHistory, live) {
+  const yearHTML = buildDivHistoryBarsHTML(divHistory, snapshotHistory, "year", live);
+  if (!yearHTML) return "";
+  return `<div class="ydb-legend">
+      <span><span class="ydb-legend-dot" style="background:color-mix(in srgb, var(--text-secondary) 55%, transparent)"></span>예상배당</span>
+      <span><span class="ydb-legend-dot" style="background:var(--good)"></span>일반배당</span>
+      <span><span class="ydb-legend-dot" style="background:#e0a72e"></span>커버드콜</span>
+      <span><span class="ydb-legend-dot" style="background:var(--gridline)"></span>구분 데이터 없음</span>
+    </div>
+    <div class="seg" id="divHistoryModeBtns" style="margin:6px 0 4px;">
+      <button type="button" data-mode="year" class="active">연간</button>
+      <button type="button" data-mode="month">월간</button>
+    </div>
+    <div id="divHistoryBody">${yearHTML}</div>`;
+}
+
 /* 일별 자산변동 캡처 이력 테이블 — "오늘 자산 스냅샷" 버튼으로 쌓은 이력을 최근순으로 표시 */
 function buildDailyAssetHTML(dailyHistory) {
   if (!dailyHistory.length) {
@@ -1057,13 +1321,14 @@ function buildDailyAssetHTML(dailyHistory) {
       <td>${h.date}</td><td>${fmtW(h.value)}</td>
       <td style="color:${diff == null ? "var(--text-muted)" : diff >= 0 ? "var(--good)" : "var(--critical)"}">${diff == null ? "—" : (diff >= 0 ? "+" : "") + fmtW(diff)}</td>
       <td>${h.monthlyDiv > 0 ? fmtW(h.monthlyDiv) : "—"}</td>
+      <td${h.kospiAsOf ? ` title="${h.kospiAsOf} 수집분(30분 주기) — 같은 값이 이어지면 그사이 수집이 갱신 안 된 것"` : ""}>${h.kospi > 0 ? h.kospi.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—"}</td>
       <td><button type="button" class="my-daily-del" data-date="${h.date}" title="이 날 기록 삭제"
         style="border:none; background:none; color:var(--critical); cursor:pointer; font-size:15px; padding:2px 6px;">🗑</button></td>
     </tr>`;
   }).join("");
   return `<div style="overflow-x:auto;">
     <table class="account-summary-table">
-      <thead><tr><th>날짜</th><th>평가액</th><th>전일 대비</th><th>월배당(그 시점)</th><th></th></tr></thead>
+      <thead><tr><th>날짜</th><th>평가액</th><th>전일 대비</th><th>월배당(그 시점)</th><th>코스피</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
     </div>
@@ -1090,9 +1355,13 @@ function buildWeeklyAssetHTML(dailyHistory) {
     byWeek.set(isoWeekKey(h.date), h); // 그 주의 마지막 기록으로 덮어씀
   }
   const weeks = [...byWeek.entries()];
+  // A74(2026-09-01 사용자 요청 "주간 정렬순서 최신주차기준 적용"): 일별·월별 표는 이미
+  // 최신이 위로 오는데 주간 표만 오래된 주가 위였다 — 표시만 최신순으로 뒤집는다("전주
+  // 대비" 계산은 시간순 이전 주와 비교해야 하므로 weeks(오름차순) 인덱스 기준을 유지).
+  const weeksDesc = weeks.slice().reverse();
   const fmtW = (v) => fmtPrice(v, "KRW");
-  const rows = weeks.map(([wk, h], i) => {
-    const prev = weeks[i - 1];
+  const rows = weeksDesc.map(([wk, h], i) => {
+    const prev = weeksDesc[i + 1];
     const diff = prev ? h.value - prev[1].value : null;
     const pct = prev && prev[1].value > 0 ? (diff / prev[1].value) * 100 : null;
     return `<tr>
@@ -1103,6 +1372,51 @@ function buildWeeklyAssetHTML(dailyHistory) {
   return `<div style="overflow-x:auto;">
     <table class="account-summary-table">
       <thead><tr><th>주(ISO)</th><th>기준일</th><th>평가액</th><th>전주 대비</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    </div>`;
+}
+
+/* A59(2026-08-18 사용자 요청): "지급시기별 월배당" 막대를 누르면 그 시기(월초/월중/월말/
+   지급시기 미지정)에 해당하는 계좌·종목별 내역을 펼쳐 보여준다 — 합계만으로는 "월말에
+   정확히 뭐가 들어오는지"를 알 수 없었다. periodKey는 payPeriod 원본값("월초5일" 등,
+   미지정이면 "지급시기 미지정") 그대로 받는다 — periodMap 그룹핑 키와 같아야 매칭된다. */
+function buildPeriodDetailHTML(perRow, periodKey) {
+  const matches = perRow
+    .filter((p) => p.monthlyDiv > 0 && (p.payPeriod || "지급시기 미지정") === periodKey)
+    .sort((a, b) => b.monthlyDiv - a.monthlyDiv);
+  if (!matches.length) return `<p class="compare-empty" style="margin:6px 0 0;">해당 종목이 없습니다.</p>`;
+  const fmtW = (v) => fmtPrice(v, "KRW");
+  const rows = matches.map((p) => `<tr>
+    <td data-label="계좌" style="text-align:left;">${p.account || "계좌 미지정"}</td>
+    <td data-label="종목" style="text-align:left;">${p.meta ? p.meta.name : p.symbol}</td>
+    <td data-label="월배당">${fmtW(p.monthlyDiv)}</td>
+  </tr>`).join("");
+  return `<div style="overflow-x:auto; margin:4px 0 10px;">
+    <table class="account-summary-table" style="font-size:12px;">
+      <thead><tr><th>계좌</th><th>종목</th><th>월배당</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    </div>`;
+}
+
+/* A60(2026-08-18 사용자 요청): "계좌별 월배당" 막대를 누르면 그 계좌에 들어오는 종목별 내역을
+   지급주기(월초/월중/월말)와 함께 펼쳐 보여준다 — buildPeriodDetailHTML과 짝을 이루는
+   반대 방향 드릴다운(시기→계좌·종목 / 계좌→종목·시기). */
+function buildAccountDivDetailHTML(perRow, account) {
+  const matches = perRow
+    .filter((p) => p.monthlyDiv > 0 && (p.account || "계좌 미지정") === account)
+    .sort((a, b) => b.monthlyDiv - a.monthlyDiv);
+  if (!matches.length) return `<p class="compare-empty" style="margin:6px 0 0;">해당 종목이 없습니다.</p>`;
+  const fmtW = (v) => fmtPrice(v, "KRW");
+  const rows = matches.map((p) => `<tr>
+    <td data-label="종목" style="text-align:left;">${p.meta ? p.meta.name : p.symbol}</td>
+    <td data-label="지급주기">${PAY_PERIOD_SHORT[p.payPeriod] || "미지정"}</td>
+    <td data-label="월배당">${fmtW(p.monthlyDiv)}</td>
+  </tr>`).join("");
+  return `<div style="overflow-x:auto; margin:4px 0 10px;">
+    <table class="account-summary-table" style="font-size:12px;">
+      <thead><tr><th>종목</th><th>지급주기</th><th>월배당</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
     </div>`;
@@ -1123,11 +1437,12 @@ function buildMonthlyAssetHTML(monthlyHistory) {
       <td>${h.month}</td><td>${fmtW(h.value)}</td>
       <td style="color:${diff == null ? "var(--text-muted)" : diff >= 0 ? "var(--good)" : "var(--critical)"}">${diff == null ? "—" : `${diff >= 0 ? "+" : ""}${fmtW(diff)} (${pct.toFixed(2)}%)`}</td>
       <td>${h.monthlyDiv > 0 ? fmtW(h.monthlyDiv) : "—"}</td>
+      <td${h.kospiAsOf ? ` title="${h.kospiAsOf} 수집분(30분 주기) — 같은 값이 이어지면 그사이 수집이 갱신 안 된 것"` : ""}>${h.kospi > 0 ? h.kospi.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—"}</td>
     </tr>`;
   }).join("");
   return `<div style="overflow-x:auto;">
     <table class="account-summary-table">
-      <thead><tr><th>월</th><th>평가액</th><th>전월 대비</th><th>월배당(그 시점)</th></tr></thead>
+      <thead><tr><th>월</th><th>평가액</th><th>전월 대비</th><th>월배당(그 시점)</th><th>코스피</th></tr></thead>
       <tbody>${rows}</tbody>
     </table>
     </div>
@@ -2050,6 +2365,27 @@ const REPORT_WORST_MIN_VALUE = 1000000;
 // (실사용 텔레그램 리포트에서 확인됨). 상승·하락·월배당 TOP5 전부 이름을 별도 줄로 내려 폭을 넓힌다.
 const REPORT_NAME_WIDTH_WIDE = 28;
 
+/* A57(2026-08-14 사용자 요청): latest_global.json(live-trading 브랜치, 30분 주기 수집)의 원시
+   지수 데이터를 표시용으로 뽑아낸다. 값이 없는 지수는 null로 둔다 — 조용히 숨기지, 0이나
+   전날 값을 지어내지 않는다. */
+function marketIndexSnapshot(liveGlobal) {
+  const p = liveGlobal && liveGlobal.prices;
+  if (!p) return null;
+  const pick = (key) => (p[key] && p[key].price > 0 ? p[key] : null);
+  return { kospi: pick("KOSPI"), sp500: pick("^GSPC"), nasdaq: pick("^IXIC"), updated: liveGlobal.updated };
+}
+
+/* 조회시점 코스피 표시 — "🔄 최신시세" 라인 바로 아래, 매 렌더마다 보인다. 데이터가 없으면
+   빈 문자열(있던 값이 사라진 것처럼 보이지 않게, 아예 줄 자체를 안 그린다). */
+function marketIndexBarHTML(liveGlobal) {
+  const snap = marketIndexSnapshot(liveGlobal);
+  if (!snap || !snap.kospi) return "";
+  const k = snap.kospi;
+  const pct = k.changePct || 0;
+  const color = pct > 0 ? "var(--good)" : pct < 0 ? "var(--critical)" : "var(--text-muted)";
+  return `<p class="stat-sub">📈 코스피 ${k.price.toLocaleString(undefined, { maximumFractionDigits: 2 })} <span style="color:${color}">${signedPct(pct)}</span> — ${snap.updated} 기준(30분 주기 수집, 실시간 아님)</p>`;
+}
+
 /* ---------- A28: 종합 탭 "리포트 생성" (A31에서 가독성·등락 보강) ----------
    종합(계좌별 요약)·비중(성향별)·추이(MDD)·등락(상승·하락 TOP5)·배당(TOP5) 정보를 한 텍스트로
    모아 다운로드·클립보드·텔레그램·옵시디안, 그리고 buildAiAnalysisPrompt(LLM 입력)에 공통으로
@@ -2102,6 +2438,24 @@ async function buildReportText(csv, history, opts) {
     lines.push("  (매입단가 입력분 기준)");
   }
   lines.push("");
+
+  /* ── 시장 ── A57(2026-08-14 사용자 요청): 코스피·S&P500·나스닥·달러환율을 함께 보여
+     포트폴리오 등락을 시장 맥락과 바로 대조할 수 있게 한다. 값을 못 가져오면 그 줄만
+     조용히 뺀다(0이나 어제 값을 지어내지 않음). */
+  const marketSnap = marketIndexSnapshot(await loadLiveGlobalQuotes());
+  const marketFx = await loadFx();
+  const marketRate = marketFx && marketFx.rates && marketFx.rates.length ? marketFx.rates[marketFx.rates.length - 1] : null;
+  const marketLines = [];
+  if (marketSnap && marketSnap.kospi) marketLines.push(`코스피 ${marketSnap.kospi.price.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${changeMark(marketSnap.kospi.changePct || 0)}${signedPct(marketSnap.kospi.changePct || 0)}`);
+  if (marketSnap && marketSnap.sp500) marketLines.push(`S&P500 ${marketSnap.sp500.price.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${changeMark(marketSnap.sp500.changePct || 0)}${signedPct(marketSnap.sp500.changePct || 0)}`);
+  if (marketSnap && marketSnap.nasdaq) marketLines.push(`나스닥 ${marketSnap.nasdaq.price.toLocaleString(undefined, { maximumFractionDigits: 2 })} ${changeMark(marketSnap.nasdaq.changePct || 0)}${signedPct(marketSnap.nasdaq.changePct || 0)}`);
+  if (marketRate > 0) marketLines.push(`달러환율 ${marketRate.toLocaleString(undefined, { maximumFractionDigits: 2 })}원`);
+  if (marketLines.length) {
+    lines.push(reportSection("시장"));
+    for (const l of marketLines) lines.push(l);
+    lines.push("");
+    if (marketSnap && marketSnap.updated) notes.push(`※ 지수값은 ${marketSnap.updated} 기준(30분 주기 수집, 실시간 아님)`);
+  }
 
   /* ── 계좌별 ── 평가액 내림차순 + 1% 미만은 접기. 계좌당 2줄 고정(1줄=이름·비중·막대,
      2줄=평가액·월배당·등락)이라 어느 값이 어느 계좌 것인지 들여쓰기로 분명해진다. */
@@ -2288,6 +2642,51 @@ const OBSIDIAN_PATH_KEY = "my_assets_obsidian_path_v1";
 const AGENT_WEBHOOK_KEY = "my_assets_agent_webhook_v1";
 function agentWebhookUrl() { return (localStorage.getItem(AGENT_WEBHOOK_KEY) || "").trim(); }
 
+/* ---------- A63: 계좌별 요약(에이전트 답변용) ----------
+   2026-08-25 사용자 보고: 텔레그램 봇에 "계좌"라고 물으면 현재 잔고가 아니라 '계좌'라는
+   단어가 든 옛 작업 이력(2026-08-12 매입단가 반영 등)이 돌아온다.
+
+   원인은 봇이 받는 데이터에 **평가액이 없다**는 것 — 종전 웹훅은 state.rows(계좌·종목·
+   수량)만 보내서, n8n이 "계좌별 얼마"에 답하려면 시세를 다시 붙여 직접 계산해야 했다.
+   그 계산이 없으니 문서 키워드 검색으로 폴백한 것.
+
+   그래서 앱이 이미 화면에 띄우고 있는 계산 결과를 그대로 실어 보낸다. 숫자는 리포트
+   「계좌별」 섹션과 **같은 소스**(csv.accountMap · aggregateChange)를 써서, 봇 답변과
+   리포트가 서로 어긋나지 않게 한다.
+
+   계좌명은 마스킹한다 — n8n이 이 값을 노션(클라우드)으로 옮길 수 있으므로 2계층
+   데이터 정책상 "밖으로 나가는 것"으로 취급한다. */
+function buildAccountSummary(csv) {
+  if (!csv || !csv.perRow || !csv.perRow.length) return null;
+  const total = csv.totalValue;
+  const rowsByAccount = new Map();
+  for (const p of csv.perRow) {
+    const k = p.account || "계좌 미지정";
+    if (!rowsByAccount.has(k)) rowsByAccount.set(k, []);
+    rowsByAccount.get(k).push(p);
+  }
+  const accounts = [...csv.accountMap.entries()]
+    .filter(([, g]) => g.value > 0)
+    .map(([acc, g]) => {
+      const chg = aggregateChange(rowsByAccount.get(acc) || []);
+      return {
+        account: maskAccountLabel(acc),
+        value: Math.round(g.value),
+        pct: total > 0 ? Number(((g.value / total) * 100).toFixed(1)) : 0,
+        monthlyDiv: Math.round(g.monthlyDiv || 0),
+        // 가격 이력이 부족하면 null — 0으로 지어내지 않는다(봇이 "0% 변동"으로 오답하지 않게)
+        changePct: chg.pct != null ? Number((chg.pct * 100).toFixed(2)) : null,
+      };
+    })
+    .sort((a, b) => b.value - a.value);
+  return {
+    asOf: nowDateTimeStr(),
+    totalValue: Math.round(total),
+    totalMonthlyDiv: Math.round(csv.totalMonthlyDiv || 0),
+    accounts,
+  };
+}
+
 /* ---------- A40: n8n 에이전트 웹훅 전송 ----------
    보내는 것은 두 가지다:
    - state: serializeMyAssets() 그대로 = import JSON과 **같은 형식**(Tab S9 세션 합의).
@@ -2313,6 +2712,9 @@ async function sendToAgentWebhook() {
     // 노션 append용 delta. 계좌명 마스킹 적용(노션은 클라우드)
     change: log.length && typeof buildChangeReportText === "function"
       ? buildChangeReportText(log[0], { mask: true }) : null,
+    // A63: 계좌별 평가액·비중·월배당을 미리 계산해 실어 보낸다 — n8n이 "계좌" 질문에
+    // 시세 재계산 없이 그대로 답할 수 있게. 화면 계산 전이면 null(지어내지 않음).
+    accountSummary: buildAccountSummary(state.myAssetsCsvData),
   };
   try {
     const res = await fetch(url, {
@@ -2695,6 +3097,51 @@ function buildDonutSVG(items, centerLabel) {
   </div>`;
 }
 
+/* A70(2026-08-26): 계좌별 월배당 도넛 — buildDonutSVG와 SVG 계산식은 같지만 색상을
+   PALETTE 순번이 아니라 accountColor(acc)로 고정한다. 같은 화면의 계좌별 막대 목록·TOP10
+   막대가 전부 accountColor를 쓰므로, 도넛만 다른 배색을 쓰면 같은 계좌인데 색이 안 맞는다.
+   items: [{ acc, color, monthlyDiv, pct, monthlyYield, etfPct, stockPct }] (byAccountDiv 순서,
+   이미 monthlyDiv 내림차순 정렬됨 — 재정렬하지 않는다). */
+function buildAccountColorDonutHTML(items, centerLabel) {
+  const total = items.reduce((a, b) => a + b.monthlyDiv, 0);
+  if (total <= 0) return "";
+  const R = 15.9155;
+  let offset = 25;
+  const circles = items.map((it) => {
+    const c = `<circle r="${R}" cx="21" cy="21" fill="transparent"
+      stroke="${it.color}" stroke-width="6"
+      stroke-dasharray="${it.pct.toFixed(2)} ${(100 - it.pct).toFixed(2)}" stroke-dashoffset="${offset.toFixed(2)}"></circle>`;
+    offset -= it.pct;
+    return c;
+  }).join("");
+  const legend = items.map((it) => `<div class="donut-legend-row">
+      <span class="donut-swatch" style="background:${it.color}"></span>
+      <span class="donut-name" title="${it.acc}">${it.acc}</span>
+      <span class="donut-pct">${it.pct.toFixed(1)}%</span>
+    </div>`).join("");
+  const rows = items.map((it) => `<tr>
+      <td data-label="계좌" style="text-align:left;"><span class="donut-swatch" style="background:${it.color}; margin-right:5px;"></span>${it.acc}</td>
+      <td data-label="월배당">${fmtPrice(it.monthlyDiv, "KRW")}</td>
+      <td data-label="월 수익률">${it.monthlyYield == null ? "—" : it.monthlyYield.toFixed(2) + "%"}</td>
+      <td data-label="ETF">${it.etfPct.toFixed(0)}%</td>
+      <td data-label="개별주">${it.stockPct.toFixed(0)}%</td>
+    </tr>`).join("");
+  return `<div class="donut-wrap">
+    <div class="donut-chart">
+      <svg viewBox="0 0 42 42" role="img" aria-label="계좌별 월배당 비중 도넛 차트">${circles}</svg>
+      <div class="donut-center">${centerLabel}</div>
+    </div>
+    <div class="donut-legend">${legend}</div>
+  </div>
+  <div style="overflow-x:auto; margin:6px 0 0;">
+    <table class="account-summary-table" style="font-size:12px;">
+      <thead><tr><th>계좌</th><th>월배당</th><th>월 수익률</th><th>ETF</th><th>개별주</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>
+  <p class="stat-sub">월 수익률 = 월배당 ÷ 평가액(연환산 아님) · ETF·개별주는 그 계좌 월배당 중 비중</p>`;
+}
+
 /* 통합 탭 — 월별 예상 배당금 12개월 바 (확정=divHistory 강조, 나머지=현재 월배당 추정) */
 function buildMonthBarsHTML(monthlyDiv, divHistory) {
   const year = todayStr().slice(0, 4);
@@ -2709,17 +3156,83 @@ function buildMonthBarsHTML(monthlyDiv, divHistory) {
     vals.push({ m, v, confirmed: confirmed != null, estimated: confirmed == null && m === nowMonth });
   }
   const max = Math.max(...vals.map((x) => x.v), 1);
-  const bars = vals.map(({ m, v, confirmed, estimated }) => {
+  // A75(2026-09-01 사용자 요청 "바그래프에 증가율표시" — 인스타 인포그래픽 참조): 막대 위에
+  // 직전 실값(0 채움이 아닌 확정/추정) 대비 증감률을 함께 보여준다. 앞선 실값이 없으면(연초·
+  // 데이터 공백 이후 첫 달) 비교 대상이 없으므로 %를 지어내지 않고 생략한다.
+  const bars = vals.map(({ m, v, confirmed, estimated }, i) => {
     const h = v > 0 ? Math.max(4, (v / max) * 100) : 0;
     const label = v >= 10000 ? `${Math.round(v / 10000)}만` : v > 0 ? Math.round(v).toLocaleString() : "";
+    let pct = null;
+    if (v > 0) {
+      for (let j = i - 1; j >= 0; j--) {
+        if (vals[j].v > 0) { pct = ((v - vals[j].v) / vals[j].v) * 100; break; }
+      }
+    }
+    const pctHTML = pct != null
+      ? `<span class="mb-pct ${pct >= 0 ? "up" : "down"}">${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%</span>`
+      : "";
     return `<div class="mb-col">
+      ${pctHTML}
       <span class="mb-val">${label}</span>
       <div class="mb-bar${confirmed ? " confirmed" : estimated ? " estimated" : ""}" style="height:${h.toFixed(0)}%"></div>
       <span class="mb-label">${m}월</span>
     </div>`;
   }).join("");
   return `<div class="month-bars">${bars}</div>
-  <p class="stat-sub">진한 막대 = 확정 이력(가져온 데이터), 중간 막대 = 이번 달 추정(현재 월배당 기준), 표시 없음 = 데이터 없음(${year}년).</p>`;
+  <p class="stat-sub">진한 막대 = 확정 이력(가져온 데이터), 중간 막대 = 이번 달 추정(현재 월배당 기준), 표시 없음 = 데이터 없음(${year}년). %는 직전 실값 대비 증감률.</p>`;
+}
+
+/* A72 개정 — "평가액·월배당 추이"를 buildMonthBarsHTML과 같은 flex 막대(.month-bars/.mb-col)로
+   그린다. flex:1 컬럼은 개수와 무관하게 항상 균등폭이라 A72의 SVG 버전에서 있었던 "첫 막대가
+   y축 라벨을 덮고 이후 막대 간격이 들쭉날쭉"한 문제가 구조적으로 생기지 않는다.
+   선택한 연도의 1~12월만 그린다(년도별 버튼추가 요청) — 기록 없는 달은 빈 막대로 표시.
+   높이는 0원 기준이 아니라 그 해 최소~최대 구간을 20%~100%로 정규화한다 — 평가액처럼
+   달마다 변화폭이 좁은 값(예: 7.9억~8.6억)은 0원 기준이면 막대 높이가 거의 같아 보여
+   추이를 읽기 어렵기 때문(사용자 스크린샷 참조 대상이었던 SVG 버전은 min/max 축 확대를
+   썼는데, 그 시각적 구분력만 flex 막대에 옮겨온 것 — 좌우 간격 버그와는 무관).
+   A73(2026-09-01 사용자 요청 "월배당 누락 추가 · 다른 도표로"): 이 함수 하나로 평가액과
+   월배당을 둘 다 그린다 — field로 history 엔트리의 어느 키(value/monthlyDiv)를 볼지만
+   바꾸고, 두 지표는 서로 다른 컨테이너에 각각 렌더링해 하나의 막대에 두 값을 욱여넣지
+   않는다(단위·스케일이 달라 겹치면 어느 쪽 기준인지 헷갈림). */
+function buildAssetTrendBarsHTML(history, year, field) {
+  field = field || "value";
+  // A75(2026-09-01 사용자 요청 "바그래프에 증가율표시"): 연도 경계와 무관하게 시간순으로
+  // "바로 직전 스냅샷" 대비 증감률을 계산해야 해서(1월이면 전년 12월과 비교), year로
+  // 자르기 전의 전체 history를 시간순 정렬해 인덱스로 이전 항목을 찾는다.
+  const sortedHistory = history.slice().sort((a, b) => a.month.localeCompare(b.month));
+  const rows = [];
+  for (let m = 1; m <= 12; m++) {
+    const key = `${year}-${String(m).padStart(2, "0")}`;
+    const idx = sortedHistory.findIndex((h) => h.month === key);
+    const entry = idx >= 0 ? sortedHistory[idx] : null;
+    const value = entry ? entry[field] : null;
+    let pct = null;
+    if (value != null && idx > 0) {
+      const prevValue = sortedHistory[idx - 1][field];
+      if (prevValue != null && prevValue !== 0) pct = ((value - prevValue) / prevValue) * 100;
+    }
+    rows.push({ m, value, pct });
+  }
+  const present = rows.filter((r) => r.value != null).map((r) => r.value);
+  if (!present.length) return `<p class="compare-empty">${year}년 기록이 없습니다.</p>`;
+  const min = Math.min(...present), max = Math.max(...present);
+  const FLOOR = 20; // 데이터가 있는 달이 0%로 안 보이게 하는 최소 높이(%)
+  const bars = rows.map(({ m, value, pct }) => {
+    const h = value == null ? 0 : max === min ? 100 : FLOOR + ((value - min) / (max - min)) * (100 - FLOOR);
+    const label = value == null ? "" : fmtKrwShort(value);
+    const pctHTML = pct != null
+      ? `<span class="mb-pct ${pct >= 0 ? "up" : "down"}">${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%</span>`
+      : "";
+    return `<div class="mb-col">
+      ${pctHTML}
+      <span class="mb-val">${label}</span>
+      <div class="mb-bar${value != null ? " confirmed" : ""}" style="height:${h.toFixed(0)}%"></div>
+      <span class="mb-label">${m}월</span>
+    </div>`;
+  }).join("");
+  const fieldLabel = field === "monthlyDiv" ? "월배당" : "평가액";
+  return `<div class="month-bars">${bars}</div>
+  <p class="stat-sub">막대 높이는 ${year}년 내 최소~최대 ${fieldLabel} 구간 기준(0원 기준 아님) · 빈 칸 = 그 달 스냅샷 없음 · %는 직전 스냅샷 대비 증감률.</p>`;
 }
 
 /* 통합 탭 — 자산 유형별(카테고리) 1줄 스택바 */
@@ -2871,12 +3384,23 @@ async function renderMyAssets() {
   let fx = null;
   const items = [];
   let liveKr = null;
+  let liveGlobal = null;
+  // A71(2026-08-31 사용자 보고): 종목 하나의 일시적 네트워크 오류(예: raw.githubusercontent.com
+  // 간헐적 400)가 전체 대시보드를 통째로 날려버렸다 — fetchJSON이 재시도(최대 2회)해도
+  // 안 되면 그 종목만 계산에서 빼고 나머지는 그대로 보여준다. "지어내지 않기"는 유지 —
+  // 실패한 종목을 0으로 채우지 않고 명시적으로 제외·안내한다.
+  const fetchFailedRows = [];
   try {
     fx = await loadFx();
     liveKr = await loadLiveKrQuotes(); // 켜져 있을 때만, 실패 시 null(주간 데이터 폴백)
+    liveGlobal = await loadLiveGlobalQuotes(); // A57: 코스피 등 지수값 — 토글과 무관, 실패 시 null
     for (const r of knownRows) {
-      const full = await loadSymbol(r.symbol);
-      items.push({ ...r, full });
+      try {
+        const full = await loadSymbol(r.symbol);
+        items.push({ ...r, full });
+      } catch (err) {
+        fetchFailedRows.push(r);
+      }
     }
   } catch (err) {
     result.innerHTML = `<p class="compare-empty" style="color:var(--critical)">${err.message}</p>`;
@@ -2887,16 +3411,58 @@ async function renderMyAssets() {
     ? `<p class="stat-sub" style="margin-top:6px;">🏢 일반종목 ${stockRows.length}건(${stockRows.map((r) => (state.metaBySymbol.get(r.symbol) || {}).name || r.symbol).join(", ")})은 "일반종목: 제외" 상태라 계산에서 빠졌습니다.</p>`
     : "";
   const unknownHTML = unknownRows.length
-    ? `<p class="stat-sub" style="color:var(--critical); margin-top:10px;">⚠️ 아직 수집 목록에 없는 종목 ${unknownRows.length}건은 계산에서 제외했습니다: ${unknownRows.map((r) => r.symbol).join(", ")} — 클로드에게 "이 종목 추가해줘"라고 요청하면 다음 데이터 수집 때 반영됩니다. (데이터 기준: ${state.manifest.updated}) <button type="button" id="myManifestRefreshBtn">🔄 수집 목록 새로 확인</button></p>`
+    ? `<p class="stat-sub" style="color:var(--critical); margin-top:10px;">⚠️ 아직 수집 목록에 없는 종목 ${unknownRows.length}건은 계산에서 제외했습니다: ${unknownRows.map((r) => r.symbol).join(", ")} — 이 앱을 만든/배포해주신 분(또는 Claude)에게 종목명·코드와 함께 "이 종목 추가해줘"라고 요청하면 등록 후 다음 데이터 수집 때부터 반영됩니다. (데이터 기준: ${state.manifest.updated}) <button type="button" id="myManifestRefreshBtn">🔄 수집 목록 새로 확인</button></p>`
+    : "";
+  // A71: unknownRows(카탈로그에 아예 없음)와 달리, 이건 등록은 돼 있는데 이번 조회에서만
+  // 못 가져온 것 — 원인이 다르므로 안내도 "다시 시도"로 구분한다("등록해달라"고 하면 안 됨).
+  const fetchFailedHTML = fetchFailedRows.length
+    ? `<p class="stat-sub" style="color:var(--critical); margin-top:10px;">⚠️ 일시적인 통신 오류로 ${fetchFailedRows.length}건을 이번엔 불러오지 못해 계산에서 제외했습니다: ${fetchFailedRows.map((r) => r.symbol).join(", ")} — 잠시 후 새로고침하면 대개 해결됩니다.</p>`
     : "";
   if (result && !result.dataset.manifestBtnWired) {
     result.dataset.manifestBtnWired = "1";
     result.addEventListener("click", async (e) => {
       const btn = e.target && e.target.id === "myManifestRefreshBtn" ? e.target : null;
-      if (!btn) return;
-      btn.disabled = true; btn.textContent = "확인 중…";
-      try { await refreshManifestAndRerender(); }
-      catch (err) { btn.disabled = false; btn.textContent = "🔄 수집 목록 새로 확인"; }
+      if (btn) {
+        btn.disabled = true; btn.textContent = "확인 중…";
+        try { await refreshManifestAndRerender(); }
+        catch (err) { btn.disabled = false; btn.textContent = "🔄 수집 목록 새로 확인"; }
+        return;
+      }
+      // A59(2026-08-18 사용자 요청): 지급시기별 월배당 막대를 누르면 계좌·종목별 내역을 펼친다
+      // (한 번에 하나만 — 다른 막대를 누르면 이전에 펼친 것은 접힌다).
+      const periodRow = e.target.closest(".period-bar-row");
+      if (periodRow) {
+        const detail = periodRow.nextElementSibling;
+        if (!detail || !detail.classList.contains("period-detail")) return;
+        const willShow = detail.hidden;
+        result.querySelectorAll(".period-detail").forEach((d) => { d.hidden = true; });
+        if (willShow) {
+          detail.hidden = false;
+          if (!detail.dataset.filled) {
+            const csv = state.myAssetsCsvData;
+            detail.innerHTML = csv ? buildPeriodDetailHTML(csv.perRow, periodRow.dataset.periodKey) : "";
+            detail.dataset.filled = "1";
+          }
+        }
+        return;
+      }
+      // A60(2026-08-18 사용자 요청): 계좌별 월배당 막대를 누르면 그 계좌의 종목별 내역·지급주기를
+      // 펼친다(같은 배타적 펼침 규칙 — 위 지급시기 상세와는 별도로 하나씩 열림).
+      const accountRow = e.target.closest(".account-div-row");
+      if (accountRow) {
+        const detail = accountRow.nextElementSibling;
+        if (!detail || !detail.classList.contains("account-div-detail")) return;
+        const willShow = detail.hidden;
+        result.querySelectorAll(".account-div-detail").forEach((d) => { d.hidden = true; });
+        if (willShow) {
+          detail.hidden = false;
+          if (!detail.dataset.filled) {
+            const csv = state.myAssetsCsvData;
+            detail.innerHTML = csv ? buildAccountDivDetailHTML(csv.perRow, accountRow.dataset.accountKey) : "";
+            detail.dataset.filled = "1";
+          }
+        }
+      }
     });
   }
 
@@ -2922,6 +3488,9 @@ async function renderMyAssets() {
     const baseClose = close;
     // 🔄 최신시세 켜짐 + 해당 국내 종목의 장중 가격이 있으면 주간 종가 대신 사용
     if (liveKr && liveKr.prices[it.symbol] > 0) { close = liveKr.prices[it.symbol]; liveApplied += 1; }
+    // A51: 히트맵 등락률(lastChangePct)이 마지막 주간 수집 종가 대신 쓸 전일종가.
+    // intraday-kr.yml이 매일 첫 실행 때 확정해 넣어준다 — 없으면 undefined(폴백).
+    const livePrevClose = liveKr && liveKr.prevClose ? liveKr.prevClose[it.symbol] : undefined;
     const isUsd = (it.full.currency || "USD") === "USD";
     if (isUsd && latestRate == null) {
       result.innerHTML = `<p class="compare-empty" style="color:var(--critical)">환율 데이터가 아직 없어 달러 종목을 환산할 수 없습니다.</p>`;
@@ -3005,7 +3574,7 @@ async function renderMyAssets() {
     if (cost != null) { totalCost += cost; costedValue += value; }
     totalMonthlyDiv += monthlyDiv;
     totalMonthlyBuy += monthlyBuy;
-    perRow.push({ ...it, meta, close, isUsd, value, cost, profit, monthlyDiv, nextMonthDiv, monthlyBuy, erosion, usedConfirmed, trailReturn, trailDetail, effRate, divBasis, dpsFromRate, dpsGapPct, divPrice, divPriceDate, recordDate, recordFuture, buyDeadline });
+    perRow.push({ ...it, meta, close, isUsd, value, cost, profit, monthlyDiv, nextMonthDiv, monthlyBuy, erosion, usedConfirmed, trailReturn, trailDetail, effRate, divBasis, dpsFromRate, dpsGapPct, divPrice, divPriceDate, recordDate, recordFuture, buyDeadline, livePrevClose });
 
     const accKey = it.account || "계좌 미지정";
     if (!accountMap.has(accKey)) accountMap.set(accKey, { value: 0, cost: 0, costedValue: 0, monthlyDiv: 0, monthlyBuy: 0, n: 0 });
@@ -3038,8 +3607,11 @@ async function renderMyAssets() {
   // 목표 도달: 기대수익률 미입력 시 배당수익률만 가정(보수적) — 안내문에 명시
   const goalAmount = parseFloat(cfg.goalAmount) || 0;
   let expReturn = cfg.expectedReturn !== "" ? Number(cfg.expectedReturn) / 100 : null;
+  // A46: 종목수익률을 종합/ETF/일반종목 중 어느 자산군 기준으로 볼지 — 버튼으로 고른다.
+  const goalTrailType = loadGoalTrailType();
+  const trailScopeRows = perRow.filter((p) => matchesGoalTrailType(p, goalTrailType));
   let wsum = 0, vsum = 0;
-  for (const p of perRow) {
+  for (const p of trailScopeRows) {
     if (p.trailReturn != null && p.value > 0) { wsum += p.trailReturn * p.value; vsum += p.value; }
   }
   // A45: 가중평균은 모드와 무관하게 항상 구한다(직접입력 모드에서도 목표표에 "현재" 실적을 보여주려고).
@@ -3047,44 +3619,34 @@ async function renderMyAssets() {
   if (cfg.returnMode !== "manual") {
     expReturn = weightedTrailReturn; // 종목별 실적 반영 모드에서만 직접입력 대신 이 값을 목표 계산에 씀
   }
-  /* A45b: 이 수치가 어떻게 조정됐는지 화면에 밝힌다(2026-08-12 사용자 요청).
-     ① 상·하한 클램프에 걸린 종목 — 실제 등락률이 잘려 나가므로 표시값은 실제보다 눌려 있다
-     ② 상장 1년 미만 종목 — 짧은 구간 수익률이 기간 전체값으로 쓰여 과소계상된다
-     비중이 큰 종목부터 보여주고, 클램프를 풀었을 때의 값도 같이 내 얼마나 눌렸는지 알게 한다. */
-  const trailCapped = [], trailShort = [];
-  let rawWsum = 0;
-  for (const p of perRow) {
-    if (!p.trailDetail || !(p.value > 0)) continue;
-    rawWsum += p.trailDetail.raw * p.value;
-    if (p.trailDetail.capped || p.trailDetail.floored) trailCapped.push(p);
-    else if (p.trailDetail.shortHistory) trailShort.push(p);
+  /* A47(2026-08-13): A45b의 상·하한 클램프 절단 안내는 클램프 자체를 없애면서 함께 걷어냈다
+     (trailingReturnDetail이 이제 항상 capped=false/floored=false를 돌려주므로 그 갈래는 죽은
+     코드였다). 남는 건 이력부족 안내뿐 — 짧은 구간 수익률이 기간 전체값으로 쓰인다는 사실은
+     클램프와 무관하게 여전히 유효한 정보라 그대로 둔다. trailScopeRows로 스캔해 위 종합/ETF/
+     일반종목 필터와 같은 자산군만 집계한다. */
+  const trailShort = [];
+  for (const p of trailScopeRows) {
+    if (p.trailDetail && p.value > 0 && p.trailDetail.shortHistory) trailShort.push(p);
   }
-  const weightedTrailRaw = vsum > 0 ? rawWsum / vsum : null;
-  trailCapped.sort((a, b) => b.value - a.value);
   trailShort.sort((a, b) => b.value - a.value);
-  const trailNoteHTML = weightedTrailReturn == null || (!trailCapped.length && !trailShort.length) ? "" : `
+  const trailNoteHTML = weightedTrailReturn == null || !trailShort.length ? "" : `
     <details style="margin-top:6px;">
-      <summary style="font-size:12px; color:var(--text-muted); cursor:pointer;">⚠️ 종목수익률 보정 내역 — ${
-        [trailCapped.length ? `상·하한 절단 ${trailCapped.length}종목` : "", trailShort.length ? `이력부족 ${trailShort.length}종목` : ""].filter(Boolean).join(" · ")
-      }${weightedTrailRaw != null && Math.abs(weightedTrailRaw - weightedTrailReturn) > 0.005
-        ? ` (절단 없으면 ${(weightedTrailRaw * 100).toFixed(1)}%)` : ""}</summary>
+      <summary style="font-size:12px; color:var(--text-muted); cursor:pointer;">⚠️ 이력부족 종목 ${trailShort.length}건 — 짧은 구간 실적이 연간값으로 쓰임</summary>
       <div style="overflow-x:auto; margin-top:6px;">
       <table class="account-summary-table" style="font-size:11.5px;">
-        <thead><tr><th>종목</th><th>비중</th><th>실제</th><th>반영</th><th>사유</th></tr></thead>
-        <tbody>${[...trailCapped, ...trailShort].slice(0, 12).map((p) => {
+        <thead><tr><th>종목</th><th>비중</th><th>등락률(연환산)</th><th>실제 보유·상장 기간</th></tr></thead>
+        <tbody>${trailShort.slice(0, 12).map((p) => {
           const d = p.trailDetail;
-          const reason = d.capped ? `상한 절단` : d.floored ? `하한 절단` : `${d.spanMonths}개월치만 존재(${d.startDate}~)`;
           return `<tr>
             <td style="text-align:left;">${p.meta ? p.meta.name : p.symbol}</td>
             <td>${(p.value / vsum * 100).toFixed(1)}%</td>
-            <td>${(d.raw * 100).toFixed(1)}%</td>
             <td>${(d.value * 100).toFixed(1)}%</td>
-            <td style="text-align:left; color:var(--text-muted);">${reason}</td>
+            <td style="text-align:left; color:var(--text-muted);">${d.spanMonths}개월치만 존재(${d.startDate}~)</td>
           </tr>`;
         }).join("")}</tbody>
       </table>
       </div>
-      <p class="stat-sub" style="margin-top:4px; color:var(--text-muted);">상·하한(−70%~+150%)은 단기 급등락이 미래 가정으로 흘러드는 걸 막으려는 장치입니다. 이력부족 종목은 짧은 구간 수익률이 기간 전체값으로 쓰여 <b>과소계상</b>됩니다 — 둘 다 표시값을 실제보다 보수적으로 만듭니다.</p>
+      <p class="stat-sub" style="margin-top:4px; color:var(--text-muted);">이력부족 종목은 짧은 구간 수익률이 기간 전체값으로 쓰여 실제 연간 수익률과 다를 수 있습니다.</p>
     </details>`;
   // 생활비 사용액 — 월배당 중 일부를 생활비로 인출하면 그만큼은 복리 재투자에서 빠짐
   const livingExpenseUsed = Math.min(cfg.livingExpense || 0, totalMonthlyDiv);
@@ -3185,16 +3747,27 @@ async function renderMyAssets() {
   }).join("");
 
   // 지급시기별 월배당 — 시트(금융비서 대시보드)의 "지급시기별" 집계와 동일형태
-  const PERIOD_ORDER = ["월초", "월중", "월말", "지급시기 미지정"];
+  // A55(2026-08-13 사용자 보고 버그수정): 여기 라벨이 "월초"/"월중"/"월말"이었는데 실제 저장되는
+  // 값은 normalizePayPeriod()가 만드는 "월초5일"/"월중15일"/"월말30일"이라 하나도 매칭되지 않고
+  // periodMap.has(k)가 전부 false — payPeriod가 있는 종목도 전부 "지급시기 미지정"에만 잡히지
+  // 않고 그 어디에도 안 보이는 상태였다(rows에 payPeriod가 없는 종목만 "지급시기 미지정"으로
+  // 보였던 것). PAY_PERIOD_TYPES(정규화의 원본)를 그대로 재사용해 라벨이 다시는 어긋나지 않게 한다.
+  const PERIOD_ORDER = [...PAY_PERIOD_TYPES, "지급시기 미지정"];
   const periodTotal = [...periodMap.values()].reduce((a, b) => a + b, 0);
   const periodHTML = PERIOD_ORDER.filter((k) => periodMap.has(k)).map((k, i) => {
     const v = periodMap.get(k);
     const pct = periodTotal > 0 ? (v / periodTotal) * 100 : 0;
-    return `<div class="bar-row">
-      <span class="bar-label" title="${k}">${k}</span>
+    // A58(2026-08-18 사용자 요청): 화면 표기는 "월초5일" 대신 짧게 "월초"만 — 그룹핑 키(k)
+    // 자체는 그대로 둔다(위 A55 수정으로 payPeriod 원본값과 정확히 일치해야 매칭되므로).
+    const shortLabel = PAY_PERIOD_SHORT[k] || k;
+    // A59(2026-08-18 사용자 요청): 눌러서 계좌·종목별 내역을 펼칠 수 있게 한다 —
+    // 클릭 배선은 아래 result 클릭 위임 리스너(myManifestRefreshBtn과 같은 곳)에서 처리.
+    return `<div class="bar-row period-bar-row" data-period-key="${k}" style="cursor:pointer;" title="눌러서 계좌·종목별 내역 보기">
+      <span class="bar-label">${shortLabel} <span style="font-size:10px; color:var(--text-muted);">▾</span></span>
       <div class="bar-track"><div class="bar-fill" style="width:${pct.toFixed(1)}%; background:${PALETTE[i % PALETTE.length]}"></div></div>
       <span class="bar-value">${fmtW(v)}</span>
-    </div>`;
+    </div>
+    <div class="period-detail" data-period-key="${k}" hidden></div>`;
   }).join("");
 
   // 월배당 TOP10 — 첨부 대시보드의 "월배당 현황차트" 탭 중 TOP10 항목
@@ -3202,7 +3775,11 @@ async function renderMyAssets() {
   const maxDiv = top10Div.length ? top10Div[0].monthlyDiv : 0;
   const top10HTML = top10Div.map((p) => {
     const pct = maxDiv > 0 ? (p.monthlyDiv / maxDiv) * 100 : 0;
-    const label = p.meta ? p.meta.name : p.symbol;
+    const name = p.meta ? p.meta.name : p.symbol;
+    // A58(2026-08-18 사용자 요청): 같은 종목명이 계좌별로 여러 줄 나올 때 지급시기(월초/월중/월말)를
+    // 함께 표기 — 이름만으로는 언제 들어오는 배당인지 구분이 안 됐다.
+    const periodShort = PAY_PERIOD_SHORT[p.payPeriod];
+    const label = periodShort ? `${name} (${periodShort})` : name;
     return `<div class="bar-row">
       <span class="bar-label" title="${label}">${label}</span>
       <div class="bar-track"><div class="bar-fill" style="width:${pct.toFixed(1)}%; background:${accountColor(p.account || "계좌 미지정")}"></div></div>
@@ -3215,12 +3792,35 @@ async function renderMyAssets() {
   const maxAccDiv = byAccountDiv.length ? byAccountDiv[0][1].monthlyDiv : 0;
   const accountDivHTML = byAccountDiv.map(([acc, g]) => {
     const pct = maxAccDiv > 0 ? (g.monthlyDiv / maxAccDiv) * 100 : 0;
-    return `<div class="bar-row">
-      <span class="bar-label" title="${acc}">${acc}</span>
+    // A60(2026-08-18 사용자 요청): 눌러서 그 계좌의 종목별 내역·지급주기를 펼칠 수 있게 한다 —
+    // 클릭 배선은 아래 result 클릭 위임 리스너(period-bar-row와 같은 곳)에서 처리.
+    return `<div class="bar-row account-div-row" data-account-key="${acc}" style="cursor:pointer;" title="눌러서 종목별 내역·지급주기 보기">
+      <span class="bar-label">${acc} <span style="font-size:10px; color:var(--text-muted);">▾</span></span>
       <div class="bar-track"><div class="bar-fill" style="width:${pct.toFixed(1)}%; background:${accountColor(acc)}"></div></div>
       <span class="bar-value">${fmtW(g.monthlyDiv)}</span>
-    </div>`;
+    </div>
+    <div class="account-div-detail" data-account-key="${acc}" hidden></div>`;
   }).join("");
+
+  // A70(2026-08-26 사용자 요청): 계좌별 월배당을 파이(도넛)로도 보여주고, 계좌별 배당수익률
+  // (월배당÷평가액)과 ETF·개별주 구성비를 함께 낸다. 비중 데이터 자체는 바로 위 막대와
+  // 동일(byAccountDiv) — 표현만 도넛이 추가되는 것이지 집계를 새로 하지 않는다.
+  // 색상도 막대와 같은 accountColor()를 써서 같은 화면 안에서 계좌색이 어긋나지 않게 한다.
+  const accountDivPieRows = byAccountDiv.map(([acc, g]) => {
+    const accRows = perRow.filter((p) => (p.account || "계좌 미지정") === acc && p.monthlyDiv > 0);
+    // assetType이 "stock"이 아니면 ETF로 센다(카탈로그 값은 "etf"/"stock" 둘뿐 — 위에서 확인됨)
+    const etfDiv = accRows.filter((p) => !p.meta || p.meta.assetType !== "stock").reduce((s, p) => s + p.monthlyDiv, 0);
+    const stockDiv = g.monthlyDiv - etfDiv;
+    return {
+      acc, color: accountColor(acc), monthlyDiv: g.monthlyDiv,
+      pct: totalMonthlyDiv > 0 ? (g.monthlyDiv / totalMonthlyDiv) * 100 : 0,
+      // 배당수익률은 "월" 단위다(사용자 확정) — 연환산이 아니다. 평가액이 0이면 계산 불가(지어내지 않음).
+      monthlyYield: g.value > 0 ? (g.monthlyDiv / g.value) * 100 : null,
+      etfPct: g.monthlyDiv > 0 ? (etfDiv / g.monthlyDiv) * 100 : 0,
+      stockPct: g.monthlyDiv > 0 ? (stockDiv / g.monthlyDiv) * 100 : 0,
+    };
+  });
+  const accountDivDonutHTML = buildAccountColorDonutHTML(accountDivPieRows, fmtW(totalMonthlyDiv));
 
   // 투자대상 시장 비중(한국/미국/글로벌) + 성장·배당·안전 스타일 비중 + 자산 성격별(카테고리) 비중
   // — v534 "비중분석" 탭에 해당. 상장 통화(isUsd)가 아니라 실제 투자대상 시장(meta.region)
@@ -3281,7 +3881,7 @@ async function renderMyAssets() {
 
   // 매수계획 상세(ETF모으기)
   const buyPlanHTML = buildBuyPlanHTML(perRow);
-  const goalTrackerHTML = buildGoalTrackerHTML(perRow);
+  const goalTrackerHTML = await buildGoalTrackerHTML(perRow, latestRate);
 
   // 계좌 히트맵 탭은 A7에서 트리맵으로 대체 — 패널 컨테이너에 renderMyAssets 끝의
   // 와이어링(renderTreemap)이 buildTreemapHTML 결과를 채운다.
@@ -3290,8 +3890,24 @@ async function renderMyAssets() {
   const history = JSON.parse(localStorage.getItem(MY_ASSETS_HISTORY_KEY) || "[]");
   // 연도별 확정 배당 이력 + 예상 대비 괴리율(A25c) — history를 쓰므로 반드시 그 뒤에서 호출
   const yearlyHTML = buildYearlyDivHTML(state.myAssetsDivHistory || {}, totalMonthlyDiv, history);
+  // A76(2026-09-01 사용자 요청 "월배당탭에 예상배당/확정배당/일반배당/커버드콜 표기 추가"):
+  // 연간 예상 vs 확정(일반배당/커버드콜 스택) 막대 — 월배당현황 탭용.
+  // A78(같은 날 사용자 보고 "커버드콜 표시안됨"): 이번 달만은 스냅샷 여부와 무관하게
+  // 지금 이 순간의 perRow 구성으로 즉시 색이 보이도록 live 값을 함께 넘긴다.
+  const liveDivHistory = { monthKey: todayStr().slice(0, 7), monthlyDiv: totalMonthlyDiv, divSplit: computeDivSplit(perRow) };
+  const annualDivHTML = buildDivHistorySectionHTML(state.myAssetsDivHistory || {}, history, liveDivHistory);
+  // A72 개정(2026-09-01 사용자 요청 "좌우이격 심함·예상배당금 형태참조수정·년도별 버튼추가"):
+  // SVG 막대(xAt를 막대 중심으로 재사용해 첫 막대가 y축 라벨을 덮던 버그)를 걷어내고, 이미
+  // 검증된 "예상 배당금" flex 막대(buildMonthBarsHTML)와 같은 방식으로 재구성한다.
+  const trendYears = [...new Set(history.map((h) => h.month.slice(0, 4)))].sort();
+  // A73(2026-09-01 사용자 요청): 평가액 막대에 월배당이 안 보인다는 지적 — 한 막대에
+  // 두 지표를 욱여넣지 않고(스케일이 다름) 같은 연도 버튼을 공유하는 별도 도표로 추가.
   const trendHTML = history.length >= 2
-    ? `<div id="myAssetTrendChart"></div>`
+    ? `${trendYears.length > 1 ? `<div id="myAssetTrendYearBtns" class="seg" style="margin-bottom:8px;">${trendYears.map((y) => `<button type="button" data-year="${y}">${y}</button>`).join("")}</div>` : ""}
+       <p class="chart-title">평가액</p>
+       <div id="myAssetTrendChart"></div>
+       <p class="chart-title" style="margin-top:14px;">월배당</p>
+       <div id="myAssetDivTrendChart"></div>`
     : `<p class="compare-empty">"이번 달 스냅샷 저장"을 매달 눌러두면 평가액·월배당 추이 그래프가 여기 쌓입니다(현재 ${history.length}개월 기록).</p>`;
   // 일별 자산변동 캡처 이력 — "오늘 자산 스냅샷" 버튼으로 누적(기기 저장, 매일 직접 눌러야 함)
   const dailyHistory = JSON.parse(localStorage.getItem(MY_ASSETS_DAILY_HISTORY_KEY) || "[]");
@@ -3326,7 +3942,7 @@ async function renderMyAssets() {
         <p class="stat-label">🎯 목표 ${fmtManwon(goalAmount)} 도달</p>
         <p class="stat-value">${goalLabel}</p>
         <p class="stat-sub">연 ${(goalRate * 100).toFixed(1)}% 가정${
-          cfg.returnMode !== "manual" ? ` (종목별 최근 ${cfg.returnMode}개월 실적 가중평균${weightedTrailReturn == null ? ", 가격데이터 부족 시 0% 처리" : ""} + 배당수익률)`
+          cfg.returnMode !== "manual" ? ` (${goalTrailType === "__all__" ? "종목별" : goalTrailType === "etf" ? "ETF만" : "일반종목만"} 최근 ${cfg.returnMode}개월 실적 가중평균${weightedTrailReturn == null ? ", 가격데이터 부족 시 0% 처리" : ""} + 배당수익률)`
           : expReturn == null ? " (기대수익률 미입력 — 배당만 반영)" : ""
         }</p>
         ${/* A36: 이 수치가 어디서 왔는지 화면에 밝힌다. 종전에는 "연 22.7% 가정"만 보여서
@@ -3334,6 +3950,18 @@ async function renderMyAssets() {
              드러나지 않았다(실제로 배당 과대계상이 고쳐지자 27.4%→22.7%로 내려갔다). */""}
         ${/* A38: 목표를 총/종목/배당 세 항으로 쪼개 보여주고, 각 항을 현재 실적과 나란히 둔다.
              "22.7%가 어디서 왔나"를 물어봐야 알던 것을 화면에서 바로 읽게 하려는 것. */""}
+        ${/* A46: 아래 "현재 종목수익률"이 어느 자산군 기준인지 고른다 — 개별주가 섞이면
+             종목수익률이 실제 ETF 전략 성과와 크게 어긋날 수 있어서(실측: 삼성전자·SK하이닉스
+             비중 25.3%가 93%p 중 38%p를 만듦), 종합/ETF만/일반종목만을 나눠 볼 수 있게 한다. */""}
+        <div class="controls" style="margin:6px 0 2px; gap:6px;">
+          ${[["__all__", "종합"], ["etf", "ETF"], ["stock", "일반종목"]].map(([val, label]) =>
+            `<button type="button" class="btn-action goal-trail-type-btn${goalTrailType === val ? " active" : ""}" data-type="${val}" style="padding:5px 12px; font-size:12px;">${label}</button>`
+          ).join("")}
+          <span class="stat-sub" style="margin:0;">${
+            goalTrailType === "__all__" ? "보유 전체 기준"
+              : `${goalTrailType === "etf" ? "ETF" : "일반종목(개별주)"}만 · 평가액 비중 ${totalValue > 0 ? (vsum / totalValue * 100).toFixed(1) : "0.0"}%`
+          }</span>
+        </div>
         <div style="overflow-x:auto; margin-top:6px;">
         <table class="account-summary-table" style="font-size:12px;">
           <thead><tr><th>구분</th><th>목표</th><th>현재</th><th>차이</th></tr></thead>
@@ -3363,8 +3991,8 @@ async function renderMyAssets() {
         } 현재 배당수익률은 재투자분 ${fmtW(reinvestedDiv)}/월 ÷ 평가액 기준이라 <b>배당이 바뀌면 자동으로 갱신</b>됩니다.${
           cfg.returnMode !== "manual" ? ""
             : weightedTrailReturn == null
-              ? " 현재 종목수익률은 보유 종목의 가격 데이터가 부족해 계산되지 않았습니다."
-              : ` 현재 종목수익률은 보유 종목의 최근 ${GOAL_TRAIL_DEFAULT_MONTHS}개월 가격 등락률(연환산)을 평가금액 비중으로 가중평균한 값으로, <b>목표 계산에는 쓰지 않고 실적 대조용</b>입니다.`
+              ? " 현재 종목수익률은 선택한 자산군의 가격 데이터가 부족해 계산되지 않았습니다."
+              : ` 현재 종목수익률은 ${goalTrailType === "__all__" ? "보유 종목 전체" : goalTrailType === "etf" ? "ETF만" : "일반종목(개별주)만"}의 최근 ${GOAL_TRAIL_DEFAULT_MONTHS}개월 가격 등락률(연환산)을 평가금액 비중으로 가중평균한 값으로, <b>목표 계산에는 쓰지 않고 실적 대조용</b>입니다.`
         }</p>
         ${trailNoteHTML}
         <p class="stat-sub">월 재투자액 ${fmtW(totalMonthlyInvest)}${totalContributions > 0 ? ` (월매수 ${fmtW(totalMonthlyBuy)} + 월적립 ${fmtW(totalContributions)})` : ""} 반영${livingExpenseUsed > 0 ? ` · 배당은 재투자분(${fmtW(reinvestedDiv)}/월)만 복리 반영, 생활비 사용분 제외` : ""}</p>
@@ -3376,8 +4004,10 @@ async function renderMyAssets() {
       liveKr ? ` · <b style="color:var(--good)">🔄 최신시세 ${liveKr.updated} 적용(국내 ${liveApplied}종목, GitHub 사정에 따라 수 시간 지연 가능)</b>`
       : liveQuotesEnabled() ? ` · <span style="color:var(--critical)">🔄 최신시세 불러오기 실패(${state.liveKrError || "데이터 없음"}) — 주간 종가 사용</span>` : ""
     }</p>
+    ${marketIndexBarHTML(liveGlobal)}
     ${excludedStockHTML}
     ${unknownHTML}
+    ${fetchFailedHTML}
 
     <div class="dash-tabs" id="myDashTabs">
       <button type="button" class="dash-tab-btn" data-tab="overview">📊 통합</button>
@@ -3556,7 +4186,7 @@ async function renderMyAssets() {
 
     <div class="dash-panel" data-tab="heatmap" hidden>
       <p class="chart-title" style="margin-top:20px;">🗺️ 비중 히트맵 (트리맵)</p>
-      <p class="stat-sub">사각형 크기 = 평가액 비중, 색 = 등락률(<b style="color:#de2121;">상승 빨강</b> · <b style="color:#3042c2;">하락 파랑</b>). 주가는 주 1회 수집이라 등락률은 <b>마지막 두 수집 종가 간 변화</b>(🔄 최신시세 켬 시 라이브가 vs 마지막 수집 종가)입니다 — 일간 등락이 아닐 수 있습니다. <b>마지막 수집: ${state.manifest.updated}</b> — 이 날짜 이후 누적분이라 급등락 다음날은 당일 등락보다 크게 보일 수 있습니다.</p>
+      <p class="stat-sub">사각형 크기 = 평가액 비중, 색 = 등락률(<b style="color:#de2121;">상승 빨강</b> · <b style="color:#3042c2;">하락 파랑</b>). 주가는 주 1회 수집이라 등락률은 기본적으로 <b>마지막 두 수집 종가 간 변화</b>입니다 — 일간 등락이 아닐 수 있습니다. <b>마지막 수집: ${state.manifest.updated}</b> — 이 날짜 이후 누적분이라 급등락 다음날은 당일 등락보다 크게 보일 수 있습니다. 🔄 최신시세 켬 시 <b>라이브가 vs 전일종가</b>로 바뀌어 그날 하루의 등락만 보여줍니다(전일종가 미확보 종목은 위 폴백대로 라이브가 vs 마지막 수집 종가).</p>
       <div class="controls" style="margin:10px 0;">
         <select id="myTreemapGroup" aria-label="트리맵 그룹 기준">
           <option value="category" selected>카테고리별</option>
@@ -3569,6 +4199,9 @@ async function renderMyAssets() {
     </div>
 
     <div class="dash-panel" data-tab="divstatus" hidden>
+      ${accountDivDonutHTML ? `<p class="chart-title">🥧 계좌별 월배당 비중</p>
+      ${accountDivDonutHTML}` : ""}
+
       ${accountDivHTML ? `<p class="chart-title" style="margin-top:20px;">🏦 계좌별 월배당</p>
       <div class="bar-list">${accountDivHTML}</div>` : ""}
 
@@ -3577,6 +4210,9 @@ async function renderMyAssets() {
 
       ${top10HTML ? `<p class="chart-title" style="margin-top:20px;">💰 월배당 TOP${top10Div.length}</p>
       <div class="bar-list">${top10HTML}</div>` : ""}
+
+      ${annualDivHTML ? `<p class="chart-title" style="margin-top:20px;">📅 연간 배당 히스토리</p>
+      ${annualDivHTML}` : ""}
     </div>
 
     <div class="dash-panel" data-tab="suff" hidden>
@@ -3836,17 +4472,45 @@ async function renderMyAssets() {
   renderMyOverview();
 
   if (history.length >= 2) {
-    buildChart(document.getElementById("myAssetTrendChart"), {
-      dates: history.map((h) => h.month + "-01"),
-      values: history.map((h) => h.value),
-      color: cssVar("--series-price"),
-      mode: "price", currency: "KRW",
-      markers: [],
-      valueFmt: (v) => fmtW(v),
-      seriesLabel: "평가액",
+    // A72 개정: 연도 버튼 클릭 시 renderMyAssets() 전체 재실행(시세 재조회) 없이
+    // 이 위젯만 다시 그린다 — state.myAssetTrendYear 패턴은 mySignalSigmaWin 등과 동일.
+    if (!state.myAssetTrendYear || !trendYears.includes(state.myAssetTrendYear)) {
+      state.myAssetTrendYear = trendYears[trendYears.length - 1];
+    }
+    const renderAssetTrendBars = () => {
+      const el = document.getElementById("myAssetTrendChart");
+      if (el) el.innerHTML = buildAssetTrendBarsHTML(history, state.myAssetTrendYear, "value");
+      const elDiv = document.getElementById("myAssetDivTrendChart");
+      if (elDiv) elDiv.innerHTML = buildAssetTrendBarsHTML(history, state.myAssetTrendYear, "monthlyDiv");
+      document.querySelectorAll("#myAssetTrendYearBtns button").forEach((b) => {
+        b.classList.toggle("active", b.dataset.year === state.myAssetTrendYear);
+      });
+    };
+    document.querySelectorAll("#myAssetTrendYearBtns button").forEach((b) => {
+      b.addEventListener("click", () => { state.myAssetTrendYear = b.dataset.year; renderAssetTrendBars(); });
     });
+    renderAssetTrendBars();
   }
-  document.getElementById("mySnapshotBtn").addEventListener("click", () => {
+
+  // A77(2026-09-01 사용자 요청 "월간도 추가 버튼추가"): 연간 배당 히스토리 연간/월간 전환 —
+  // 시세 재조회 없이 #divHistoryBody만 다시 그린다.
+  const divHistoryModeBtns = document.getElementById("divHistoryModeBtns");
+  if (divHistoryModeBtns) {
+    const renderDivHistoryMode = () => {
+      const body = document.getElementById("divHistoryBody");
+      const mode = state.myDivHistoryMode || "year";
+      if (body) body.innerHTML = buildDivHistoryBarsHTML(state.myAssetsDivHistory || {}, history, mode, liveDivHistory);
+      divHistoryModeBtns.querySelectorAll("button").forEach((b) => {
+        b.classList.toggle("active", b.dataset.mode === mode);
+      });
+    };
+    divHistoryModeBtns.querySelectorAll("button").forEach((b) => {
+      b.addEventListener("click", () => { state.myDivHistoryMode = b.dataset.mode; renderDivHistoryMode(); });
+    });
+    renderDivHistoryMode();
+  }
+
+  document.getElementById("mySnapshotBtn").addEventListener("click", async () => {
     const month = todayStr().slice(0, 7);
     // A25a: 수동 버튼도 자동 경로와 같은 헬퍼를 써서 저장 형식(비중 포함)을 하나로 통일한다.
     upsertMonthlySnapshot();
@@ -3855,6 +4519,24 @@ async function renderMyAssets() {
     saveMyAssets();
     flashStatus("mySnapshotStatus", `${month} 스냅샷 저장 ✓ (이 브라우저에만 보관)`);
     renderMyAssets();
+
+    // A62(2026-08-25 사용자 요청): 텔레그램 봇이 설정돼 있으면 스냅샷 내용도 함께 보낸다 —
+    // "리포트 생성"이 이미 쓰는 sendTelegramMessage를 재사용(별도 연동 없음), A32f 자동 리포트와
+    // 같은 "설정돼 있을 때만" 규칙(telegramBotToken()&&telegramChatId()).
+    if (telegramBotToken() && telegramChatId()) {
+      const hist = JSON.parse(localStorage.getItem(MY_ASSETS_HISTORY_KEY) || "[]");
+      const idx = hist.findIndex((h) => h.month === month);
+      const entry = hist[idx];
+      if (entry) {
+        const prev = hist[idx - 1];
+        const diff = prev ? entry.value - prev.value : null;
+        const lines = [`📸 이번 달 자산 스냅샷 (${month})`, `평가액 ${fmtPrice(entry.value, "KRW")}`];
+        if (diff != null) lines.push(`전월 대비 ${diff >= 0 ? "+" : ""}${fmtPrice(diff, "KRW")}`);
+        if (entry.monthlyDiv > 0) lines.push(`월배당 ${fmtPrice(entry.monthlyDiv, "KRW")}`);
+        const res = await sendTelegramMessage(lines.join("\n"));
+        flashStatus("mySnapshotStatus", res.ok ? `${month} 스냅샷 저장 ✓ · 텔레그램 전송됨` : `${month} 스냅샷 저장 ✓ · 텔레그램 전송 실패(${res.error})`);
+      }
+    }
   });
   // A8: 스냅샷·변동이력을 노션 "자산 스냅샷 이력" 페이지에 기록할 붙여넣기용 텍스트 —
   // 앱이 노션 API를 직접 호출하지 않는 원칙 유지(AI 세션에 붙여넣어 처리). 재설치 후
@@ -3877,11 +4559,18 @@ async function renderMyAssets() {
       window.prompt("아래 내용을 복사하세요:", lines.join("\n"));
     }
   });
-  document.getElementById("myDailySnapshotBtn").addEventListener("click", () => {
+  document.getElementById("myDailySnapshotBtn").addEventListener("click", async () => {
     const date = todayStr();
     const hist = JSON.parse(localStorage.getItem(MY_ASSETS_DAILY_HISTORY_KEY) || "[]");
     const idx = hist.findIndex((h) => h.date === date);
-    const entry = { date, value: totalValue, monthlyDiv: totalMonthlyDiv, returnBreakdown: computeReturnBreakdown(state.myAssetsCsvData) };
+    // A57: 입력 당시 코스피도 함께 남긴다(못 가져왔으면 그날 이미 있던 값을 유지).
+    // A61(2026-08-20 사용자 보고 "코스피 고정오류"): 수집 시각(kospiAsOf)도 함께 저장 —
+    // 서로 다른 날짜의 스냅샷이 같은 코스피 값을 보일 때, 30분 주기 수집이 그사이 갱신되지
+    // 않아서인지 실제로 같은 값인지 화면에서 바로 구분할 수 있게 한다.
+    const marketSnap = marketIndexSnapshot(state.liveGlobal ? state.liveGlobal.data : null);
+    const kospi = (marketSnap && marketSnap.kospi) ? marketSnap.kospi.price : (idx >= 0 ? hist[idx].kospi ?? null : null);
+    const kospiAsOf = (marketSnap && marketSnap.kospi) ? marketSnap.updated : (idx >= 0 ? hist[idx].kospiAsOf ?? null : null);
+    const entry = { date, value: totalValue, monthlyDiv: totalMonthlyDiv, kospi, kospiAsOf, returnBreakdown: computeReturnBreakdown(state.myAssetsCsvData) };
     if (idx >= 0) hist[idx] = entry; else hist.push(entry);
     hist.sort((a, b) => a.date.localeCompare(b.date));
     localStorage.setItem(MY_ASSETS_DAILY_HISTORY_KEY, JSON.stringify(hist));
@@ -3890,6 +4579,19 @@ async function renderMyAssets() {
     saveMyAssets();
     flashStatus("myDailySnapshotStatus", `${date} 일별 스냅샷 저장 ✓ (이 브라우저에만 보관)`);
     renderMyAssets();
+
+    // A62(2026-08-25 사용자 요청): 텔레그램 봇이 설정돼 있으면 스냅샷 내용도 함께 보낸다.
+    if (telegramBotToken() && telegramChatId()) {
+      const sortedIdx = hist.findIndex((h) => h.date === date);
+      const prev = hist[sortedIdx - 1];
+      const diff = prev ? entry.value - prev.value : null;
+      const lines = [`📅 오늘 자산 스냅샷 (${date})`, `평가액 ${fmtPrice(entry.value, "KRW")}`];
+      if (diff != null) lines.push(`전일 대비 ${diff >= 0 ? "+" : ""}${fmtPrice(diff, "KRW")}`);
+      if (entry.monthlyDiv > 0) lines.push(`월배당 ${fmtPrice(entry.monthlyDiv, "KRW")}`);
+      if (entry.kospi > 0) lines.push(`코스피 ${entry.kospi.toLocaleString(undefined, { maximumFractionDigits: 2 })}`);
+      const res = await sendTelegramMessage(lines.join("\n"));
+      flashStatus("myDailySnapshotStatus", res.ok ? `${date} 일별 스냅샷 저장 ✓ · 텔레그램 전송됨` : `${date} 일별 스냅샷 저장 ✓ · 텔레그램 전송 실패(${res.error})`);
+    }
   });
   const changeSel = document.getElementById("myAssetChangeGranularity");
   const renderAssetChange = () => {
@@ -4118,6 +4820,13 @@ async function renderMyAssets() {
   document.querySelectorAll(".my-goal-remove").forEach((el) => {
     el.addEventListener("click", () => {
       saveMyGoals(loadMyGoals().filter((g) => g.symbol !== el.dataset.symbol));
+      renderMyAssets();
+    });
+  });
+  // A46: 목표 카드의 종합/ETF/일반종목 토글
+  document.querySelectorAll(".goal-trail-type-btn").forEach((el) => {
+    el.addEventListener("click", () => {
+      saveGoalTrailType(el.dataset.type);
       renderMyAssets();
     });
   });

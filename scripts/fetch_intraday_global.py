@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
-"""트레이딩 대시보드(realtime-trading/) 웹 모바일 모드용 글로벌 시세를 latest_global.json으로 저장한다.
+"""트레이딩 대시보드(realtime-trading/) + "내 자산"(shared/price-data.js의 loadLiveGlobalQuotes)이
+공유하는 글로벌 시세를 latest_global.json으로 저장한다.
 
 fetch_intraday_kr.py(국내 전 종목 → live 브랜치)와 같은 구조로, intraday-global.yml이
 30분 주기로 실행해 전용 `live-trading` 브랜치에 단일 커밋으로 force-push 한다
 (live 브랜치는 latest_kr.json 전용 — 루트 CLAUDE.md 규칙에 따라 파일을 섞지 않는다).
-대시보드의 mobile 모드(realtime-trading/public/mobile-feeds.js)가 raw URL로 읽는다.
+대시보드의 mobile 모드(realtime-trading/public/mobile-feeds.js)와 "내 자산"의 조회시점
+코스피 표시·리포트 "시장" 섹션이 둘 다 이 파일을 raw URL로 읽는다.
 
 수집 대상은 국내 파이프라인이 못 다루는 것들이다:
   - KOSPI 지수: 네이버 모바일 증권 지수 basic API (국내 파이프라인은 개별 종목만 수집)
-  - 나스닥100 선물(NQ=F)·필라델피아 반도체지수(^SOX)·SOXX: Yahoo chart API
-    (realtime-trading/server/feeds/yahoo.js와 동일 엔드포인트, 지연 시세)
+  - 나스닥100 선물(NQ=F)·필라델피아 반도체지수(^SOX)·SOXX·S&P500(^GSPC)·나스닥종합(^IXIC):
+    Yahoo chart API (realtime-trading/server/feeds/yahoo.js와 동일 엔드포인트, 지연 시세)
 
 latest_kr.json과 달리 prices 값은 {price, change, changePct} 객체다(등락 표시용).
 실패한 심볼은 건너뛰고 절반 이상 실패 시에만 에러로 처리한다.
@@ -29,7 +31,9 @@ YAHOO_HEADERS = {"User-Agent": "Mozilla/5.0 (realtime-trading dashboard)"}
 INTERVAL_SEC = 0.4
 
 NAVER_INDEXES = {"KOSPI": "KOSPI"}  # 출력 키 → 네이버 지수 코드
-YAHOO_SYMBOLS = ["NQ=F", "^SOX", "SOXX"]  # 출력 키 == Yahoo 심볼
+# A57(2026-08-14 사용자 요청): 리포트·조회시점 표시에 S&P500·나스닥종합 지수값이 필요해 추가.
+# 기존 NQ=F(나스닥100 선물)와는 별개 — ^IXIC는 나스닥종합지수 그 자체(정규장 시간에만 갱신).
+YAHOO_SYMBOLS = ["NQ=F", "^SOX", "SOXX", "^GSPC", "^IXIC"]  # 출력 키 == Yahoo 심볼
 
 
 def _num(value) -> float | None:

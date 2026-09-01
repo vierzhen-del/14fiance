@@ -1004,6 +1004,97 @@
       "category": "국내 반도체·로봇 테마",
       "region": "한국",
       "style": "성장"
+    },
+    {
+      "symbol": "0190C0.KS",
+      "name": "RISE 현대차고정피지컬AI",
+      "category": "국내 반도체·로봇 테마",
+      "region": "한국",
+      "style": "성장"
+    },
+    {
+      "symbol": "490090.KS",
+      "name": "TIGER 미국AI빅테크10",
+      "category": "미국 테마",
+      "region": "미국",
+      "style": "성장"
+    },
+    {
+      "symbol": "0072R0.KS",
+      "name": "TIGER KRX금현물",
+      "category": "원자재",
+      "region": "글로벌",
+      "style": "안전"
+    },
+    {
+      "symbol": "0107F0.KS",
+      "name": "KIWOOM 미국고배당&AI테크",
+      "category": "미국 테마",
+      "region": "미국",
+      "style": "성장"
+    },
+    {
+      "symbol": "0118Z0.KS",
+      "name": "ACE 미국AI테크핵심산업액티브",
+      "category": "미국 테마",
+      "region": "미국",
+      "style": "성장"
+    },
+    {
+      "symbol": "0131V0.KS",
+      "name": "1Q 미국우주항공테크",
+      "category": "미국 테마",
+      "region": "미국",
+      "style": "성장"
+    },
+    {
+      "symbol": "292150.KS",
+      "name": "TIGER 코리아TOP10",
+      "category": "국내 지수",
+      "region": "한국",
+      "style": "성장"
+    },
+    {
+      "symbol": "360200.KS",
+      "name": "ACE 미국S&P500",
+      "category": "미국 지수(국내상장)",
+      "region": "미국",
+      "style": "성장"
+    },
+    {
+      "symbol": "122630.KS",
+      "name": "KODEX 레버리지",
+      "category": "국내 지수",
+      "region": "한국",
+      "style": "성장"
+    },
+    {
+      "symbol": "272580.KS",
+      "name": "TIGER 단기채권액티브",
+      "category": "채권",
+      "region": "한국",
+      "style": "안전"
+    },
+    {
+      "symbol": "418660.KS",
+      "name": "TIGER 미국나스닥100레버리지(합성)",
+      "category": "미국 지수(국내상장)",
+      "region": "미국",
+      "style": "성장"
+    },
+    {
+      "symbol": "426020.KS",
+      "name": "TIME 미국S&P500액티브",
+      "category": "미국 지수(국내상장)",
+      "region": "미국",
+      "style": "성장"
+    },
+    {
+      "symbol": "469830.KS",
+      "name": "SOL 초단기채권액티브",
+      "category": "채권",
+      "region": "한국",
+      "style": "안전"
     }
   ]
 }

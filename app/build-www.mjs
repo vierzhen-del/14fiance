@@ -4,10 +4,20 @@
 import { cpSync, mkdirSync, rmSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { execSync } from "node:child_process";
 
 const appDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(appDir, "..");
 const www = join(appDir, "www");
+
+// A54(2026-08-13 사용자 요청): 앱 실행 시 빌드 버전을 표시하기 위한 값 — 커밋 SHA·빌드일은
+// 로컬 git에서, 빌드 번호는 CI(build-apk.yml)가 넘겨주는 GitHub Actions run 번호에서 얻는다.
+// 로컬에서 이 스크립트를 직접 돌리면(CI 밖) run 번호가 없어 "local"로 표시된다.
+let buildSha = "unknown";
+try { buildSha = execSync("git rev-parse --short HEAD", { cwd: repoRoot }).toString().trim(); }
+catch (err) { console.warn("build-www: git sha 조회 실패(무시) —", err.message); }
+const buildDate = new Date().toISOString().slice(0, 10);
+const buildRun = process.env.APK_BUILD_NUMBER || "local";
 
 // 데이터(주가 히스토리·manifest)는 APK에 번들하지 않고 배포 브랜치의 raw URL에서 런타임 조회
 // (수집이 주 1회라 앱 재설치 없이 항상 최신 데이터를 읽게 하기 위함)
@@ -65,6 +75,10 @@ const replacements = [
   ['src="../shared/calculators.js"', 'src="shared/calculators.js"'],
   // 데이터는 원격 raw URL에서 조회
   ['const DATA_DIR = "../data";', `const DATA_DIR = "${REMOTE_DATA_DIR}";`],
+  // A54: 앱 실행 시 표시할 빌드 버전 — sha가 "dev"로 남아있으면(치환 실패) 배지가 자동으로 숨겨지므로
+  // 이 줄의 리터럴 형식(capture/index.html 쪽)을 바꾸면 이 치환도 함께 갱신해야 한다.
+  ['const APP_BUILD = { sha: "dev", date: "dev", run: "dev" };',
+   `const APP_BUILD = { sha: "${buildSha}", date: "${buildDate}", run: "${buildRun}" };`],
   // PWA 전용 요소는 앱(WebView)에선 불필요 — manifest 링크 제거, SW 등록은 지원 안 되는 환경에서 catch로 무해하지만 명시적으로 끔
   ['<link rel="manifest" href="manifest.json">', "<!-- APK: PWA manifest 불필요 -->"],
   ['navigator.serviceWorker.register("sw.js", { scope: "./" }).catch(() => {});',

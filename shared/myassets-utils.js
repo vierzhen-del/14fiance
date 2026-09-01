@@ -73,11 +73,25 @@ function fmtDate(d) { return d; }
 
 function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
 
+/* A71(2026-08-31 사용자 보고): raw.githubusercontent.com이 간헐적으로 400을 준다 —
+   실측: 442580.KS.json이 한 번 400으로 실패했다가 곧이어 같은 URL이 200을 줬다(파일
+   내용은 변함없음). CDN 엣지의 순간적 오류로 보이며 재시도하면 대개 해결된다.
+   최대 2회 재시도(짧은 backoff)하고, 그래도 실패하면 그대로 던진다 — 호출부가
+   "이 종목만 계산에서 제외"할지 "전체를 멈출지"를 결정한다(이 함수는 지어내지 않는다). */
 async function fetchJSON(path) {
   const sep = path.includes("?") ? "&" : "?";
-  const res = await fetch(`${path}${sep}_=${Date.now()}`, { cache: "no-store" });
-  if (!res.ok) throw new Error(`${path} 불러오기 실패 (${res.status})`);
-  return res.json();
+  let lastErr;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch(`${path}${sep}_=${Date.now()}`, { cache: "no-store" });
+      if (!res.ok) throw new Error(`${path} 불러오기 실패 (${res.status})`);
+      return await res.json();
+    } catch (err) {
+      lastErr = err;
+      if (attempt < 2) await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
+    }
+  }
+  throw lastErr;
 }
 
 // 차트 좌표계 상수·눈금 계산 — index.html 원본과 동일 값(A6에서 이식).
@@ -330,8 +344,7 @@ function buildChart(container, opts) {
       <svg class="chart" viewBox="0 0 ${CHART_W} ${CHART_H}" preserveAspectRatio="xMidYMid meet">
         ${gridSvg}
         <line class="baseline" x1="${PAD_L}" x2="${CHART_W - PAD_R}" y1="${CHART_H - PAD_B}" y2="${CHART_H - PAD_B}"/>
-        ${areaPath ? `<path class="dd-area" d="${areaPath}"/>` : ""}
-        <path class="${mode === "drawdown" ? "dd-line" : "price-line"}" d="${path}"/>
+        ${areaPath ? `<path class="dd-area" d="${areaPath}"/>` : ""}<path class="${mode === "drawdown" ? "dd-line" : "price-line"}" d="${path}"/>
         ${markerSvg}
         ${xLabelsSvg}
         <g class="hover-layer" style="display:none">
@@ -542,12 +555,11 @@ function buildMonthlyBarChart(container, months, opts = {}) {
   svg.addEventListener("click", onClick);
 }
 
-const TRAIL_RETURN_CAP = 1.5;   // 상한 +150%
-const TRAIL_RETURN_FLOOR = -0.7; // 하한 -70%
-
-/* A45b: 등락률과 함께 "그 값이 어떻게 조정됐는지"를 돌려준다. 종전에는 숫자 하나만 나와서
-   ① 상·하한에 걸려 잘린 종목과 ② 상장 1년 미만이라 짧은 구간을 그 기간으로 간주한 종목을
-   화면에서 구분할 수 없었다(2026-08-12 실측: 보유 4종목이 상한 절단, 6종목이 이력부족).
+/* A47(2026-08-13 사용자 결정): 상·하한 클램프(±150%/-70%) 제거. A45b에서 "보정 내역"으로
+   드러냈던 절단이 실측상 왜곡이었다는 게 확인됐다 — 사용자 판단: 일반종목(개별주)은 실제로
+   장기 고수익 구간이 있고, ETF는 작년부터 매수해 이력이 짧아도 실 비중이 크므로, 값을 눌러서
+   보여주는 게 오히려 오해를 만든다. 이제 raw 연환산값을 그대로 쓴다. capped/floored 필드는
+   호출부(trailNoteHTML 등)와의 형태 호환을 위해 남기되 항상 false — 절단이 없으므로.
    spanMonths는 실제로 쓰인 구간 길이라, months보다 짧으면 요청 기간만큼 이력이 없다는 뜻이다. */
 function trailingReturnDetail(dates, closes, months) {
   if (!dates || dates.length < 2) return null;
@@ -562,16 +574,14 @@ function trailingReturnDetail(dates, closes, months) {
   if (!(startClose > 0)) return null;
   const startDate = dates[idx];
   const periodReturn = lastClose / startClose - 1;
-  // 단기(1~3개월) 등락을 그대로 연율화하면 비현실적으로 큰 값이 나올 수 있어 합리적 범위로 제한
   const annualized = Math.pow(1 + periodReturn, 12 / months) - 1;
-  const value = Math.max(TRAIL_RETURN_FLOOR, Math.min(TRAIL_RETURN_CAP, annualized));
   const spanMonths = (new Date(lastDate).getFullYear() - new Date(startDate).getFullYear()) * 12
     + (new Date(lastDate).getMonth() - new Date(startDate).getMonth());
   return {
-    value,
+    value: annualized,
     raw: annualized,
-    capped: annualized > TRAIL_RETURN_CAP,
-    floored: annualized < TRAIL_RETURN_FLOOR,
+    capped: false,
+    floored: false,
     // 요청 기간보다 1개월 이상 짧으면 이력부족 — 그 짧은 구간 수익률이 기간 전체값으로 쓰인다
     shortHistory: spanMonths < months - 1,
     spanMonths, startDate, lastDate,
@@ -588,17 +598,41 @@ const ACCOUNT_TYPES = [
   "KB_일반", "KB_ISA", "신한_일반",
 ];
 
-function accountOptionsHTML(selected) {
+/* A52(2026-08-13 사용자 보고 — 타인 배포 후 피드백): ACCOUNT_TYPES가 이 코드에 박힌
+   내 계좌명 9개라, 다른 사람이 자기 JSON을 가져와도 드롭다운엔 계속 "삼성_DC" 같은
+   내 계좌가 보였다(그 사람 계좌명 자체는 각 행에 보존되지만, 다른 행에서 골라 쓸
+   선택지로는 안 나옴). dynamicList가 있으면 그것만 쓰고 ACCOUNT_TYPES는 섞지 않는다 —
+   "JSON에 기재된 계좌정보대로 표시"가 목표라, 남의 계좌 목록에 내 계좌명이 끼어 있으면
+   오히려 더 헷갈린다. dynamicList가 비어있을 때만(완전 빈 템플릿 등) 마지막 안전망으로
+   ACCOUNT_TYPES를 쓴다. */
+function accountOptionsHTML(selected, dynamicList) {
+  // dynamicList 인자를 생략한 호출부(⚡ 계좌 일괄 지정 등)도 state.myAccountsExplicit로
+  // 자동 폴백 — 호출부마다 일일이 넘겨줄 필요 없이 "가져온 JSON 기준 계좌 목록"이 앱
+  // 전체에서 일관되게 적용된다.
+  const effectiveList = dynamicList !== undefined ? dynamicList : state.myAccountsExplicit;
+  const list = (effectiveList && effectiveList.length) ? effectiveList : ACCOUNT_TYPES;
   let html = `<option value="" ${!selected ? "selected" : ""}>계좌 미지정</option>`;
-  // 가져오기 데이터에 목록 밖 계좌명(예: 삼성_DC)이 있어도 그대로 보존한다 —
+  // 목록 밖 계좌명이 선택돼 있어도 그대로 보존한다 —
   // 조용히 "계좌 미지정"으로 빠지면 계좌별 합계를 시트와 비교할 수 없게 됨
-  if (selected && !ACCOUNT_TYPES.includes(selected)) {
+  if (selected && !list.includes(selected)) {
     html += `<option value="${selected}" selected>${selected}</option>`;
   }
-  for (const acc of ACCOUNT_TYPES) {
+  for (const acc of list) {
     html += `<option value="${acc}" ${acc === selected ? "selected" : ""}>${acc}</option>`;
   }
   return html;
+}
+
+/* rows 배열(가져오기 JSON 등)에서 실제 쓰인 계좌명만 등장 순서대로 뽑는다 —
+   cfg.accounts를 명시하지 않은 파일도 이걸로 "JSON에 기재된 계좌정보대로" 동작한다. */
+function deriveAccountListFromRows(rows) {
+  const seen = new Set();
+  const list = [];
+  for (const r of rows || []) {
+    const acc = r && r.account;
+    if (acc && !seen.has(acc)) { seen.add(acc); list.push(acc); }
+  }
+  return list;
 }
 
 /* ---------- A25f: 지급시기(payPeriod) 정규화 ----------
@@ -606,6 +640,10 @@ function accountOptionsHTML(selected) {
    어느 것도 매칭되지 않았고, 그 상태로 저장하면 지급시기가 통째로 빈 값이 됐다(2026-08-01
    실측 버그 — 배당기준일 계산이 이 값에 의존하므로 치명적). 접두만 보고 정식 값으로 승격한다. */
 const PAY_PERIOD_TYPES = ["월초5일", "월중15일", "월말30일", "분기말", "확인안됨"];
+// A58(2026-08-18 사용자 요청): 월배당 TOP10 등 목록형 화면에 짧게 곁들일 표기 — "월초5일" 같은
+// 상세 표기 대신 "월초"만 쓴다(배당기준일 계산에는 상세 표기가 그대로 필요해 PAY_PERIOD_TYPES
+// 자체는 안 바꾼다).
+const PAY_PERIOD_SHORT = { "월초5일": "월초", "월중15일": "월중", "월말30일": "월말", "분기말": "분기", "확인안됨": "미확인" };
 
 function normalizePayPeriod(v) {
   const s = (v || "").trim();
