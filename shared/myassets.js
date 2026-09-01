@@ -1192,9 +1192,13 @@ function buildWeeklyAssetHTML(dailyHistory) {
     byWeek.set(isoWeekKey(h.date), h); // 그 주의 마지막 기록으로 덮어씀
   }
   const weeks = [...byWeek.entries()];
+  // A74(2026-09-01 사용자 요청 "주간 정렬순서 최신주차기준 적용"): 일별·월별 표는 이미
+  // 최신이 위로 오는데 주간 표만 오래된 주가 위였다 — 표시만 최신순으로 뒤집는다("전주
+  // 대비" 계산은 시간순 이전 주와 비교해야 하므로 weeks(오름차순) 인덱스 기준을 유지).
+  const weeksDesc = weeks.slice().reverse();
   const fmtW = (v) => fmtPrice(v, "KRW");
-  const rows = weeks.map(([wk, h], i) => {
-    const prev = weeks[i - 1];
+  const rows = weeksDesc.map(([wk, h], i) => {
+    const prev = weeksDesc[i + 1];
     const diff = prev ? h.value - prev[1].value : null;
     const pct = prev && prev[1].value > 0 ? (diff / prev[1].value) * 100 : null;
     return `<tr>
