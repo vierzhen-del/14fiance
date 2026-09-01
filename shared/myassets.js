@@ -146,6 +146,24 @@ function upsertMonthlySnapshot(mddOverride) {
   const dpsBySymbol = {};
   for (const p of csv.perRow) if (p.confirmedDps > 0) dpsBySymbol[p.symbol] = p.confirmedDps;
 
+  // A76(2026-09-01 사용자 요청 "연간 배당 히스토리 — 일반배당/커버드콜 구분"): divHistory(확정
+  // 총액)에는 종목·카테고리 정보가 없어 과거 연도는 구성을 알 수 없다(사용자 확인 완료 —
+  // "지금부터 새로 기록 시작"). 이 스냅샷 시점의 카테고리 비율(%)만 저장해두면, 나중에
+  // 그 달이 확정되었을 때(divHistory에 실제 금액이 들어오면) 그 비율을 실제 확정액에 곱해
+  // 일반배당/커버드콜 금액을 근사할 수 있다 — 카테고리 구성은 스냅샷 시점 그대로이므로
+  // 절대금액을 지어내는 게 아니라 이미 확정된 총액을 실측 비율로 나누는 것뿐이다.
+  let divSplit = null;
+  {
+    let general = 0, coveredCall = 0;
+    for (const p of csv.perRow) {
+      if (!(p.monthlyDiv > 0)) continue;
+      const isCC = !!(p.meta && p.meta.category && p.meta.category.includes("커버드콜"));
+      if (isCC) coveredCall += p.monthlyDiv; else general += p.monthlyDiv;
+    }
+    const total = general + coveredCall;
+    if (total > 0) divSplit = { generalPct: general / total, coveredCallPct: coveredCall / total };
+  }
+
   let hist = [];
   try { hist = JSON.parse(localStorage.getItem(MY_ASSETS_HISTORY_KEY) || "[]"); } catch (e) { hist = []; }
   // A26b: 월 단위 MDD 이력이 비중 이력과 같은 주기로 쌓인다(추이 탭 "MDD 이력" 표의 재료).
@@ -162,7 +180,7 @@ function upsertMonthlySnapshot(mddOverride) {
   const marketSnap = marketIndexSnapshot(state.liveGlobal ? state.liveGlobal.data : null);
   const kospi = (marketSnap && marketSnap.kospi) ? marketSnap.kospi.price : (idx >= 0 ? hist[idx].kospi ?? null : null);
   const kospiAsOf = (marketSnap && marketSnap.kospi) ? marketSnap.updated : (idx >= 0 ? hist[idx].kospiAsOf ?? null : null);
-  const entry = { month, value: csv.totalValue, monthlyDiv: csv.totalMonthlyDiv, mdd, dpsBySymbol, byAccount, byCategory, kospi, kospiAsOf, returnBreakdown: computeReturnBreakdown(csv) };
+  const entry = { month, value: csv.totalValue, monthlyDiv: csv.totalMonthlyDiv, mdd, dpsBySymbol, byAccount, byCategory, kospi, kospiAsOf, divSplit, returnBreakdown: computeReturnBreakdown(csv) };
   if (idx >= 0) hist[idx] = entry; else hist.push(entry);
   hist.sort((a, b) => a.month.localeCompare(b.month));
   localStorage.setItem(MY_ASSETS_HISTORY_KEY, JSON.stringify(hist));
@@ -1142,6 +1160,81 @@ function buildDivGapHTML(divHistory, expectedMonthly, snapshotHistory) {
     : "";
   if (!card && !table) return "";
   return `${card}${table}<p class="stat-sub" style="margin-top:6px;">예상 &gt; 확정이면 주가 기준 분배율이 실제 지급보다 높게 잡힌 것입니다. 예상액은 각 종목의 배당기준일 종가(기준일 미도래 시 현재가) × 분배율로 계산합니다.</p>`;
+}
+
+/* A76(2026-09-01 사용자 요청 — 인스타 인포그래픽 "연간 배당 히스토리" 참조): 연도별로
+   ①예상배당(회색, 그 해 스냅샷 시점 예상액 합계) ②확정배당(일반배당/커버드콜 스택)을
+   나란히 보여준다. 확정배당의 색상 구분은 divSplit(카테고리 비율, upsertMonthlySnapshot에서
+   스냅샷 시점에 저장)이 있는 달만 실측 비율로 나눈다 — 없는 달(이 기능 이전 과거 이력)은
+   "구분 데이터 없음" 회색 세그먼트로 남겨 값을 지어내지 않는다(2026-09-01 사용자 확인:
+   "지금부터 새로 기록 시작"). */
+function buildAnnualDivHistoryHTML(divHistory, snapshotHistory) {
+  const dh = divHistory || {};
+  const snapByMonth = new Map((snapshotHistory || []).map((h) => [h.month, h]));
+  const years = new Set();
+  for (const k of Object.keys(dh)) if (/^\d{4}-\d{2}$/.test(k) && dh[k] > 0) years.add(k.slice(0, 4));
+  for (const h of snapshotHistory || []) if (h.monthlyDiv > 0) years.add(h.month.slice(0, 4));
+  if (!years.size) return "";
+  const sortedYears = [...years].sort();
+
+  const perYear = sortedYears.map((y) => {
+    let est = 0, confirmed = 0, splitGeneral = 0, splitCC = 0, splitKnown = 0;
+    for (let m = 1; m <= 12; m++) {
+      const key = `${y}-${String(m).padStart(2, "0")}`;
+      const snap = snapByMonth.get(key);
+      if (snap && snap.monthlyDiv > 0) est += snap.monthlyDiv;
+      const conf = dh[key];
+      if (conf > 0) {
+        confirmed += conf;
+        if (snap && snap.divSplit) {
+          splitGeneral += conf * snap.divSplit.generalPct;
+          splitCC += conf * snap.divSplit.coveredCallPct;
+          splitKnown += conf;
+        }
+      }
+    }
+    return { y, est, confirmed, splitGeneral, splitCC, splitUnknown: confirmed - splitKnown };
+  });
+
+  const max = Math.max(...perYear.map((r) => Math.max(r.est, r.confirmed)), 1);
+  const H = 130; // 컬럼 최대 높이(px) — 백분율 대신 픽셀로 직접 계산해 스택 중첩 백분율 문제를 피함
+  const fmtShort = (v) => v >= 10000 ? `${Math.round(v / 10000).toLocaleString()}만` : v > 0 ? Math.round(v).toLocaleString() : "";
+
+  const groups = perYear.map(({ y, est, confirmed, splitGeneral, splitCC, splitUnknown }) => {
+    const estPx = est > 0 ? Math.max(2, (est / max) * H) : 0;
+    const confPx = confirmed > 0 ? Math.max(2, (confirmed / max) * H) : 0;
+    const ratio = confirmed > 0 ? confPx / confirmed : 0;
+    const generalPx = splitGeneral * ratio;
+    const ccPx = splitCC * ratio;
+    const unknownPx = Math.max(0, confPx - generalPx - ccPx);
+    return `<div class="ydb-group">
+      <div class="ydb-pair">
+        <div class="ydb-col">
+          ${est > 0 ? `<span class="ydb-val">${fmtShort(est)}</span>` : ""}
+          <div class="ydb-bar est" style="height:${estPx.toFixed(0)}px"></div>
+        </div>
+        <div class="ydb-col">
+          ${confirmed > 0 ? `<span class="ydb-val total">${fmtShort(confirmed)}</span>` : ""}
+          <div class="ydb-stack" style="height:${confPx.toFixed(0)}px">
+            <div class="ydb-seg ydb-seg-unknown" style="height:${unknownPx.toFixed(0)}px"></div>
+            <div class="ydb-seg ydb-seg-cc" style="height:${ccPx.toFixed(0)}px"></div>
+            <div class="ydb-seg ydb-seg-general" style="height:${generalPx.toFixed(0)}px"></div>
+          </div>
+        </div>
+      </div>
+      <span class="ydb-year">${y}</span>
+    </div>`;
+  }).join("");
+
+  const hasUnknown = perYear.some((r) => r.splitUnknown > 0);
+  return `<div class="ydb-legend">
+      <span><span class="ydb-legend-dot" style="background:color-mix(in srgb, var(--text-secondary) 55%, transparent)"></span>예상배당</span>
+      <span><span class="ydb-legend-dot" style="background:var(--good)"></span>일반배당</span>
+      <span><span class="ydb-legend-dot" style="background:#e0a72e"></span>커버드콜</span>
+      ${hasUnknown ? `<span><span class="ydb-legend-dot" style="background:var(--gridline)"></span>구분 데이터 없음</span>` : ""}
+    </div>
+    <div class="ydb-row">${groups}</div>
+    <p class="stat-sub">예상배당(회색)은 그 해 스냅샷 시점 예상액 합계, 확정배당(오른쪽 막대)은 일반배당/커버드콜로 스택. ${hasUnknown ? "2026-09-01 이전 확정 이력은 종목별 카테고리 기록이 없어 구분 없이 회색으로 표시됩니다(지어내지 않음) — 이후 스냅샷부터 자동으로 색이 채워집니다." : ""}</p>`;
 }
 
 /* 일별 자산변동 캡처 이력 테이블 — "오늘 자산 스냅샷" 버튼으로 쌓은 이력을 최근순으로 표시 */
@@ -3727,6 +3820,9 @@ async function renderMyAssets() {
   const history = JSON.parse(localStorage.getItem(MY_ASSETS_HISTORY_KEY) || "[]");
   // 연도별 확정 배당 이력 + 예상 대비 괴리율(A25c) — history를 쓰므로 반드시 그 뒤에서 호출
   const yearlyHTML = buildYearlyDivHTML(state.myAssetsDivHistory || {}, totalMonthlyDiv, history);
+  // A76(2026-09-01 사용자 요청 "월배당탭에 예상배당/확정배당/일반배당/커버드콜 표기 추가"):
+  // 연간 예상 vs 확정(일반배당/커버드콜 스택) 막대 — 월배당현황 탭용.
+  const annualDivHTML = buildAnnualDivHistoryHTML(state.myAssetsDivHistory || {}, history);
   // A72 개정(2026-09-01 사용자 요청 "좌우이격 심함·예상배당금 형태참조수정·년도별 버튼추가"):
   // SVG 막대(xAt를 막대 중심으로 재사용해 첫 막대가 y축 라벨을 덮던 버그)를 걷어내고, 이미
   // 검증된 "예상 배당금" flex 막대(buildMonthBarsHTML)와 같은 방식으로 재구성한다.
@@ -4041,6 +4137,9 @@ async function renderMyAssets() {
 
       ${top10HTML ? `<p class="chart-title" style="margin-top:20px;">💰 월배당 TOP${top10Div.length}</p>
       <div class="bar-list">${top10HTML}</div>` : ""}
+
+      ${annualDivHTML ? `<p class="chart-title" style="margin-top:20px;">📅 연간 배당 히스토리</p>
+      ${annualDivHTML}` : ""}
     </div>
 
     <div class="dash-panel" data-tab="suff" hidden>

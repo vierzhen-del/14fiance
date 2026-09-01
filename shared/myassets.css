@@ -555,6 +555,23 @@
   .mb-pct { font-size: 9px; font-weight: 700; white-space: nowrap; }
   .mb-pct.up { color: var(--good); }
   .mb-pct.down { color: var(--critical); }
+  /* A76: 연간 배당 히스토리 — 연도별 예상배당(단일 회색 막대) vs 확정배당(일반배당/커버드콜
+     스택 막대) 그룹. 인스타 인포그래픽(연간 국가예산) 참조 요청. */
+  .ydb-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; margin: 8px 0 4px; color: var(--text-secondary); }
+  .ydb-legend-dot { width: 9px; height: 9px; border-radius: 2px; display: inline-block; margin-right: 4px; }
+  .ydb-row { display: flex; align-items: flex-end; gap: 14px; height: 168px; margin: 6px 0 4px; overflow-x: auto; padding-bottom: 2px; }
+  .ydb-group { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; flex: 0 0 auto; gap: 4px; }
+  .ydb-pair { display: flex; align-items: flex-end; gap: 3px; }
+  .ydb-col { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 3px; }
+  .ydb-val { font-size: 9px; color: var(--text-muted); white-space: nowrap; }
+  .ydb-val.total { font-weight: 700; color: var(--text-primary); }
+  .ydb-bar { width: 22px; border-radius: 3px 3px 0 0; }
+  .ydb-bar.est { background: color-mix(in srgb, var(--text-secondary) 55%, transparent); }
+  .ydb-stack { width: 22px; display: flex; flex-direction: column-reverse; border-radius: 3px 3px 0 0; overflow: hidden; }
+  .ydb-seg-general { background: var(--good); }
+  .ydb-seg-cc { background: #e0a72e; }
+  .ydb-seg-unknown { background: var(--gridline); }
+  .ydb-year { font-size: 10px; color: var(--text-muted); }
   .stack-bar { display: flex; height: 18px; border-radius: 6px; overflow: hidden; margin: 8px 0 8px; }
   .stack-seg { height: 100%; }
   .stack-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; }
