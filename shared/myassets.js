@@ -281,6 +281,10 @@ function addMyAssetRow(a = {}, dynamicAccounts) {
   // 배당 유형(실확/특별/고정)·특별배당 만료일 — 노션 SOP 메타데이터라 입력칸 없이 행에 보존만
   row.dataset.divType = a.divType || "";
   row.dataset.divExpiry = a.divExpiry || "";
+  // A73(2026-09-02): 과세표준 비율(%) — 분배금 중 실제 과세대상 비율. 국내 커버드콜 ETF는 옵션
+  // 프리미엄의 상당액이 비과세 자본반환으로 처리돼 배당금보다 훨씬 작을 수 있다(실측: 0~24%).
+  // divType 등과 같은 이유로 입력칸 없이 노션 배당기준 마스터 → import JSON 경유로만 채운다.
+  row.dataset.taxRatio = a.taxRatio != null && a.taxRatio !== "" ? a.taxRatio : "";
   document.getElementById("myAssetRows").appendChild(row);
   const onChange = () => { saveMyAssets(); renderMyAssets(); };
   row.querySelectorAll("select, input").forEach((el) =>
@@ -303,6 +307,7 @@ function serializeMyAssets() {
       payPeriod: normalizePayPeriod(el.querySelector(".my-period").value),
       divType: el.dataset.divType || "",
       divExpiry: el.dataset.divExpiry || "",
+      taxRatio: el.dataset.taxRatio !== "" && el.dataset.taxRatio != null ? parseFloat(el.dataset.taxRatio) : "",
     })),
     // 입력칸은 만원 단위로 받고(예: 20000 = 2억원), 저장/계산은 항상 원 단위로 통일
     goalAmount: (() => {
