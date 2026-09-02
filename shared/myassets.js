@@ -1307,6 +1307,95 @@ function buildDivHistorySectionHTML(divHistory, snapshotHistory, live) {
     <div id="divHistoryBody">${yearHTML}</div>`;
 }
 
+/* A79(2026-09-02 사용자 요청 "금리 예측과 계좌수익률 상관관계 금리탭 추가", 첨부 참조:
+   신영증권 리서치 "금리 인상기 주가지수 추이" — 2004~06/2015~18 인상기의 코스피·S&P500 등
+   다국가 지수 정규화 비교):
+   그 그래프를 그대로 재현하려면 S&P500·니케이225·상하이·DAX·FTSE100의 2004년부터의 일별
+   종가 이력이 필요한데, 이 앱은 그 데이터를 수집하지 않는다(사용자 확인: "코스피 + 내
+   계좌만, 실제 보유기간만"으로 범위 축소). 그래서 이 섹션은 ①금리 인상기/인하기 일반
+   대응 원칙(값 계산 없는 고정 텍스트) ②과거 미국 금리 사이클 사실관계 참고표(2004~2023,
+   공개된 역사적 사실 — 2024년 이후는 판단이 계속 바뀌는 중이라 이 앱이 임의로 "지금
+   국면"을 단정하지 않고 사용자가 직접 최신 FOMC·한국은행 발표를 확인하도록 안내)
+   ③실제 갖고 있는 코스피·계좌 스냅샷으로 만드는 정직한 상관관계 차트, 세 부분으로
+   구성한다 — 없는 과거 데이터를 지어내지 않는다. */
+function buildRateGuideHTML() {
+  return `<div style="display:grid; gap:14px;">
+    <div>
+      <p class="stat-label" style="font-weight:700; margin-bottom:6px;">📈 금리 인상기 대응</p>
+      <ul style="margin:0; padding-left:18px; font-size:13px; line-height:1.65;">
+        <li>장기채·리츠 등 듀레이션이 긴 자산은 금리 상승에 가격이 눌리기 쉽다 — 비중 점검.</li>
+        <li>커버드콜·고배당 ETF는 기초지수가 조정받으면 분배금도 함께 줄 수 있다(기준가×분배율 구조) — "분배율이 높다=안전"으로 오해하지 말 것.</li>
+        <li>예적금·MMF·초단기채 등 현금성 자산의 상대 매력이 커진다.</li>
+        <li>성장주·고밸류 자산은 할인율 상승으로 밸류에이션 부담이 커지는 경향이 있다.</li>
+      </ul>
+    </div>
+    <div>
+      <p class="stat-label" style="font-weight:700; margin-bottom:6px;">📉 금리 인하기 대응</p>
+      <ul style="margin:0; padding-left:18px; font-size:13px; line-height:1.65;">
+        <li>장기채·리츠 등 듀레이션이 긴 자산은 가격 상승 여력이 커지는 경향이 있다.</li>
+        <li>성장주·고밸류 자산은 할인율 부담이 줄어 상대적으로 유리해지는 경향이 있다.</li>
+        <li>예적금 만기 재예치 시점의 금리가 낮아지므로, 만기 도래 자금의 재배치 계획을 미리 세워둘 것.</li>
+        <li>"경기 방어용 인하"인지 "예방적 인하"인지에 따라 주가 반응이 크게 갈린다 — 인하 자체보다 인하하는 이유를 봐야 한다.</li>
+      </ul>
+    </div>
+    <div>
+      <p class="stat-label" style="font-weight:700; margin-bottom:6px;">🗓️ 참고: 과거 미국 금리 사이클과 코스피</p>
+      <div style="overflow-x:auto;">
+        <table class="account-summary-table" style="font-size:12.5px;">
+          <thead><tr><th>기간</th><th>구분</th><th>금리 변화</th><th>코스피 반응(참고)</th></tr></thead>
+          <tbody>
+            <tr><td>2004.06~2006.06</td><td>인상기</td><td>1.00%→5.25%(17회)</td><td>초반 약세 후 후반 강한 상승</td></tr>
+            <tr><td>2007.09~2008.12</td><td>인하기</td><td>5.25%→0~0.25%</td><td>금융위기 겹쳐 급락</td></tr>
+            <tr><td>2015.12~2018.12</td><td>인상기</td><td>0.25%→2.50%(9회)</td><td>중반까지 상승 후 막판 상승분 상당수 반납</td></tr>
+            <tr><td>2019.07~2020.03</td><td>인하기</td><td>2.50%→0~0.25%</td><td>코로나 겹쳐 급락 후 급반등</td></tr>
+            <tr><td>2022.03~2023.07</td><td>인상기</td><td>0.25%→5.50%(역대 최속)</td><td>큰 폭 조정 후 완만한 회복</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="stat-sub" style="margin-top:6px;">2024년 이후 사이클은 진행 상황이 계속 바뀌므로 이 표에 넣지 않았습니다 — 현재 국면 판단은 최신 FOMC·한국은행 발표를 직접 확인하세요. 같은 인상기·인하기라도 코스피 반응은 그때그때 경기·환율·수급에 크게 좌우되므로 위 표는 패턴 참고용이지 예측이 아닙니다.</p>
+    </div>
+  </div>`;
+}
+
+/* 코스피 값이 함께 저장된 월별 스냅샷(history)만으로 실제 보유기간의 코스피 대비 계좌
+   수익률을 비교한다 — 과거 금리 사이클 전체를 재현하지 않고, 앱이 실제로 가진 기간만
+   정직하게 보여준다. 차트 그리기는 buildCompareChart(container, ...)가 렌더 후 별도
+   와이어링에서 맡는다(이 함수는 컨테이너 div만 반환). */
+function buildRateCorrelationInfoHTML(history) {
+  const pts = (history || []).filter((h) => h.kospi > 0 && h.value > 0).sort((a, b) => a.month.localeCompare(b.month));
+  if (pts.length < 2) {
+    return `<p class="compare-empty">코스피 값이 함께 저장된 월별 스냅샷이 2건 이상 쌓이면 비교할 수 있습니다(현재 ${pts.length}건) — "이번 달 스냅샷 저장"을 매달 눌러 쌓아 주세요.</p>`;
+  }
+  return `<div id="myRateChart"></div>
+  <p class="stat-sub" style="margin-top:6px;">기준월 ${pts[0].month}을 0%로 맞춰 이후 등락률을 비교합니다. 실제 보유기간(${pts.length}개월)만 표시하며, 과거 금리 사이클을 재현한 것은 아닙니다(그 시기 데이터가 없음).</p>
+  ${buildRateCorrCoefHTML(pts)}`;
+}
+
+function buildRateCorrCoefHTML(pts) {
+  if (pts.length < 4) {
+    return `<p class="stat-sub">월간 상관계수는 표본이 최소 4개월 이상 쌓여야 참고할 만합니다(현재 ${pts.length}개월) — 아직 표시하지 않습니다.</p>`;
+  }
+  const acctRet = [], kospiRet = [];
+  for (let i = 1; i < pts.length; i++) {
+    acctRet.push(pts[i].value / pts[i - 1].value - 1);
+    kospiRet.push(pts[i].kospi / pts[i - 1].kospi - 1);
+  }
+  const n = acctRet.length;
+  const mean = (arr) => arr.reduce((a, b) => a + b, 0) / arr.length;
+  const mA = mean(acctRet), mK = mean(kospiRet);
+  let cov = 0, varA = 0, varK = 0;
+  for (let i = 0; i < n; i++) {
+    cov += (acctRet[i] - mA) * (kospiRet[i] - mK);
+    varA += (acctRet[i] - mA) ** 2;
+    varK += (kospiRet[i] - mK) ** 2;
+  }
+  const denom = Math.sqrt(varA * varK);
+  const r = denom > 0 ? cov / denom : null;
+  if (r == null) return `<p class="stat-sub">이 기간엔 등락이 거의 없어 상관계수를 계산할 수 없습니다.</p>`;
+  const strength = Math.abs(r) >= 0.7 ? "강하게 연동" : Math.abs(r) >= 0.4 ? "어느 정도 연동" : "뚜렷한 연동 없음";
+  return `<p class="stat-sub"><b>월간 등락률 상관계수(코스피 vs 내 계좌)</b>: ${r.toFixed(2)} — 코스피와 ${strength}(표본 ${n}개월, 표본이 적어 참고용).</p>`;
+}
+
 /* 일별 자산변동 캡처 이력 테이블 — "오늘 자산 스냅샷" 버튼으로 쌓은 이력을 최근순으로 표시 */
 function buildDailyAssetHTML(dailyHistory) {
   if (!dailyHistory.length) {
@@ -4019,6 +4108,7 @@ async function renderMyAssets() {
       <button type="button" class="dash-tab-btn" data-tab="suff">⚖️ 자급률·월매수</button>
       <button type="button" class="dash-tab-btn" data-tab="divbasis">💹 배당기준·이력</button>
       <button type="button" class="dash-tab-btn" data-tab="benchmark">📊 지수비교</button>
+      <button type="button" class="dash-tab-btn" data-tab="rate">🏦 금리</button>
       <button type="button" class="dash-tab-btn" data-tab="signal">📡 시그널</button>
       <button type="button" class="dash-tab-btn" data-tab="review">🧺 포트폴리오검토</button>
       <button type="button" class="dash-tab-btn" data-tab="changelog">🗂️ 변동이력</button>
@@ -4248,6 +4338,13 @@ async function renderMyAssets() {
       </div>
       <div id="myBenchBadges" class="action-row" style="margin:6px 0 10px;"></div>
       <div id="myBenchChart"></div>
+    </div>
+
+    <div class="dash-panel" data-tab="rate" hidden>
+      <p class="chart-title" style="margin-top:20px;">🏦 금리 사이클 대응 가이드</p>
+      ${buildRateGuideHTML()}
+      <p class="chart-title" style="margin-top:24px;">📊 코스피 vs 내 계좌 수익률 (실제 보유기간)</p>
+      ${buildRateCorrelationInfoHTML(history)}
     </div>
 
     <div class="dash-panel" data-tab="signal" hidden>
@@ -4508,6 +4605,20 @@ async function renderMyAssets() {
       b.addEventListener("click", () => { state.myDivHistoryMode = b.dataset.mode; renderDivHistoryMode(); });
     });
     renderDivHistoryMode();
+  }
+
+  // A79(2026-09-02 사용자 요청 "금리탭 — 코스피/계좌 상관관계"): 코스피 값이 함께 저장된
+  // 실제 스냅샷만으로 정직하게 비교한다(과거 금리 사이클 재현 아님, 실제 보유기간만).
+  const rateChartEl = document.getElementById("myRateChart");
+  if (rateChartEl) {
+    const ratePts = history.filter((h) => h.kospi > 0 && h.value > 0).sort((a, b) => a.month.localeCompare(b.month));
+    if (ratePts.length >= 2) {
+      const base = ratePts[0];
+      buildCompareChart(rateChartEl, [
+        { label: "내 계좌", color: "#eda100", dates: ratePts.map((h) => h.month + "-01"), values: ratePts.map((h) => h.value / base.value - 1) },
+        { label: "코스피", color: "#199e70", dates: ratePts.map((h) => h.month + "-01"), values: ratePts.map((h) => h.kospi / base.kospi - 1) },
+      ], { fmtAxis: (v) => (v * 100).toFixed(1) + "%", fmtTip: (v) => (v * 100).toFixed(2) + "%", anchorZero: true });
+    }
   }
 
   document.getElementById("mySnapshotBtn").addEventListener("click", async () => {
