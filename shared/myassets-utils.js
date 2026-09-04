@@ -598,6 +598,20 @@ const ACCOUNT_TYPES = [
   "KB_일반", "KB_ISA", "신한_일반",
 ];
 
+/* A74(2026-09-02 사용자 요청 "계좌 특성반영 세금계산"): 세금 유형은 계좌명 자체가 아니라
+   이름에 담긴 키워드로 판정한다 — ACCOUNT_TYPES처럼 개인 계좌명을 하드코딩하면 A52 원칙
+   (남의 계좌명으로 가져와도 동작해야 함)과 충돌한다. DC·IRP·연금저축은 세금이연(지금
+   원천징수 0원, 훗날 연금소득세 3.3~5.5% 저율과세), ISA는 한도 내 비과세로 가정, 나머지는
+   일반계좌로 보고 15.4%를 즉시 원천징수한다. */
+function accountTaxType(accountName) {
+  const a = accountName || "";
+  if (a.includes("IRP")) return "irp";
+  if (a.includes("DC")) return "dc";
+  if (a.includes("연금")) return "pension";
+  if (a.includes("ISA")) return "isa";
+  return "general";
+}
+
 /* A52(2026-08-13 사용자 보고 — 타인 배포 후 피드백): ACCOUNT_TYPES가 이 코드에 박힌
    내 계좌명 9개라, 다른 사람이 자기 JSON을 가져와도 드롭다운엔 계속 "삼성_DC" 같은
    내 계좌가 보였다(그 사람 계좌명 자체는 각 행에 보존되지만, 다른 행에서 골라 쓸

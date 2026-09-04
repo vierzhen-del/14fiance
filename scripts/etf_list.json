@@ -898,6 +898,20 @@
       "style": "성장"
     },
     {
+      "symbol": "0233J0.KS",
+      "name": "TIGER 삼성전자SK하이닉스미국채혼합50",
+      "category": "채권혼합",
+      "region": "미국",
+      "style": "안전"
+    },
+    {
+      "symbol": "0224X0.KS",
+      "name": "1Q 엔비디아알파벳미국채혼합50",
+      "category": "채권혼합",
+      "region": "미국",
+      "style": "안전"
+    },
+    {
       "symbol": "455850.KS",
       "name": "SOL AI반도체소부장",
       "category": "국내 테마·섹터 (3protv 등락 상하위)",

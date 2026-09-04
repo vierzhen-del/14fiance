@@ -281,6 +281,10 @@ function addMyAssetRow(a = {}, dynamicAccounts) {
   // 배당 유형(실확/특별/고정)·특별배당 만료일 — 노션 SOP 메타데이터라 입력칸 없이 행에 보존만
   row.dataset.divType = a.divType || "";
   row.dataset.divExpiry = a.divExpiry || "";
+  // A73(2026-09-02): 과세표준 비율(%) — 분배금 중 실제 과세대상 비율. 국내 커버드콜 ETF는 옵션
+  // 프리미엄의 상당액이 비과세 자본반환으로 처리돼 배당금보다 훨씬 작을 수 있다(실측: 0~24%).
+  // divType 등과 같은 이유로 입력칸 없이 노션 배당기준 마스터 → import JSON 경유로만 채운다.
+  row.dataset.taxRatio = a.taxRatio != null && a.taxRatio !== "" ? a.taxRatio : "";
   document.getElementById("myAssetRows").appendChild(row);
   const onChange = () => { saveMyAssets(); renderMyAssets(); };
   row.querySelectorAll("select, input").forEach((el) =>
@@ -303,6 +307,7 @@ function serializeMyAssets() {
       payPeriod: normalizePayPeriod(el.querySelector(".my-period").value),
       divType: el.dataset.divType || "",
       divExpiry: el.dataset.divExpiry || "",
+      taxRatio: el.dataset.taxRatio !== "" && el.dataset.taxRatio != null ? parseFloat(el.dataset.taxRatio) : "",
     })),
     // 입력칸은 만원 단위로 받고(예: 20000 = 2억원), 저장/계산은 항상 원 단위로 통일
     goalAmount: (() => {
@@ -860,6 +865,55 @@ function buildSelfSuffHTML(accountMap, contributions) {
       <tbody>${rowsHTML}</tbody>
     </table>
     </div>`;
+}
+
+/* A74(2026-09-02 사용자 요청): 금융소득종합과세 도달률 — "주식 배당금만 기반해서 예측"한다는
+   사용자 확정에 따라 이자소득 등 다른 금융소득은 합산하지 않는다. 2,000만원/1,000만원 버튼
+   전환 시 패널 전체를 다시 그리지 않고 이 블록만 갱신할 수 있도록 별도 함수로 분리
+   (myAssetTrendYearBtns 등과 같은 패턴).
+   A75(2026-09-02 사용자 보고 "과세대상 재검토.. 국내 ETF배당금이라 과세대상 금액이 낮음"):
+   taxRatio 미실측 종목(주로 국내 커버드콜 ETF)은 보수적으로 100% 과세 가정되는데, 그 가정분을
+   확정치와 같은 빨간 숫자로 보여주면 "종합과세 임박"으로 오인한다. unmeasured로 미실측분을
+   따로 받아 캡션·상세 목록으로 분리 표시한다. */
+function buildFinIncomeBodyHTML(taxableIncome, threshold, unmeasured) {
+  const fmtW = (v) => fmtPrice(v, "KRW");
+  const pct = threshold > 0 ? (taxableIncome / threshold) * 100 : 0;
+  const barPct = Math.min(100, Math.max(0, pct));
+  const margin = threshold - taxableIncome;
+  const overLimit = margin < 0;
+  const barColor = overLimit || pct >= 80 ? "var(--critical)" : "var(--good)";
+  const unmeasuredAmount = unmeasured ? unmeasured.amount : 0;
+  const measuredIncome = taxableIncome - unmeasuredAmount;
+  return `
+    <div class="stat-row">
+      <div class="stat">
+        <p class="stat-label">연환산 종합과세 대상 배당소득</p>
+        <p class="stat-value" style="color:var(--critical); font-weight:700;">${fmtW(taxableIncome)}</p>
+      </div>
+      <div class="stat">
+        <p class="stat-label">도달률</p>
+        <p class="stat-value">${pct.toFixed(1)}%</p>
+      </div>
+      <div class="stat">
+        <p class="stat-label">${overLimit ? "초과액" : "남은 여유액"}</p>
+        <p class="stat-value" style="color:${overLimit ? "var(--critical)" : "var(--good)"}">${overLimit ? "초과 " : ""}${fmtW(Math.abs(margin))}</p>
+      </div>
+    </div>
+    <div class="bar-track" style="margin-top:6px;"><div class="bar-fill" style="width:${barPct}%; background:${barColor}"></div></div>
+    <p class="stat-sub" style="margin-top:6px;">기준액 ${fmtW(threshold)} 중 배당소득 기준 추정치입니다.</p>
+    <p class="stat-sub">연금저축·IRP·DC(세금이연)와 ISA(분리과세)는 종합과세 대상에서 제외했습니다. 분기배당은 ×4, 그 외 월배당은 ×12로 연환산합니다.</p>
+    <p class="stat-sub">주식 배당금만 기반한 추정치입니다 — 예금·채권 이자소득 등 다른 금융소득은 포함되지 않았으니 실제 종합과세 대상액은 이보다 클 수 있습니다.</p>
+    ${unmeasuredAmount > 0 ? `
+    <p class="stat-sub" style="color:var(--critical); margin-top:6px;">⚠️ 이 중 과세표준 미실측 종목 ${fmtW(unmeasuredAmount)}(연환산)은 보수적으로 전액 과세 가정한 값입니다. 국내 커버드콜 ETF는 옵션프리미엄 비과세 자본반환 구간 때문에 노션 배당기준 마스터에서 실측하면 이보다 훨씬 낮아질 수 있습니다 — 실측 반영분만 보면 ${fmtW(measuredIncome)}입니다.</p>
+    <details style="margin-top:4px;">
+      <summary style="font-size:12px; color:var(--text-muted); cursor:pointer;">미실측 종목 ${unmeasured.rows.length}건 보기(전액과세 가정 상세)</summary>
+      <div style="overflow-x:auto; margin-top:6px;">
+      <table class="account-summary-table" style="font-size:11.5px;">
+        <thead><tr><th>종목</th><th>월배당</th><th>연환산(전액과세 가정)</th></tr></thead>
+        <tbody>${unmeasured.rows.map((r) => `<tr><td style="text-align:left;">${r.name}</td><td>${fmtW(r.monthlyDiv)}</td><td>${fmtW(r.monthlyDiv * r.annualMult)}</td></tr>`).join("")}</tbody>
+      </table>
+      </div>
+    </details>` : ""}`;
 }
 
 /* ETF모으기·월매수 — 계좌별 매수계획 상세 표(시트의 ETF모으기 탭과 동일 구성) */
@@ -3584,6 +3638,8 @@ async function renderMyAssets() {
   const fmtW = (v) => fmtPrice(v, "KRW");
   const latestRate = fx ? fx.rates[fx.rates.length - 1] : null;
   let totalValue = 0, totalCost = 0, totalMonthlyDiv = 0, totalMonthlyBuy = 0;
+  // A74(2026-09-02 사용자 요청): 계좌 특성 반영 세후 배당 + 금융소득종합과세 도달률 집계
+  let totalWithheldTax = 0, totalAfterTaxDiv = 0, totalDeferredTaxBase = 0, totalAnnualTaxableIncome = 0;
   let costedValue = 0; // 매입단가가 있는 종목의 평가액 합 (수익률 분모 정합성)
   const perRow = [];
   const accountMap = new Map();
@@ -3657,6 +3713,22 @@ async function renderMyAssets() {
     const buyTimes = BUY_FREQ_TIMES[it.buyFreq] || 1;
     const monthlyBuy = toKrw(close) * it.monthlyQty * buyTimes;
 
+    /* A74(2026-09-02 사용자 요청 "계좌 특성반영 세금계산"): taxRatio(과세표준 비율, 노션 SOP
+       실측값)가 없으면 보수적으로 100% 과세대상으로 가정한다 — 과소평가보다 과대평가가 안전.
+       계좌 유형별로 실제 원천징수가 갈린다(accountTaxType 주석 참조: DC·IRP·연금저축은
+       세금이연이라 지금 0원, ISA는 한도 내 0원 가정, 나머지 일반계좌만 15.4% 즉시 징수). */
+    const taxRatioKnown = it.taxRatio !== "" && it.taxRatio != null;
+    const taxRatioVal = taxRatioKnown ? Number(it.taxRatio) / 100 : 1;
+    const taxableDiv = monthlyDiv * taxRatioVal;
+    const acctTaxType = accountTaxType(it.account);
+    const isTaxDeferred = acctTaxType === "irp" || acctTaxType === "dc" || acctTaxType === "pension";
+    const withheldTax = (isTaxDeferred || acctTaxType === "isa") ? 0 : taxableDiv * 0.154;
+    const afterTaxMonthlyDiv = monthlyDiv - withheldTax;
+    const isTaxFreeEtf = it.taxRatio === 0; // ⭐ 절세ETF — 노션에서 실측 0%로 확정된 경우만(미입력과 구분)
+    // 분기배당(payPeriod="분기말")은 그 분기달에만 monthlyDiv가 잡히므로(dividendRecordDate가
+    // QUARTER_RECORD_MONTHS 밖은 null을 돌려줌) 연환산 배수가 월배당(×12)과 다르다(×4).
+    const annualMult = it.payPeriod === "분기말" ? 4 : 12;
+
     // NAV 침식 경고(14RAE A-8): 최근 30일 가격 하락률 > 월배당률이면 원금 훼손 의심
     let erosion = null;
     if (ttm > 0 && it.full.dates.length > 25) {
@@ -3684,7 +3756,13 @@ async function renderMyAssets() {
     if (cost != null) { totalCost += cost; costedValue += value; }
     totalMonthlyDiv += monthlyDiv;
     totalMonthlyBuy += monthlyBuy;
-    perRow.push({ ...it, meta, close, isUsd, value, cost, profit, monthlyDiv, nextMonthDiv, monthlyBuy, erosion, usedConfirmed, trailReturn, trailDetail, effRate, divBasis, dpsFromRate, dpsGapPct, divPrice, divPriceDate, recordDate, recordFuture, buyDeadline, livePrevClose });
+    totalWithheldTax += withheldTax;
+    totalAfterTaxDiv += afterTaxMonthlyDiv;
+    if (isTaxDeferred) totalDeferredTaxBase += taxableDiv;
+    // 금융소득종합과세 2,000만원 한도에 들어가는 건 일반계좌뿐 — 연금·IRP·DC는 세금이연이라
+    // 배당 시점에 과세되지 않고, ISA는 만기 분리과세라 종합소득에 합산되지 않는다.
+    if (acctTaxType === "general") totalAnnualTaxableIncome += taxableDiv * annualMult;
+    perRow.push({ ...it, meta, close, isUsd, value, cost, profit, monthlyDiv, nextMonthDiv, monthlyBuy, erosion, usedConfirmed, trailReturn, trailDetail, effRate, divBasis, dpsFromRate, dpsGapPct, divPrice, divPriceDate, recordDate, recordFuture, buyDeadline, livePrevClose, taxRatioKnown, taxRatioVal, taxableDiv, acctTaxType, isTaxDeferred, withheldTax, afterTaxMonthlyDiv, isTaxFreeEtf, annualMult });
 
     const accKey = it.account || "계좌 미지정";
     if (!accountMap.has(accKey)) accountMap.set(accKey, { value: 0, cost: 0, costedValue: 0, monthlyDiv: 0, monthlyBuy: 0, n: 0 });
@@ -3889,8 +3967,11 @@ async function renderMyAssets() {
     // A58(2026-08-18 사용자 요청): 같은 종목명이 계좌별로 여러 줄 나올 때 지급시기(월초/월중/월말)를
     // 함께 표기 — 이름만으로는 언제 들어오는 배당인지 구분이 안 됐다.
     const periodShort = PAY_PERIOD_SHORT[p.payPeriod];
-    const label = periodShort ? `${name} (${periodShort})` : name;
-    return `<div class="bar-row">
+    // A74(2026-09-02 사용자 요청 "과세표준액 0원 종목은 별표"): 노션에서 실측 0%로 확정된
+    // 종목만 배지를 붙인다(taxRatio 미입력과 구분 — isTaxFreeEtf 정의 참조).
+    const label = (periodShort ? `${name} (${periodShort})` : name) + (p.isTaxFreeEtf ? " ⭐" : "");
+    const badgeTitle = p.isTaxFreeEtf ? ' title="⭐ 절세ETF — 과세표준 0%(노션 배당기준 마스터 실측)"' : "";
+    return `<div class="bar-row"${badgeTitle}>
       <span class="bar-label" title="${label}">${label}</span>
       <div class="bar-track"><div class="bar-fill" style="width:${pct.toFixed(1)}%; background:${accountColor(p.account || "계좌 미지정")}"></div></div>
       <span class="bar-value">${fmtW(p.monthlyDiv)}</span>
@@ -4029,6 +4110,44 @@ async function renderMyAssets() {
   const divBasisHTML = buildDividendBasisHTML(perRow, history);
   // 자급률 — 계좌별 수입(배당+납입금) vs 매수 + 조절 안내
   const suffHTML = buildSelfSuffHTML(accountMap, cfg.contributions);
+
+  // A74(2026-09-02 사용자 요청): "💰 월배당현황" 탭 — 계좌 특성 반영 세후 실수령 +
+  // 금융소득종합과세 도달률(주식 배당금 기준). 세전 totalMonthlyDiv 등 기존 스탯은
+  // 그대로 두고 세후 값은 이 블록에서만 새로 노출한다(회귀 방지).
+  const finThreshold = state.myFinIncomeThreshold || 20000000;
+  // A75(2026-09-02 사용자 보고 "과세대상 재검토.. 국내 ETF배당금이라 과세대상 금액이 낮음"):
+  // taxRatio 미실측 일반계좌 종목(주로 국내 커버드콜 ETF)만 따로 뽑아 "보수적 100% 가정" 몫을
+  // 분리 표시한다 — buildFinIncomeBodyHTML 주석 참조.
+  const unmeasuredTaxRows = perRow.filter((p) => p.acctTaxType === "general" && !p.taxRatioKnown && p.monthlyDiv > 0);
+  const unmeasuredTaxInfo = {
+    amount: unmeasuredTaxRows.reduce((s, p) => s + p.monthlyDiv * p.annualMult, 0),
+    rows: unmeasuredTaxRows.map((p) => ({ name: p.meta ? p.meta.name : p.symbol, monthlyDiv: p.monthlyDiv, annualMult: p.annualMult })),
+  };
+  const taxSummaryHTML = `
+    <p class="chart-title" style="margin-top:20px;">🧾 세후 실수령 예상 (계좌 특성 반영)</p>
+    <div class="stat-row">
+      <div class="stat">
+        <p class="stat-label">세전 예상 월배당</p>
+        <p class="stat-value">${fmtW(totalMonthlyDiv)}</p>
+      </div>
+      <div class="stat">
+        <p class="stat-label">원천징수 예상(지금)</p>
+        <p class="stat-value">${fmtW(totalWithheldTax)}</p>
+        <p class="stat-sub">일반계좌만 15.4% · ISA는 한도 내 0원 가정${unmeasuredTaxInfo.amount > 0 ? " · 과세표준 미실측 종목은 보수적으로 100% 가정" : ""}</p>
+      </div>
+      <div class="stat">
+        <p class="stat-label">세후 실수령 예상</p>
+        <p class="stat-value" style="color:var(--good)">${fmtW(totalAfterTaxDiv)}</p>
+      </div>
+    </div>
+    ${totalDeferredTaxBase > 0 ? `<p class="stat-sub" style="margin-top:6px;">DC·연금저축·IRP 과세표준 ${fmtW(totalDeferredTaxBase)}은 지금 원천징수되지 않고 훗날 연금 수령 시 저율(3.3~5.5%) 과세됩니다.</p>` : ""}
+
+    <p class="chart-title" style="margin-top:20px;">⚠️ 금융소득 종합과세 도달률 (주식 배당금 기준)</p>
+    <div id="finIncomeThresholdBtns" class="seg" style="margin-bottom:8px;">
+      <button type="button" data-threshold="20000000">2,000만원</button>
+      <button type="button" data-threshold="10000000">1,000만원</button>
+    </div>
+    <div id="finIncomeBody">${buildFinIncomeBodyHTML(totalAnnualTaxableIncome, finThreshold, unmeasuredTaxInfo)}</div>`;
 
   result.innerHTML = `
     <div class="stat-row" style="margin-top:14px;">
@@ -4314,6 +4433,8 @@ async function renderMyAssets() {
     <div class="dash-panel" data-tab="divstatus" hidden>
       ${accountDivDonutHTML ? `<p class="chart-title">🥧 계좌별 월배당 비중</p>
       ${accountDivDonutHTML}` : ""}
+
+      ${taxSummaryHTML}
 
       ${accountDivHTML ? `<p class="chart-title" style="margin-top:20px;">🏦 계좌별 월배당</p>
       <div class="bar-list">${accountDivHTML}</div>` : ""}
@@ -4656,6 +4777,24 @@ async function renderMyAssets() {
       state.liveKr = null; // 캐시 무시하고 강제 재조회
       try { await renderMyAssets(); } finally { heatmapNowBtn.disabled = false; }
     });
+  }
+
+  // A74(2026-09-02 사용자 요청): 금융소득종합과세 기준액 2,000만원/1,000만원 토글 —
+  // 시세 재조회 없이 #finIncomeBody만 다시 그린다(myDivHistoryMode와 같은 패턴).
+  const finIncomeThresholdBtns = document.getElementById("finIncomeThresholdBtns");
+  if (finIncomeThresholdBtns) {
+    const renderFinIncome = () => {
+      const body = document.getElementById("finIncomeBody");
+      const threshold = state.myFinIncomeThreshold || 20000000;
+      if (body) body.innerHTML = buildFinIncomeBodyHTML(totalAnnualTaxableIncome, threshold, unmeasuredTaxInfo);
+      finIncomeThresholdBtns.querySelectorAll("button").forEach((b) => {
+        b.classList.toggle("active", Number(b.dataset.threshold) === threshold);
+      });
+    };
+    finIncomeThresholdBtns.querySelectorAll("button").forEach((b) => {
+      b.addEventListener("click", () => { state.myFinIncomeThreshold = Number(b.dataset.threshold); renderFinIncome(); });
+    });
+    renderFinIncome();
   }
 
   document.getElementById("mySnapshotBtn").addEventListener("click", async () => {
