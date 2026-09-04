@@ -649,6 +649,20 @@ function lastChangePct(p) {
   return lastStored / closes[closes.length - 2] - 1;
 }
 
+/* A80(2026-09-02 사용자 보고 "히트맵 업뎃 오류체크" — 실측: 전일종가가 그날 아직 파이프라인에
+   채워지지 않아 라이브가÷지난주 종가로 폴백되면서 실제로는 상승 중인 종목이 하락으로 표시됨.
+   앱 계산 자체는 정상이었지만 "이게 오늘 등락인지 지난주 대비인지"를 화면에서 구분할 수
+   없어 오해를 샀다): lastChangePct와 똑같은 분기를 다시 밟아 어느 기준으로 계산됐는지만
+   구분해 돌려준다 — 계산식은 새로 만들지 않고 그대로 따라간다(단일 진실 소스 유지 목적,
+   lastChangePct의 반환 타입을 다른 호출부가 숫자로 그대로 쓰고 있어 그쪽은 건드리지 않음). */
+function changeBasis(p) {
+  const closes = p.full && p.full.closes;
+  if (!closes || closes.length < 2) return null;
+  const lastStored = closes[closes.length - 1];
+  if (p.close !== lastStored) return p.livePrevClose > 0 ? "daily" : "fallback";
+  return "weekly";
+}
+
 function changeColorClass(chg) {
   if (chg == null) return "tm-flat";
   const a = Math.abs(chg) * 100;
@@ -715,18 +729,21 @@ function buildTreemapHTML(perRow, groupBy) {
     const cells = items.map((p, ii) => {
       const r = irects[ii];
       const chg = lastChangePct(p);
+      const isFallback = changeBasis(p) === "fallback";
       const label = p.meta ? p.meta.name : p.symbol;
       const pct = total > 0 ? (p.value / total) * 100 : 0;
       const chgText = chg == null ? "—" : `${chg >= 0 ? "+" : ""}${(chg * 100).toFixed(2)}%`;
+      const chgDisplay = isFallback ? `${chgText}<span class="hm-fallback-mark">*</span>` : chgText;
+      const fallbackNote = isFallback ? " (전일종가 미확보 — 지난주 종가 대비, 오늘 등락 아님)" : "";
       const sizeCls = treemapSizeClass(
         (gr.w / 100) * (r.w / 100) * TREEMAP_NOMINAL_W,
         (gr.h / 100) * (r.h / 100) * TREEMAP_NOMINAL_H,
       );
-      return `<div class="tm-cell ${changeColorClass(chg)} ${sizeCls}" style="left:${r.x.toFixed(3)}%;top:${r.y.toFixed(3)}%;width:${r.w.toFixed(3)}%;height:${r.h.toFixed(3)}%;"
+      return `<div class="tm-cell ${changeColorClass(chg)} ${sizeCls}${isFallback ? " tm-fallback" : ""}" style="left:${r.x.toFixed(3)}%;top:${r.y.toFixed(3)}%;width:${r.w.toFixed(3)}%;height:${r.h.toFixed(3)}%;"
         data-tm-name="${label.replace(/"/g, "&quot;")}" data-tm-value="${fmtW(p.value)}" data-tm-pct="${pct.toFixed(1)}%" data-tm-chg="${chgText}"
-        title="${label} · ${fmtW(p.value)} · 비중 ${pct.toFixed(1)}% · 등락 ${chgText}">
+        title="${label} · ${fmtW(p.value)} · 비중 ${pct.toFixed(1)}% · 등락 ${chgText}${fallbackNote}">
         <div class="hm-name">${abbrevEtfName(label)}</div>
-        <div class="hm-val">${chgText}</div>
+        <div class="hm-val">${chgDisplay}</div>
         <div class="hm-sub">${pct.toFixed(1)}%</div>
       </div>`;
     }).join("");
@@ -750,11 +767,15 @@ function showTmZoom(name, value, pct, chg, cellClass) {
     document.body.appendChild(overlay);
   }
   const chgClass = /tm-up/.test(cellClass) ? "tm-up1" : /tm-dn/.test(cellClass) ? "tm-dn1" : "";
+  // A80: 전일종가 미확보 폴백 셀임을 확대 카드에서도 밝힌다(className에 tm-fallback 포함 시).
+  const fallbackNote = /tm-fallback/.test(cellClass)
+    ? `<p class="tm-zoom-sub" style="color:var(--critical);">전일종가 미확보 — 지난주 종가 대비(오늘 등락 아님)</p>` : "";
   overlay.innerHTML = `<div class="tm-zoom-card">
     <button type="button" class="tm-zoom-close" aria-label="닫기">✕</button>
     <p class="tm-zoom-name">${name}</p>
     <p class="tm-zoom-chg ${chgClass}">${chg}</p>
     <p class="tm-zoom-sub">평가액 ${value} · 비중 ${pct}</p>
+    ${fallbackNote}
   </div>`;
   overlay.querySelector(".tm-zoom-close").addEventListener("click", hideTmZoom);
   overlay.classList.add("open");
@@ -4276,7 +4297,7 @@ async function renderMyAssets() {
 
     <div class="dash-panel" data-tab="heatmap" hidden>
       <p class="chart-title" style="margin-top:20px;">🗺️ 비중 히트맵 (트리맵)</p>
-      <p class="stat-sub">사각형 크기 = 평가액 비중, 색 = 등락률(<b style="color:#de2121;">상승 빨강</b> · <b style="color:#3042c2;">하락 파랑</b>). 주가는 주 1회 수집이라 등락률은 기본적으로 <b>마지막 두 수집 종가 간 변화</b>입니다 — 일간 등락이 아닐 수 있습니다. <b>마지막 수집: ${state.manifest.updated}</b> — 이 날짜 이후 누적분이라 급등락 다음날은 당일 등락보다 크게 보일 수 있습니다. 🔄 최신시세 켬 시 <b>라이브가 vs 전일종가</b>로 바뀌어 그날 하루의 등락만 보여줍니다(전일종가 미확보 종목은 위 폴백대로 라이브가 vs 마지막 수집 종가).</p>
+      <p class="stat-sub">사각형 크기 = 평가액 비중, 색 = 등락률(<b style="color:#de2121;">상승 빨강</b> · <b style="color:#3042c2;">하락 파랑</b>). 주가는 주 1회 수집이라 등락률은 기본적으로 <b>마지막 두 수집 종가 간 변화</b>입니다 — 일간 등락이 아닐 수 있습니다. <b>마지막 수집: ${state.manifest.updated}</b> — 이 날짜 이후 누적분이라 급등락 다음날은 당일 등락보다 크게 보일 수 있습니다. 🔄 최신시세 켬 시 <b>라이브가 vs 전일종가</b>로 바뀌어 그날 하루의 등락만 보여줍니다(전일종가가 그날 아직 파이프라인에 안 채워진 종목은 <b>라이브가 vs 지난주 종가</b>로 대신 계산되며, 이런 셀은 등락률 뒤에 <b>*</b> 표시와 점선 테두리로 구분됩니다 — 그날 실제 등락이 아니니 참고만 하세요).</p>
       <div class="controls" style="margin:10px 0;">
         <select id="myTreemapGroup" aria-label="트리맵 그룹 기준">
           <option value="category" selected>카테고리별</option>
