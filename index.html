@@ -6576,6 +6576,8 @@ async function renderMyAssets() {
           <option value="region">지역별</option>
           <option value="style">스타일별</option>
         </select>
+        ${liveQuotesEnabled() ? `<button type="button" id="myHeatmapLiveNowBtn" class="btn-action">⏱️ 지금 확인</button>
+        <span id="myHeatmapLiveNowStatus" class="action-status"></span>` : ""}
       </div>
       <div id="myTreemapBody"></div>
     </div>
@@ -6911,6 +6913,20 @@ async function renderMyAssets() {
         { label: "코스피", color: "#199e70", dates: ratePts.map((h) => h.month + "-01"), values: ratePts.map((h) => h.kospi / base.kospi - 1) },
       ], { fmtAxis: (v) => (v * 100).toFixed(1) + "%", fmtTip: (v) => (v * 100).toFixed(2) + "%", anchorZero: true });
     }
+  }
+
+  // A81(2026-09-02 사용자 보고 "히트맵 지금 확인하기 버튼 없음"): "⏱️ 지금 확인"이 내 자산
+  // 대시보드 헤더에만 있어서 비중 히트맵 탭 안에서는 스크롤을 올려야만 눌렀다 — 히트맵
+  // 탭에도 같은 동작(3분 캐시 무시하고 최신시세 강제 재조회)의 버튼을 하나 더 둔다.
+  const heatmapNowBtn = document.getElementById("myHeatmapLiveNowBtn");
+  if (heatmapNowBtn) {
+    heatmapNowBtn.addEventListener("click", async () => {
+      const statusEl = document.getElementById("myHeatmapLiveNowStatus");
+      heatmapNowBtn.disabled = true;
+      if (statusEl) statusEl.textContent = "확인 중…";
+      state.liveKr = null; // 캐시 무시하고 강제 재조회
+      try { await renderMyAssets(); } finally { heatmapNowBtn.disabled = false; }
+    });
   }
 
   document.getElementById("mySnapshotBtn").addEventListener("click", async () => {
