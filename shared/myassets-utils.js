@@ -636,6 +636,16 @@ function accountTaxType(accountName) {
   return "general";
 }
 
+/* A89: 세금 상세표에서 계좌유형을 사람이 읽는 말로 옮긴다 — 유형 키만 보고는 왜 그 계좌만
+   원천징수가 잡히는지 알 수 없어서다. 지금 인출 가능 여부(withdrawable)도 같이 들고 있는다. */
+const ACCOUNT_TAX_INFO = {
+  irp: { label: "IRP", tax: "이연", withdrawable: false },
+  dc: { label: "DC(퇴직연금)", tax: "이연", withdrawable: false },
+  pension: { label: "연금저축", tax: "이연", withdrawable: false },
+  isa: { label: "ISA", tax: "한도 내 0원", withdrawable: true },
+  general: { label: "일반계좌", tax: "15.4% 즉시", withdrawable: true },
+};
+
 /* A52(2026-08-13 사용자 보고 — 타인 배포 후 피드백): ACCOUNT_TYPES가 이 코드에 박힌
    내 계좌명 9개라, 다른 사람이 자기 JSON을 가져와도 드롭다운엔 계속 "삼성_DC" 같은
    내 계좌가 보였다(그 사람 계좌명 자체는 각 행에 보존되지만, 다른 행에서 골라 쓸
