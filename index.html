@@ -2003,6 +2003,16 @@ function accountTaxType(accountName) {
   return "general";
 }
 
+/* A89: 세금 상세표에서 계좌유형을 사람이 읽는 말로 옮긴다 — 유형 키만 보고는 왜 그 계좌만
+   원천징수가 잡히는지 알 수 없어서다. 지금 인출 가능 여부(withdrawable)도 같이 들고 있는다. */
+const ACCOUNT_TAX_INFO = {
+  irp: { label: "IRP", tax: "이연", withdrawable: false },
+  dc: { label: "DC(퇴직연금)", tax: "이연", withdrawable: false },
+  pension: { label: "연금저축", tax: "이연", withdrawable: false },
+  isa: { label: "ISA", tax: "한도 내 0원", withdrawable: true },
+  general: { label: "일반계좌", tax: "15.4% 즉시", withdrawable: true },
+};
+
 /* A52(2026-08-13 사용자 보고 — 타인 배포 후 피드백): ACCOUNT_TYPES가 이 코드에 박힌
    내 계좌명 9개라, 다른 사람이 자기 JSON을 가져와도 드롭다운엔 계속 "삼성_DC" 같은
    내 계좌가 보였다(그 사람 계좌명 자체는 각 행에 보존되지만, 다른 행에서 골라 쓸
@@ -3161,6 +3171,71 @@ function buildSelfSuffHTML(accountMap, contributions) {
    taxRatio 미실측 종목(주로 국내 커버드콜 ETF)은 보수적으로 100% 과세 가정되는데, 그 가정분을
    확정치와 같은 빨간 숫자로 보여주면 "종합과세 임박"으로 오인한다. unmeasured로 미실측분을
    따로 받아 캡션·상세 목록으로 분리 표시한다. */
+/* A89(2026-09-07 사용자 요청 "세금 부분 접기후 누르면 상세 과세부분이 표시"): 세금 블록을
+   접어두고, 펼쳤을 때 "왜 이 금액이 나왔는지"를 계좌·종목 단위로 볼 수 있게 한다.
+
+   계좌별 표가 먼저인 이유 — 원천징수가 계좌유형에서 갈리기 때문이다(일반계좌만 15.4%,
+   DC·연금저축·IRP는 이연, ISA는 한도 내 0원). 종목별 표는 실제로 지금 세금이 붙는 일반계좌
+   행만 담는다: 연금계좌 종목까지 넣으면 표만 길어지고 정작 "지금 걷히는 세금"은 안 보인다.
+   과세표준 비율이 실측인지 100% 가정인지도 행마다 밝힌다 — A75에서 이 구분이 없어
+   "종합과세 임박"으로 오인했던 전례가 있다. */
+function buildTaxDetailHTML(perRow) {
+  const fmtW = (v) => fmtPrice(v, "KRW");
+  const rows = (perRow || []).filter((p) => p.monthlyDiv > 0);
+  if (!rows.length) return `<p class="compare-empty">배당이 등록된 종목이 없어 과세 상세를 만들 수 없습니다.</p>`;
+
+  const accMap = new Map();
+  for (const p of rows) {
+    const key = p.account || "계좌 미지정";
+    if (!accMap.has(key)) accMap.set(key, { taxType: p.acctTaxType, div: 0, base: 0, tax: 0, after: 0 });
+    const g = accMap.get(key);
+    g.div += p.monthlyDiv; g.base += p.taxableDiv; g.tax += p.withheldTax; g.after += p.afterTaxMonthlyDiv;
+  }
+  const accHTML = [...accMap.entries()].sort((a, b) => b[1].div - a[1].div).map(([acc, g]) => {
+    const info = ACCOUNT_TAX_INFO[g.taxType] || ACCOUNT_TAX_INFO.general;
+    return `<tr>
+      <td style="text-align:left;">${acc}</td>
+      <td>${info.label}<br><span style="font-size:11px; color:var(--text-muted);">${info.tax}</span></td>
+      <td>${fmtW(g.div)}</td>
+      <td>${fmtW(g.base)}</td>
+      <td style="color:${g.tax > 0 ? "var(--critical)" : "var(--text-muted)"}">${g.tax > 0 ? fmtW(g.tax) : "—"}</td>
+      <td>${fmtW(g.after)}</td>
+      <td style="color:${info.withdrawable ? "var(--good)" : "var(--text-muted)"}">${info.withdrawable ? "💰 가능" : "🔒 불가"}</td>
+    </tr>`;
+  }).join("");
+
+  // 지금 실제로 원천징수가 걸리는 일반계좌 종목만 — 과세표준 비율의 출처(실측/가정)를 함께
+  const genRows = rows.filter((p) => p.acctTaxType === "general").sort((a, b) => b.withheldTax - a.withheldTax);
+  const symHTML = genRows.map((p) => `<tr>
+      <td style="text-align:left;">${p.meta ? p.meta.name : p.symbol}<br><span style="font-size:11px; color:var(--text-muted);">${p.account || "계좌 미지정"}</span></td>
+      <td>${fmtW(p.monthlyDiv)}</td>
+      <td>${p.taxRatioKnown
+        ? `${(p.taxRatioVal * 100).toFixed(2)}%<br><span style="font-size:11px; color:var(--good);">실측</span>`
+        : `100%<br><span style="font-size:11px; color:var(--critical);">미실측·가정</span>`}</td>
+      <td>${fmtW(p.taxableDiv)}</td>
+      <td style="color:${p.withheldTax > 0 ? "var(--critical)" : "var(--text-muted)"}">${p.withheldTax > 0 ? fmtW(p.withheldTax) : "—"}</td>
+    </tr>`).join("");
+
+  return `
+    <p class="chart-title" style="margin-top:4px;">🏦 계좌별 과세 상세</p>
+    <div style="overflow-x:auto;">
+    <table class="account-summary-table">
+      <thead><tr><th>계좌</th><th>과세유형</th><th>월배당</th><th>과세표준</th><th>원천징수(지금)</th><th>세후</th><th>인출</th></tr></thead>
+      <tbody>${accHTML}</tbody>
+    </table>
+    </div>
+    <p class="stat-sub" style="margin-top:6px;">과세표준은 월배당 × 과세표준비율입니다 — 국내 커버드콜 ETF는 옵션프리미엄이 비과세 자본반환(ROC)으로 나가는 구간이 있어 배당금보다 과세표준이 작습니다. 노션 「배당기준 마스터」에서 실측한 값만 반영되고, 미실측 종목은 보수적으로 100%로 잡습니다.</p>
+    ${genRows.length ? `
+    <p class="chart-title" style="margin-top:16px;">🧾 일반계좌 종목별 과세 (지금 원천징수 대상)</p>
+    <div style="overflow-x:auto;">
+    <table class="account-summary-table">
+      <thead><tr><th>종목</th><th>월배당</th><th>과세표준비율</th><th>과세표준</th><th>원천징수</th></tr></thead>
+      <tbody>${symHTML}</tbody>
+    </table>
+    </div>
+    <p class="stat-sub" style="margin-top:6px;">DC·연금저축·IRP는 배당 시점에 세금이 붙지 않아(이연) 이 표에서 뺐고, ISA는 한도 내 비과세로 가정해 원천징수가 0원입니다. <b>"미실측·가정"이 빨갛게 뜬 종목</b>은 실제보다 세금이 과대계상된 상태라, 노션에서 그 달 과세표준을 실측해 import JSON의 <code>taxRatio</code>에 넣으면 줄어듭니다.</p>` : ""}`;
+}
+
 function buildFinIncomeBodyHTML(taxableIncome, threshold, unmeasured) {
   const fmtW = (v) => fmtPrice(v, "KRW");
   const pct = threshold > 0 ? (taxableIncome / threshold) * 100 : 0;
@@ -6502,8 +6577,15 @@ async function renderMyAssets() {
     amount: unmeasuredTaxRows.reduce((s, p) => s + p.monthlyDiv * p.annualMult, 0),
     rows: unmeasuredTaxRows.map((p) => ({ name: p.meta ? p.meta.name : p.symbol, monthlyDiv: p.monthlyDiv, annualMult: p.annualMult })),
   };
+  /* A89(2026-09-07 사용자 요청): 세금 블록 전체를 접어둔다 — 세부 항목이 길어 월배당현황 탭을
+     스크롤할 때마다 지나가야 했다. 다만 완전히 감추면 "지금 인출 가능"처럼 매일 보는 숫자까지
+     묻히므로, 접힌 상태의 summary 줄에 핵심 3개(인출 가능·원천징수·종합과세 도달률)를 실어
+     펼치지 않아도 읽히게 한다. 펼치면 계좌별·종목별 과세 상세까지 나온다(buildTaxDetailHTML). */
+  const finPctNow = finThreshold > 0 ? (totalAnnualTaxableIncome / finThreshold) * 100 : 0;
   const taxSummaryHTML = `
-    <p class="chart-title" style="margin-top:20px;">🧾 세후 배당 예상 (계좌 특성 반영)</p>
+    <details class="collapse-box" style="margin-top:20px;">
+      <summary><span>🧾 세금 상세 (눌러서 펼치기)<br><span style="font-weight:400; font-size:12px; color:var(--text-muted);">💰 인출 가능 ${fmtW(totalReceivableNowDiv)} · 원천징수 ${fmtW(totalWithheldTax)} · 종합과세 ${finPctNow.toFixed(1)}%</span></span></summary>
+      <div class="collapse-body">
     <div class="stat-row">
       <div class="stat">
         <p class="stat-label">세전 예상 월배당</p>
@@ -6535,7 +6617,11 @@ async function renderMyAssets() {
       <button type="button" data-threshold="20000000">2,000만원</button>
       <button type="button" data-threshold="10000000">1,000만원</button>
     </div>
-    <div id="finIncomeBody">${buildFinIncomeBodyHTML(totalAnnualTaxableIncome, finThreshold, unmeasuredTaxInfo)}</div>`;
+    <div id="finIncomeBody">${buildFinIncomeBodyHTML(totalAnnualTaxableIncome, finThreshold, unmeasuredTaxInfo)}</div>
+
+    ${buildTaxDetailHTML(perRow)}
+      </div>
+    </details>`;
 
   result.innerHTML = `
     <div class="stat-row" style="margin-top:14px;">
