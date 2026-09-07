@@ -6302,21 +6302,13 @@ async function renderMyAssets() {
   // — v534 "비중분석" 탭에 해당. 상장 통화(isUsd)가 아니라 실제 투자대상 시장(meta.region)
   // 기준으로 분류한다 — "TIGER 미국S&P500"처럼 국내 상장이라도 미국에 투자하면 미국 비중으로,
   // "TIGER 배당커버드콜액티브"처럼 국내 배당주(SK하이닉스·삼성전자 등) 기반이면 한국 비중으로 잡힌다.
-  const regionMap = new Map();
-  const styleMap = new Map();
-  const catMap = new Map();
-  // 수익률 분석(비중별)용 — 매입원가/월배당도 region·style별로 함께 집계
+  // 수익률 분석(비중별)용 — 매입원가/월배당도 region·style별로 함께 집계(항상 전체 계좌 기준)
   const regionRetMap = new Map(); // region -> {cost, costedValue, div, value}
   const styleRetMap = new Map();
   for (const p of perRow) {
     if (p.value <= 0) continue;
     const region = (p.meta && p.meta.region) || "미분류";
     const style = (p.meta && p.meta.style) || "미분류";
-    regionMap.set(region, (regionMap.get(region) || 0) + p.value);
-    styleMap.set(style, (styleMap.get(style) || 0) + p.value);
-    const cat = p.meta && p.meta.category ? p.meta.category : "기타";
-    catMap.set(cat, (catMap.get(cat) || 0) + p.value);
-
     if (!regionRetMap.has(region)) regionRetMap.set(region, { cost: 0, costedValue: 0, div: 0, value: 0 });
     const rr = regionRetMap.get(region);
     rr.value += p.value; rr.div += p.monthlyDiv;
@@ -6328,32 +6320,58 @@ async function renderMyAssets() {
     if (p.cost != null) { sr.cost += p.cost; sr.costedValue += p.value; }
   }
   const REGION_ORDER = ["한국", "미국", "글로벌", "미분류"];
-  const marketKpiHTML = totalValue > 0 ? `<div class="stat-row" style="margin-top:14px;">
-      ${REGION_ORDER.filter((r) => regionMap.has(r)).map((r) => `<div class="stat">
-        <p class="stat-label">${r} 투자 비중</p>
-        <p class="stat-value">${((regionMap.get(r) / totalValue) * 100).toFixed(1)}%</p>
-        <p class="stat-sub">${fmtW(regionMap.get(r))}</p>
-      </div>`).join("")}
-    </div>` : "";
   const STYLE_ORDER = ["성장", "배당", "안전", "개별주", "미분류"];
-  const styleAllocHTML = STYLE_ORDER.filter((s) => styleMap.has(s)).map((s, i) => {
-    const v = styleMap.get(s);
-    const pct = totalValue > 0 ? (v / totalValue) * 100 : 0;
-    const sub = s === "안전" ? "채권혼합·리츠 등" : s === "배당" ? "커버드콜 등 분배 중심" : s === "성장" ? "지수·테마 성장주" : s === "개별주" ? "국내 상장 개별 종목(비ETF)" : "";
-    return `<div class="bar-row">
-      <span class="bar-label" title="${s}">${s}${sub ? ` <span style="color:var(--text-muted);">(${sub})</span>` : ""}</span>
-      <div class="bar-track"><div class="bar-fill" style="width:${pct.toFixed(1)}%; background:${PALETTE[i % PALETTE.length]}"></div></div>
-      <span class="bar-value">${pct.toFixed(1)}%</span>
-    </div>`;
-  }).join("");
-  const categoryAllocHTML = [...catMap.entries()].sort((a, b) => b[1] - a[1]).map(([cat, v], i) => {
-    const pct = totalValue > 0 ? (v / totalValue) * 100 : 0;
-    return `<div class="bar-row">
-      <span class="bar-label" title="${cat}">${cat}</span>
-      <div class="bar-track"><div class="bar-fill" style="width:${pct.toFixed(1)}%; background:${PALETTE[i % PALETTE.length]}"></div></div>
-      <span class="bar-value">${pct.toFixed(1)}%</span>
-    </div>`;
-  }).join("");
+  // A82(2026-09-07 사용자 요청 "종합/일반계좌ETF 구분 버튼 추가"): 시장·스타일·카테고리 비중을
+  // "종합"(전체 계좌) 또는 "일반계좌ETF"(세금이연 계좌 제외·ETF만)로 필터링해 볼 수 있게 한다.
+  // DC·연금·IRP는 세금이연 계좌라 당장 리밸런싱이 자유롭지 않으므로, 실제 처분 가능한 비중은
+  // 일반계좌만 따로 봐야 한다는 요청 — accountTaxType()으로 계좌명을 일반화 판정(A52 원칙 유지).
+  function buildAllocCompositionHTML(rows) {
+    const rMap = new Map(), sMap = new Map(), cMap = new Map();
+    let tv = 0;
+    for (const p of rows) {
+      if (p.value <= 0) continue;
+      tv += p.value;
+      const region = (p.meta && p.meta.region) || "미분류";
+      const style = (p.meta && p.meta.style) || "미분류";
+      rMap.set(region, (rMap.get(region) || 0) + p.value);
+      sMap.set(style, (sMap.get(style) || 0) + p.value);
+      const cat = p.meta && p.meta.category ? p.meta.category : "기타";
+      cMap.set(cat, (cMap.get(cat) || 0) + p.value);
+    }
+    const kpiHTML = tv > 0 ? `<div class="stat-row" style="margin-top:14px;">
+      ${REGION_ORDER.filter((r) => rMap.has(r)).map((r) => `<div class="stat">
+        <p class="stat-label">${r} 투자 비중</p>
+        <p class="stat-value">${((rMap.get(r) / tv) * 100).toFixed(1)}%</p>
+        <p class="stat-sub">${fmtW(rMap.get(r))}</p>
+      </div>`).join("")}
+    </div>` : `<p class="compare-empty">해당 범위의 보유 종목이 없습니다.</p>`;
+    const styleHTML = STYLE_ORDER.filter((s) => sMap.has(s)).map((s, i) => {
+      const v = sMap.get(s);
+      const pct = tv > 0 ? (v / tv) * 100 : 0;
+      const sub = s === "안전" ? "채권혼합·리츠 등" : s === "배당" ? "커버드콜 등 분배 중심" : s === "성장" ? "지수·테마 성장주" : s === "개별주" ? "국내 상장 개별 종목(비ETF)" : "";
+      return `<div class="bar-row">
+        <span class="bar-label" title="${s}">${s}${sub ? ` <span style="color:var(--text-muted);">(${sub})</span>` : ""}</span>
+        <div class="bar-track"><div class="bar-fill" style="width:${pct.toFixed(1)}%; background:${PALETTE[i % PALETTE.length]}"></div></div>
+        <span class="bar-value">${pct.toFixed(1)}%</span>
+      </div>`;
+    }).join("");
+    const catHTML = [...cMap.entries()].sort((a, b) => b[1] - a[1]).map(([cat, v], i) => {
+      const pct = tv > 0 ? (v / tv) * 100 : 0;
+      return `<div class="bar-row">
+        <span class="bar-label" title="${cat}">${cat}</span>
+        <div class="bar-track"><div class="bar-fill" style="width:${pct.toFixed(1)}%; background:${PALETTE[i % PALETTE.length]}"></div></div>
+        <span class="bar-value">${pct.toFixed(1)}%</span>
+      </div>`;
+    }).join("");
+    return `${kpiHTML}
+      <p class="chart-title" style="margin-top:20px;">🌱 성장·배당·안전 비중</p>
+      <div class="bar-list">${styleHTML}</div>
+      <p class="chart-title" style="margin-top:20px;">🧩 자산 성격별 비중 (카테고리)</p>
+      <div class="bar-list">${catHTML}</div>`;
+  }
+  const isGeneralEtfRow = (p) => accountTaxType(p.account) === "general" && (!p.meta || p.meta.assetType !== "stock");
+  const allocScope = state.myAllocScope === "generalEtf" ? "generalEtf" : "all";
+  const allocScopeHTML = buildAllocCompositionHTML(allocScope === "generalEtf" ? perRow.filter(isGeneralEtfRow) : perRow);
 
   // 매수계획 상세(ETF모으기)
   const buyPlanHTML = buildBuyPlanHTML(perRow);
@@ -6671,12 +6689,11 @@ async function renderMyAssets() {
     </div>
 
     <div class="dash-panel" data-tab="alloc" hidden>
-      ${marketKpiHTML}
-      <p class="chart-title" style="margin-top:20px;">🌱 성장·배당·안전 비중</p>
-      <div class="bar-list">${styleAllocHTML}</div>
-
-      <p class="chart-title" style="margin-top:20px;">🧩 자산 성격별 비중 (카테고리)</p>
-      <div class="bar-list">${categoryAllocHTML}</div>
+      <div id="allocScopeBtns" class="seg" style="margin-bottom:8px;">
+        <button type="button" data-scope="all">종합</button>
+        <button type="button" data-scope="generalEtf">일반계좌ETF</button>
+      </div>
+      <div id="myAllocScopeBody">${allocScopeHTML}</div>
 
       <p class="chart-title" style="margin-top:20px;">🗺️ 계좌별 비중</p>
       <div class="bar-list">${accountAllocHTML}</div>
@@ -7062,6 +7079,24 @@ async function renderMyAssets() {
       state.liveKr = null; // 캐시 무시하고 강제 재조회
       try { await renderMyAssets(); } finally { heatmapNowBtn.disabled = false; }
     });
+  }
+
+  // A82(2026-09-07 사용자 요청 "종합/일반계좌ETF 구분 버튼 추가"): 비중분석 탭 종합/일반계좌ETF
+  // 토글 — 시세 재조회 없이 #myAllocScopeBody만 다시 그린다(finIncomeThresholdBtns와 같은 패턴).
+  const allocScopeBtns = document.getElementById("allocScopeBtns");
+  if (allocScopeBtns) {
+    const renderAllocScope = () => {
+      const body = document.getElementById("myAllocScopeBody");
+      const scope = state.myAllocScope === "generalEtf" ? "generalEtf" : "all";
+      if (body) body.innerHTML = buildAllocCompositionHTML(scope === "generalEtf" ? perRow.filter(isGeneralEtfRow) : perRow);
+      allocScopeBtns.querySelectorAll("button").forEach((b) => {
+        b.classList.toggle("active", b.dataset.scope === scope);
+      });
+    };
+    allocScopeBtns.querySelectorAll("button").forEach((b) => {
+      b.addEventListener("click", () => { state.myAllocScope = b.dataset.scope; renderAllocScope(); });
+    });
+    renderAllocScope();
   }
 
   // A74(2026-09-02 사용자 요청): 금융소득종합과세 기준액 2,000만원/1,000만원 토글 —
