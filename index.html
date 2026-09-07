@@ -2231,6 +2231,19 @@ const MY_ASSETS_CHANGELOG_KEY = "my_assets_changelog_v1";
 const MY_ASSETS_WATCHLIST_KEY = "my_assets_watchlist_v1"; // A10 📡 시그널 탭 워치리스트, 최대 300건, A3b/c: 폼 채우기·가져오기 시 변경 이력
 const MY_SIGNAL_DECISIONS_KEY = "my_signal_decisions_v1"; // A14 트레이드플랜 결정메모(승인/보류/거부), 최대 200건
 const MY_ASSETS_GOALS_KEY = "my_assets_goals_v1"; // A44 🎯 종목별 목표주식수 추적([{symbol, targetQty}])
+/* A90(2026-09-07 사용자 요청 "세금탭 신설 + 자사주 수령·특별배당 시뮬레이션"):
+   ─ shareGrants: 앞으로 받을 자사주(RSU·성과급 주식 등) 수령 예정.
+     [{symbol, account, month:"YYYY-MM", qty}] — 수령 시점부터 그 주식도 배당을 받으므로
+     연도별 배당소득 추정에 반드시 들어가야 한다. 보유 종목행(qty)과 섞지 않는 이유:
+     아직 받지 않은 주식이라 평가액·수익률에 들어가면 지금 자산이 부풀려진다.
+   ─ specialDividends: 특별배당 "추정치". [{symbol, year, dps, recordMonth, note}]
+     확정 공시가 아니라 언론·증권사 추정이므로 confirmedDps(실확)와 절대 섞지 않는다 —
+     이 값은 오직 세금탭의 연도별 한도 시뮬레이션에서만 쓴다. */
+const MY_SHARE_GRANTS_KEY = "my_share_grants_v1";
+const MY_SPECIAL_DIV_KEY = "my_special_div_v1";
+// A90: "📈 향후 예측"에서 자사주 예정분을 총 평가액에 얹어볼지 — 기본은 끔(현재 실보유만
+// 반영)이라 평소 화면 숫자는 안 흔들리고, 눌렀을 때만 예정분이 더해진 미래 전망치로 바뀐다.
+const MY_INCLUDE_GRANTS_KEY = "my_assets_include_grants_v1"; // "1"이면 포함
 /* A45: 직접입력(manual) 모드에서 "현재 종목수익률"을 계산할 때 쓰는 기본 조회기간(개월).
    종목별 실적 모드는 사용자가 고른 1/3/6/12를 쓰지만, 직접입력 모드는 고를 기간이 없어
    1년치를 표준으로 삼는다(단기 등락을 연율화하면 과장되는 문제를 피하려는 선택). */
@@ -2616,6 +2629,10 @@ function serializeMyAssets() {
     expectedDivYield: (document.getElementById("myExpectedDivYield") || {}).value || "",
     returnMode: document.getElementById("myReturnMode").value,
     livingExpense: parseFloat(document.getElementById("myLivingExpense").value) || 0,
+    // A90: 세금현황 탭의 연금 절세 넛지 계산용. 입력칸이 그 탭에서만(다시 그릴 때마다) 렌더되므로
+    // DOM이 아니라 state를 원본으로 삼는다(myFinIncomeThreshold와 같은 패턴) — 입력 이벤트에서
+    // state.myBirthYear를 갱신하고 saveMyAssets()를 호출한다.
+    birthYear: state.myBirthYear || "",
     inflationOn: document.getElementById("myInflationOn") ? document.getElementById("myInflationOn").checked : false,
     inflationRate: document.getElementById("myInflationRate") ? document.getElementById("myInflationRate").value : "",
     // A52: 계좌 드롭다운 선택지 — 명시적으로 세팅된 적 있으면(가져온 JSON에 accounts가
@@ -2632,7 +2649,30 @@ function serializeMyAssets() {
     watchlist: (() => { try { return JSON.parse(localStorage.getItem(MY_ASSETS_WATCHLIST_KEY) || "[]"); } catch (e) { return []; } })(),
     signalDecisions: (() => { try { return JSON.parse(localStorage.getItem(MY_SIGNAL_DECISIONS_KEY) || "[]"); } catch (e) { return []; } })(),
     goals: (() => { try { return JSON.parse(localStorage.getItem(MY_ASSETS_GOALS_KEY) || "[]"); } catch (e) { return []; } })(),
+    // A90: 세금탭의 자사주 수령 예정·특별배당 추정 — 내보내기/가져오기로 기기 간 이어지게 한다
+    shareGrants: readShareGrants(),
+    specialDividends: readSpecialDivs(),
   };
+}
+
+/* A90: 두 목록은 화면 폼이 아니라 localStorage가 원본이다(세금탭에서만 편집).
+   깨진 값이 들어와도 렌더가 멈추지 않도록 항상 배열로 정규화해서 돌려준다. */
+/* symbol/month이 빈 값이면 걸러내지 않는다 — "+ 행 추가" 버튼이 채워 넣는 빈 행이 바로 그
+   상태라, 여기서 거르면 사용자가 입력칸에 타이핑할 기회도 없이 방금 누른 행이 사라진다
+   (2026-09-07 실측: 클릭해도 표가 안 늘어나는 것처럼 보이는 버그였음). 계산 쪽(qtyAt 등)은
+   symbol/month가 비면 어차피 어느 해에도 안 걸리므로 안전하다 — 걸러야 할 건 배열이 아닌
+   값·null 같은 완전히 깨진 항목뿐이다. */
+function readShareGrants() {
+  try {
+    const v = JSON.parse(localStorage.getItem(MY_SHARE_GRANTS_KEY) || "[]");
+    return Array.isArray(v) ? v.filter((g) => g && typeof g === "object") : [];
+  } catch (e) { return []; }
+}
+function readSpecialDivs() {
+  try {
+    const v = JSON.parse(localStorage.getItem(MY_SPECIAL_DIV_KEY) || "[]");
+    return Array.isArray(v) ? v.filter((s) => s && typeof s === "object") : [];
+  } catch (e) { return []; }
 }
 
 function saveMyAssets() {
@@ -2710,6 +2750,11 @@ function applyMyAssets(data) {
   if (Array.isArray(data.watchlist) && data.watchlist.length) localStorage.setItem(MY_ASSETS_WATCHLIST_KEY, JSON.stringify(data.watchlist));
   if (Array.isArray(data.signalDecisions) && data.signalDecisions.length) localStorage.setItem(MY_SIGNAL_DECISIONS_KEY, JSON.stringify(data.signalDecisions.slice(0, 200)));
   if (Array.isArray(data.goals) && data.goals.length) localStorage.setItem(MY_ASSETS_GOALS_KEY, JSON.stringify(data.goals));
+  /* A90: 자사주 수령·특별배당 추정도 복원한다. 다른 이력들과 달리 **빈 배열도 그대로 반영**한다 —
+     "이 종목 자사주 계획 없어졌다"고 지워서 내보낸 파일을 가져왔는데 옛 목록이 되살아나면
+     시뮬레이션이 조용히 틀어지기 때문(9/7 taxRatio 사건과 같은 계열의 함정). */
+  if (Array.isArray(data.shareGrants)) localStorage.setItem(MY_SHARE_GRANTS_KEY, JSON.stringify(data.shareGrants));
+  if (Array.isArray(data.specialDividends)) localStorage.setItem(MY_SPECIAL_DIV_KEY, JSON.stringify(data.specialDividends));
   document.getElementById("myAssetRows").innerHTML = "";
   for (const r of data.rows) {
     // 구버전(확정 월배당 총액) 데이터는 주당 DPS로 1회 변환
@@ -2724,6 +2769,7 @@ function applyMyAssets(data) {
   { const el = document.getElementById("myExpectedDivYield"); if (el) el.value = data.expectedDivYield || ""; }
   document.getElementById("myReturnMode").value = data.returnMode || "manual";
   document.getElementById("myLivingExpense").value = data.livingExpense || "";
+  state.myBirthYear = data.birthYear || ""; // A90 — 세금현황 탭 렌더 시 입력칸에 채워진다
   if (document.getElementById("myInflationOn")) document.getElementById("myInflationOn").checked = !!data.inflationOn;
   if (document.getElementById("myInflationRate") && data.inflationRate) document.getElementById("myInflationRate").value = data.inflationRate;
   updateInflationUI();
@@ -3163,14 +3209,156 @@ function buildSelfSuffHTML(accountMap, contributions) {
     </div>`;
 }
 
-/* A74(2026-09-02 사용자 요청): 금융소득종합과세 도달률 — "주식 배당금만 기반해서 예측"한다는
-   사용자 확정에 따라 이자소득 등 다른 금융소득은 합산하지 않는다. 2,000만원/1,000만원 버튼
-   전환 시 패널 전체를 다시 그리지 않고 이 블록만 갱신할 수 있도록 별도 함수로 분리
-   (myAssetTrendYearBtns 등과 같은 패턴).
-   A75(2026-09-02 사용자 보고 "과세대상 재검토.. 국내 ETF배당금이라 과세대상 금액이 낮음"):
-   taxRatio 미실측 종목(주로 국내 커버드콜 ETF)은 보수적으로 100% 과세 가정되는데, 그 가정분을
-   확정치와 같은 빨간 숫자로 보여주면 "종합과세 임박"으로 오인한다. unmeasured로 미실측분을
-   따로 받아 캡션·상세 목록으로 분리 표시한다. */
+/* A90(2026-09-07 사용자 요청): 향후 5년 연도별 배당소득·종합과세 한도 시뮬레이션.
+   "일반계좌 주식을 안 팔고 계속 보유"할 때, 자사주를 받아 수량이 늘고 특별배당까지 겹치면
+   금융소득 종합과세 2,000만원 선을 언제 넘는가를 본다.
+
+   왜 연도별인가 — 종합과세는 **연간 합산**이라 월 기준 화면(A74)으로는 특별배당처럼 한 해에
+   한 번 크게 들어오는 돈을 볼 수 없다. 특별배당은 그 해에만 얹히고, 자사주는 받은 해부터
+   영구히 수량을 늘린다 — 둘의 시간축이 달라서 연도별로 펼쳐야 판단이 된다.
+
+   계산 원칙(지어내지 않기):
+   - **일반계좌만** 분자에 넣는다. 연금·IRP·DC는 이연, ISA는 분리과세라 종합과세 대상이 아니다.
+   - 과세표준은 taxRatio 실측값을 그대로 쓴다(미실측이면 100% 보수 가정 — A74와 동일 규칙).
+   - 자사주는 **받는 달 이후의 기준일부터만** 배당을 받는다. 6월 수령분이 그해 1월 배당까지
+     소급해 받는 것처럼 계산하면 첫해가 부풀려진다.
+   - 특별배당은 **확정 공시가 아니라 추정**이므로 confirmedDps와 분리해 별도 입력으로 받고,
+     화면에서도 "추정"으로 표시한다. 추정을 지우면 그 해 특별배당은 0으로 계산된다. */
+function buildTaxProjectionHTML(perRow, grants, specials, threshold, scenario) {
+  const fmtW = (v) => fmtPrice(v, "KRW");
+  const thisYear = Number(todayStr().slice(0, 4));
+  const years = [0, 1, 2, 3, 4, 5].map((i) => thisYear + i);
+
+  // 일반계좌(=종합과세 대상) 보유분만 추린다
+  const genRows = (perRow || []).filter((p) => p.acctTaxType === "general");
+  const genSymbols = new Set(genRows.map((p) => p.symbol));
+
+  // 자사주 수령분: 일반계좌로 들어오는 것만 종합과세 대상이 된다
+  const genGrants = (grants || []).filter((g) => accountTaxType(g.account) === "general" && Number(g.qty) > 0);
+
+  const nameOf = (sym) => {
+    const hit = (perRow || []).find((p) => p.symbol === sym);
+    if (hit && hit.meta) return hit.meta.name;
+    const meta = state.metaBySymbol && state.metaBySymbol.get(sym);
+    return meta ? meta.name : sym;
+  };
+  // 미실측이면 100% 가정(A74와 같은 규칙) — 자사주로 새로 들어오는 종목도 같은 기준
+  const taxRatioOf = (sym) => {
+    const hit = (perRow || []).find((p) => p.symbol === sym && p.taxRatioKnown);
+    return hit ? hit.taxRatioVal : 1;
+  };
+
+  /* 그 해에 이 종목이 "일반계좌에서" 몇 주였는지 — 기준월(recordMonth)까지 받은 자사주를 더한다.
+     지금 보유분은 이미 갖고 있으므로 항상 포함, 자사주는 수령월 <= 기준월인 것만 포함. */
+  const qtyAt = (sym, year, recordMonth) => {
+    let q = genRows.filter((p) => p.symbol === sym).reduce((s, p) => s + p.qty, 0);
+    for (const g of genGrants) {
+      if (g.symbol !== sym) continue;
+      const gy = Number(String(g.month).slice(0, 4));
+      const gm = Number(String(g.month).slice(5, 7));
+      // qtyLow: 조건부 자사주의 "조건 미달 시" 수량(예: 성과조건 미충족으로 절반만 배정).
+      // 시나리오 토글이 "low"면 그쪽을 쓴다 — 없으면 기본 qty를 그대로 쓴다.
+      const useQty = scenario === "low" && g.qtyLow != null && g.qtyLow !== "" ? Number(g.qtyLow) : Number(g.qty);
+      if (gy < year || (gy === year && gm <= recordMonth)) q += useQty;
+    }
+    return q;
+  };
+
+  // 시뮬레이션 대상 종목 = 지금 일반계좌 보유 + 앞으로 자사주로 들어올 종목
+  const allSymbols = [...new Set([...genSymbols, ...genGrants.map((g) => g.symbol)])];
+  const unregistered = []; // 배당이 등록 안 된 개별주 — 0으로 조용히 처리하지 않고 화면에 밝힌다
+
+  const rows = years.map((year) => {
+    let regular = 0, special = 0;
+    const detail = [];
+    for (const sym of allSymbols) {
+      const ratio = taxRatioOf(sym);
+      const sample = genRows.find((p) => p.symbol === sym);
+      let symRegular = 0;
+      if (sample) {
+        /* A90 수정(2026-09-07 사용자 지적 "삼성전자 월배당 적용은 오류"):
+           개별주(assetType==="stock")는 **분기배당·특별배당만** 받는다. 종전엔 payPeriod가
+           "분기말"이 아니면 월배당 경로(monthlyDiv÷qty×12)로 빠졌는데, SK하이닉스처럼
+           payPeriod가 비어 있는 개별주가 여기 걸리면 분기배당이 월배당으로 12배 계산된다.
+           개별주는 분기 경로로 강제하고, 배당 미등록이면 **0으로 채우지 말고 목록에 남겨
+           화면에 "배당 미등록"으로 밝힌다**(지어내지 않기). */
+        const isStock = sample.meta && sample.meta.assetType === "stock";
+        if (isStock) {
+          if (sample.confirmedDps > 0) {
+            for (const m of QUARTER_RECORD_MONTHS) symRegular += qtyAt(sym, year, m) * sample.confirmedDps;
+          } else if (year === years[0] && !unregistered.some((u) => u.sym === sym)) {
+            unregistered.push({ sym, name: nameOf(sym), qty: qtyAt(sym, year, 12) });
+          }
+        } else if (sample.payPeriod === "분기말") {
+          for (const m of QUARTER_RECORD_MONTHS) symRegular += qtyAt(sym, year, m) * (sample.confirmedDps || 0);
+        } else if (sample.monthlyDiv > 0) {
+          // 월배당은 ETF만 — 12개월 각각의 시점 수량으로(자사주가 중간에 들어오면 그 달부터)
+          const perShare = sample.qty > 0 ? sample.monthlyDiv / sample.qty : 0;
+          for (let m = 1; m <= 12; m++) symRegular += qtyAt(sym, year, m) * perShare;
+        }
+      }
+      // 특별배당(추정) — 그 해·그 종목에 등록된 것만
+      let symSpecial = 0;
+      for (const s of (specials || [])) {
+        if (s.symbol !== sym || Number(s.year) !== year) continue;
+        const rm = Number(s.recordMonth) || 12;
+        symSpecial += qtyAt(sym, year, rm) * (Number(s.dps) || 0);
+      }
+      regular += symRegular * ratio;
+      special += symSpecial * ratio;
+      if (symRegular + symSpecial > 0) {
+        detail.push({ sym, name: nameOf(sym), regular: symRegular, special: symSpecial, ratio, qty: qtyAt(sym, year, 12) });
+      }
+    }
+    const total = regular + special;
+    return { year, regular, special, total, pct: threshold > 0 ? (total / threshold) * 100 : 0, detail };
+  });
+
+  const yearRowsHTML = rows.map((r) => {
+    const over = r.total > threshold;
+    return `<tr>
+      <td style="text-align:left;">${r.year}${r.year === thisYear ? " <span style=\"font-size:11px; color:var(--text-muted);\">(올해)</span>" : ""}</td>
+      <td>${fmtW(r.regular)}</td>
+      <td style="color:${r.special > 0 ? "var(--critical)" : "var(--text-muted)"}">${r.special > 0 ? fmtW(r.special) : "—"}</td>
+      <td style="font-weight:700;">${fmtW(r.total)}</td>
+      <td style="color:${over ? "var(--critical)" : r.pct >= 80 ? "var(--critical)" : "var(--good)"}; font-weight:700;">${r.pct.toFixed(1)}%</td>
+      <td style="color:${over ? "var(--critical)" : "var(--good)"}">${over ? "초과 " + fmtW(r.total - threshold) : fmtW(threshold - r.total)}</td>
+    </tr>`;
+  }).join("");
+
+  const firstOver = rows.find((r) => r.total > threshold);
+  const peak = rows.reduce((a, b) => (b.total > a.total ? b : a), rows[0]);
+
+  // 최대치 해의 종목별 내역 — "무엇이 한도를 밀어올리는지"를 바로 보게 한다
+  const peakDetailHTML = peak.detail.sort((a, b) => (b.regular + b.special) - (a.regular + a.special)).map((d) => `<tr>
+      <td style="text-align:left;">${d.name}<br><span style="font-size:11px; color:var(--text-muted);">${d.sym} · ${d.qty.toLocaleString()}주</span></td>
+      <td>${fmtW(d.regular)}</td>
+      <td style="color:${d.special > 0 ? "var(--critical)" : "var(--text-muted)"}">${d.special > 0 ? fmtW(d.special) : "—"}</td>
+      <td>${(d.ratio * 100).toFixed(2)}%</td>
+      <td style="font-weight:700;">${fmtW((d.regular + d.special) * d.ratio)}</td>
+    </tr>`).join("");
+
+  return `
+    <div style="overflow-x:auto;">
+    <table class="account-summary-table">
+      <thead><tr><th>연도</th><th>정규배당</th><th>특별배당(추정)</th><th>과세대상 합계</th><th>도달률</th><th>${"여유/초과"}</th></tr></thead>
+      <tbody>${yearRowsHTML}</tbody>
+    </table>
+    </div>
+    <p class="stat-sub" style="margin-top:6px;">기준액 <b>${fmtW(threshold)}</b> 대비. <b>일반계좌 보유분만</b> 넣었습니다 — 연금저축·IRP·DC(이연)와 ISA(분리과세)는 종합과세 대상이 아닙니다. 과세표준 비율은 실측값을 쓰고, 미실측 종목은 보수적으로 100%로 잡습니다.</p>
+    ${unregistered.length ? `<p class="stat-sub" style="color:var(--critical);">⚠️ 배당 미등록 개별주 ${unregistered.length}건은 이 시뮬레이션에서 <b>0원으로 빠졌습니다</b>(있는 배당을 지어내 채우지 않음) — 실제로는 이보다 더 걷힐 수 있습니다: ${unregistered.map((u) => `${u.name}(${u.sym}, ${u.qty.toLocaleString()}주)`).join(", ")}. 종목행에 confirmedDps·payPeriod를 등록하면 반영됩니다.</p>` : ""}
+    ${firstOver
+      ? `<p class="stat-sub" style="color:var(--critical); font-weight:700;">⚠️ ${firstOver.year}년에 기준액을 ${fmtW(firstOver.total - threshold)} 초과합니다 — 초과분이 다른 소득과 합산돼 누진과세(6.6~49.5%)됩니다.</p>`
+      : `<p class="stat-sub" style="color:var(--good);">✅ 5년 내 기준액 초과 없음 — 최대치는 ${peak.year}년 ${fmtW(peak.total)}(도달률 ${peak.pct.toFixed(1)}%)입니다.</p>`}
+    <p class="chart-title" style="margin-top:16px;">📊 ${peak.year}년(최대치) 종목별 내역</p>
+    <div style="overflow-x:auto;">
+    <table class="account-summary-table">
+      <thead><tr><th>종목</th><th>정규배당</th><th>특별배당(추정)</th><th>과세표준비율</th><th>과세대상</th></tr></thead>
+      <tbody>${peakDetailHTML || `<tr><td colspan="5" class="stat-sub">일반계좌 배당 종목이 없습니다.</td></tr>`}</tbody>
+    </table>
+    </div>`;
+}
+
 /* A89(2026-09-07 사용자 요청 "세금 부분 접기후 누르면 상세 과세부분이 표시"): 세금 블록을
    접어두고, 펼쳤을 때 "왜 이 금액이 나왔는지"를 계좌·종목 단위로 볼 수 있게 한다.
 
@@ -3236,6 +3424,147 @@ function buildTaxDetailHTML(perRow) {
     <p class="stat-sub" style="margin-top:6px;">DC·연금저축·IRP는 배당 시점에 세금이 붙지 않아(이연) 이 표에서 뺐고, ISA는 한도 내 비과세로 가정해 원천징수가 0원입니다. <b>"미실측·가정"이 빨갛게 뜬 종목</b>은 실제보다 세금이 과대계상된 상태라, 노션에서 그 달 과세표준을 실측해 import JSON의 <code>taxRatio</code>에 넣으면 줄어듭니다.</p>` : ""}`;
 }
 
+/* A90(2026-09-07 사용자 요청 "연금저축 절세, DC IRP 절세방법 고려해서 연금개시 추천일 넛지"):
+   연금계좌 세금은 배당(A74)과 축이 완전히 다르다 — 배당은 "지금 얼마 걷히나"이지만 연금은
+   "언제 개시해서 몇 년째에 얼마씩 빼느냐"가 세율을 바꾼다. 두 트랙을 반드시 나눈다:
+   - DC·IRP(퇴직급여, 이연) → 퇴직소득세 × 70%(1~10년차) / **60%(11년차~, 40% 감면)**.
+     1,500만원 한도와 무관 — 분리과세라 상한 자체가 없다.
+   - 연금저축(세액공제 재원) → 연금소득세 3.3~5.5%. **사적연금 합계 연 1,500만원**을 넘으면
+     저율 분리과세가 깨지고 종합과세 또는 16.5% 분리과세 중 선택해야 한다.
+   "세금미공제" 계좌(세액공제 안 받은 원금)는 애초에 인출 시 과세 대상이 아니라 별도로 뺀다.
+
+   연금수령한도 = 평가액 ÷ (11 − 연차) × 120%, 11년차부터 한도 소멸(전액 인출 가능) — 국세청·
+   미래에셋 자료 공통. 연차 기산은 "최초로 연금수령 할 수 있는 날이 속하는 과세기간"이 1년차이고
+   실무상 금융기관에 **개시 신청**을 해야 그 시계가 돈다(2026-09-07 WebSearch로 확인, 소스는
+   화면 캡션에 남긴다) — 그래서 "55세에 개시 신청 + 소액 인출"이 절세의 시작점이다.
+
+   출생연도가 없으면 개시연도·11년차를 지어내지 않고 입력을 유도하는 안내만 낸다. */
+function buildPensionNudgeHTML(accountMap, birthYear) {
+  const fmtW = (v) => fmtPrice(v, "KRW");
+  let dcIrpValue = 0, pensionValue = 0, taxFreeValue = 0;
+  const dcIrpAccounts = [], pensionAccounts = [];
+  for (const [acc, g] of accountMap) {
+    const t = accountTaxType(acc);
+    if (t === "dc" || t === "irp") { dcIrpValue += g.value; dcIrpAccounts.push(acc); }
+    else if (t === "pension") {
+      if (acc.includes("세금미공제")) taxFreeValue += g.value;
+      else { pensionValue += g.value; pensionAccounts.push(acc); }
+    }
+  }
+  if (dcIrpValue + pensionValue + taxFreeValue <= 0) {
+    return `<p class="compare-empty">DC·IRP·연금저축 계좌 보유분이 없어 연금 넛지를 계산할 수 없습니다.</p>`;
+  }
+
+  const limitTable = (value, label) => {
+    const rows = [1, 3, 5, 10].map((yr) => `<tr><td>${yr}년차</td><td>${fmtW(value / (11 - yr) * 1.2)}</td></tr>`).join("");
+    return `<p class="stat-sub" style="margin-top:10px; font-weight:700;">${label} — 평가액 ${fmtW(value)}</p>
+      <div style="overflow-x:auto;"><table class="account-summary-table" style="font-size:12.5px;">
+        <thead><tr><th>연차</th><th>연금수령한도(그 해 최대 인출)</th></tr></thead>
+        <tbody>${rows}<tr><td>11년차~</td><td style="color:var(--good); font-weight:700;">한도 없음(전액 가능)</td></tr></tbody>
+      </table></div>`;
+  };
+
+  const by = Number(birthYear) > 1900 && Number(birthYear) < 2020 ? Number(birthYear) : null;
+  let timelineHTML = `<p class="compare-empty">출생연도를 입력하면 55세 개시 신청 권장 연도와 11년차(퇴직소득세 40% 감면) 목돈 인출 권장 연도를 계산해 드립니다. 나이 없이 연차를 지어내지 않습니다.</p>`;
+  if (by) {
+    const age55Year = by + 55;
+    const year11 = age55Year + 10; // 개시연도가 1년차이므로 11년차는 개시연도+10
+    const thisYear = Number(todayStr().slice(0, 4));
+    timelineHTML = `
+      <div class="stat-row">
+        <div class="stat">
+          <p class="stat-label">📍 개시 신청 권장</p>
+          <p class="stat-value">${age55Year}년${age55Year <= thisYear ? " (도달)" : ""}</p>
+          <p class="stat-sub">만 55세. 이때 연금계좌에서 <b>최소액(예: 연 1만원)이라도 인출 신청</b>해야 연차 시계가 시작됩니다(신청 없이는 기산 안 됨).</p>
+        </div>
+        <div class="stat">
+          <p class="stat-label">🎯 목돈 인출 권장</p>
+          <p class="stat-value">${year11}년</p>
+          <p class="stat-sub">11년차 — 퇴직소득세 <b>40% 감면</b> + 연금수령한도 소멸(전액 인출 가능)이 겹치는 시점입니다.</p>
+        </div>
+      </div>
+      <p class="stat-sub" style="color:var(--critical); margin-top:6px;">⚠️ 연금을 개시하면 그만큼 DC·연금저축에서 돈이 빠져나가 <b>지금의 월배당 재투자 구조가 줄어듭니다</b> — 세금만 보고 결정하지 말고 「💰 월배당현황」의 계좌별 배당과 함께 판단하세요.</p>`;
+  }
+
+  const annualIfSplit10 = pensionValue / 10;
+  const over1500 = annualIfSplit10 > 15_000_000;
+
+  return `
+    <p class="chart-title" style="margin-top:4px;">🏛️ 퇴직연금(DC·IRP) — 연차가 핵심</p>
+    <p class="stat-sub">재원: ${dcIrpAccounts.join(", ") || "—"}. 이연된 <b>퇴직소득세</b>가 연차에 따라 70%(1~10년차) → <b>60%(11년차~, 40%감면)</b>로 줄어듭니다. 1,500만원 한도와는 무관합니다(분리과세).</p>
+    ${limitTable(dcIrpValue, "DC+IRP 합계")}
+
+    <p class="chart-title" style="margin-top:20px;">💳 연금저축 — 연 1,500만원이 핵심</p>
+    <p class="stat-sub">재원: ${pensionAccounts.join(", ") || "—"}. <b>연금소득세 3.3~5.5%</b>(저율)이지만, 사적연금 수령액 합계가 연 1,500만원을 넘으면 저율과세가 깨지고 종합과세 또는 16.5% 분리과세 중 선택해야 합니다.</p>
+    ${limitTable(pensionValue, "연금저축 합계")}
+    <p class="stat-sub" style="margin-top:8px; color:${over1500 ? "var(--critical)" : "var(--good)"};">${over1500
+      ? `⚠️ 평가액 ${fmtW(pensionValue)}을 10년에 걸쳐 균등 인출하면 연 ${fmtW(annualIfSplit10)}로 <b>1,500만원을 초과</b>합니다 — 더 오래(예: 11년 이상) 나눠 받아야 저율과세를 유지합니다.`
+      : `✅ 평가액 ${fmtW(pensionValue)}을 10년에 걸쳐 균등 인출하면 연 ${fmtW(annualIfSplit10)}로 1,500만원 이내입니다.`}</p>
+
+    ${taxFreeValue > 0 ? `<p class="chart-title" style="margin-top:20px;">🆓 세금미공제 연금저축 — 비과세</p>
+    <p class="stat-sub">평가액 <b>${fmtW(taxFreeValue)}</b>은 세액공제를 받지 않은 원금이라 인출해도 과세 대상이 아닙니다. <b>가장 먼저 꺼내 써도 되는 돈</b>입니다.</p>` : ""}
+
+    <p class="chart-title" style="margin-top:20px;">📅 개시 시점 넛지</p>
+    <div class="controls" style="margin-bottom:8px;">
+      <input type="number" id="myBirthYear" class="portfolio-weight" style="width:110px" min="1940" max="2015" placeholder="출생연도(예: 1975)" value="${birthYear || ""}">
+    </div>
+    ${timelineHTML}
+    <p class="stat-sub" style="margin-top:8px; color:var(--text-muted);">근거: 연금수령연차 감면율(70%→60%)·1,500만원 분리과세 기준은 국세청·미래에셋투자와연금센터·삼일PwC 자료(2026-09-07 조회). 연차 기산이 개시 신청 시점에 좌우되는지는 실무 확인이 필요해 <b>가입 금융기관에 재확인을 권장</b>합니다.</p>`;
+}
+
+/* A90: 자사주 수령 예정·특별배당 추정 편집표. myContribRows(계좌별 월납입)와 같은 결의
+   패턴 — 필드 하나 바뀔 때마다 배열 전체를 localStorage에 다시 쓰고 saveMyAssets()+
+   renderMyAssets()로 세금현황 탭 전체를 다시 그린다(이 두 목록은 작아서 비용이 크지 않다).
+   행 삭제는 즉시 반영, 행 추가는 빈 값 하나를 배열 끝에 붙인다. */
+function buildShareGrantsHTML(grants) {
+  const rows = (grants || []).map((g, i) => `<tr data-idx="${i}">
+      <td><input type="text" class="grant-field portfolio-weight" style="width:110px" data-field="symbol" value="${g.symbol || ""}" placeholder="005930.KS"></td>
+      <td><input type="text" class="grant-field portfolio-weight" style="width:120px" data-field="account" value="${g.account || ""}" placeholder="계좌명"></td>
+      <td><input type="month" class="grant-field portfolio-weight" style="width:130px" data-field="month" value="${g.month || ""}"></td>
+      <td><input type="number" class="grant-field portfolio-weight" style="width:80px" data-field="qty" value="${g.qty ?? ""}" placeholder="수량"></td>
+      <td><input type="number" class="grant-field portfolio-weight" style="width:90px" data-field="qtyLow" value="${g.qtyLow ?? ""}" placeholder="조건미달시"></td>
+      <td><button type="button" class="btn-action grant-del-btn" data-idx="${i}" style="padding:4px 8px; font-size:11px;">삭제</button></td>
+    </tr>`).join("");
+  return `<div style="overflow-x:auto;">
+    <table class="account-summary-table" id="myGrantsTable">
+      <thead><tr><th>종목코드</th><th>계좌</th><th>수령월</th><th>수량</th><th>조건미달시 수량(선택)</th><th></th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="6" class="stat-sub">등록된 자사주 수령 예정이 없습니다.</td></tr>`}</tbody>
+    </table>
+    </div>
+    <div class="action-row" style="margin-top:6px;">
+      <button type="button" id="myGrantAddBtn" class="btn-action">+ 행 추가</button>
+    </div>
+    <p class="stat-sub" style="margin-top:4px;">받는 달 이후 기준일부터만 그해 배당에 반영됩니다. "조건미달시 수량"을 채우면 아래 시나리오 토글로 두 경우를 비교할 수 있습니다.</p>`;
+}
+function buildSpecialDivHTML(specials) {
+  const rows = (specials || []).map((s, i) => `<tr data-idx="${i}">
+      <td><input type="text" class="special-field portfolio-weight" style="width:110px" data-field="symbol" value="${s.symbol || ""}" placeholder="005930.KS"></td>
+      <td><input type="number" class="special-field portfolio-weight" style="width:80px" data-field="year" value="${s.year ?? ""}" placeholder="2026"></td>
+      <td><input type="number" class="special-field portfolio-weight" style="width:90px" data-field="dps" value="${s.dps ?? ""}" placeholder="주당원"></td>
+      <td><input type="number" class="special-field portfolio-weight" style="width:70px" data-field="recordMonth" value="${s.recordMonth ?? ""}" placeholder="기준월" min="1" max="12"></td>
+      <td><input type="text" class="special-field portfolio-weight" style="width:160px" data-field="note" value="${s.note || ""}" placeholder="근거·출처"></td>
+      <td><button type="button" class="btn-action special-del-btn" data-idx="${i}" style="padding:4px 8px; font-size:11px;">삭제</button></td>
+    </tr>`).join("");
+  return `<div style="overflow-x:auto;">
+    <table class="account-summary-table" id="mySpecialDivTable">
+      <thead><tr><th>종목코드</th><th>연도</th><th>주당 추정액</th><th>기준월</th><th>근거·출처</th><th></th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="6" class="stat-sub">등록된 특별배당 추정이 없습니다.</td></tr>`}</tbody>
+    </table>
+    </div>
+    <div class="action-row" style="margin-top:6px;">
+      <button type="button" id="mySpecialAddBtn" class="btn-action">+ 행 추가</button>
+    </div>
+    <p class="stat-sub" style="margin-top:4px;">확정 공시가 아니라 <b>추정치</b>입니다 — 기사·증권사 리포트 근거를 "근거·출처"에 남기고, 확정되면 이 표를 지우고 종목행의 <code>confirmedDps</code>(실확)로 옮기세요.</p>`;
+}
+
+/* A74(2026-09-02 사용자 요청): 금융소득종합과세 도달률 — "주식 배당금만 기반해서 예측"한다는
+   사용자 확정에 따라 이자소득 등 다른 금융소득은 합산하지 않는다. 2,000만원/1,000만원 버튼
+   전환 시 패널 전체를 다시 그리지 않고 이 블록만 갱신할 수 있도록 별도 함수로 분리
+   (myAssetTrendYearBtns 등과 같은 패턴).
+   A75(2026-09-02 사용자 보고 "과세대상 재검토.. 국내 ETF배당금이라 과세대상 금액이 낮음"):
+   taxRatio 미실측 종목(주로 국내 커버드콜 ETF)은 보수적으로 100% 과세 가정되는데, 그 가정분을
+   확정치와 같은 빨간 숫자로 보여주면 "종합과세 임박"으로 오인한다. unmeasured로 미실측분을
+   따로 받아 캡션·상세 목록으로 분리 표시한다. */
 function buildFinIncomeBodyHTML(taxableIncome, threshold, unmeasured) {
   const fmtW = (v) => fmtPrice(v, "KRW");
   const pct = threshold > 0 ? (taxableIncome / threshold) * 100 : 0;
@@ -6582,10 +6911,9 @@ async function renderMyAssets() {
      묻히므로, 접힌 상태의 summary 줄에 핵심 3개(인출 가능·원천징수·종합과세 도달률)를 실어
      펼치지 않아도 읽히게 한다. 펼치면 계좌별·종목별 과세 상세까지 나온다(buildTaxDetailHTML). */
   const finPctNow = finThreshold > 0 ? (totalAnnualTaxableIncome / finThreshold) * 100 : 0;
+  // A90(2026-09-07 사용자 요청): "🧾 세금현황" 탭으로 이동 — 더 이상 접어둘 필요 없다(탭
+  // 자체가 안 눌러도 안 보이는 접힌 상태이므로 details 래퍼를 걷어냈다).
   const taxSummaryHTML = `
-    <details class="collapse-box" style="margin-top:20px;">
-      <summary><span>🧾 세금 상세 (눌러서 펼치기)<br><span style="font-weight:400; font-size:12px; color:var(--text-muted);">💰 인출 가능 ${fmtW(totalReceivableNowDiv)} · 원천징수 ${fmtW(totalWithheldTax)} · 종합과세 ${finPctNow.toFixed(1)}%</span></span></summary>
-      <div class="collapse-body">
     <div class="stat-row">
       <div class="stat">
         <p class="stat-label">세전 예상 월배당</p>
@@ -6619,16 +6947,35 @@ async function renderMyAssets() {
     </div>
     <div id="finIncomeBody">${buildFinIncomeBodyHTML(totalAnnualTaxableIncome, finThreshold, unmeasuredTaxInfo)}</div>
 
-    ${buildTaxDetailHTML(perRow)}
-      </div>
-    </details>`;
+    ${buildTaxDetailHTML(perRow)}`;
+
+  // A90: 연도별 배당 시뮬레이션(자사주·특별배당 반영) + 연금 절세 넛지 — 세금현황 탭 전용.
+  const myShareGrants = readShareGrants();
+  const mySpecialDivs = readSpecialDivs();
+  const myGrantScenario = state.myGrantScenario === "low" ? "low" : "high";
+  const taxProjectionHTML = buildTaxProjectionHTML(perRow, myShareGrants, mySpecialDivs, finThreshold, myGrantScenario);
+  const shareGrantsHTML = buildShareGrantsHTML(myShareGrants);
+  const specialDivHTML = buildSpecialDivHTML(mySpecialDivs);
+  const pensionNudgeHTML = buildPensionNudgeHTML(accountMap, state.myBirthYear);
+
+  // A90(2번째 요청 "총자산에도 자사주 반영 버튼"): 지금 보유가 아니라 "받을 예정"인 몫이므로
+  // 기본은 끄고, 켰을 때만 현재가 기준 평가액에 더해 미래 전망치를 보여준다(qty 기준 —
+  // 조건미달 시나리오는 세금현황 탭의 시나리오 토글에서만 다룬다, 여기선 항상 기본 수량).
+  const includeGrantsInTotal = localStorage.getItem(MY_INCLUDE_GRANTS_KEY) === "1";
+  const grantProjectedValue = myShareGrants.reduce((s, g) => {
+    const hit = perRow.find((p) => p.symbol === g.symbol);
+    return hit ? s + Number(g.qty || 0) * hit.close : s;
+  }, 0);
+  const grantProjectedQty = myShareGrants.reduce((s, g) => s + Number(g.qty || 0), 0);
+  const displayTotalValue = includeGrantsInTotal ? totalValue + grantProjectedValue : totalValue;
 
   result.innerHTML = `
     <div class="stat-row" style="margin-top:14px;">
       <div class="stat stat-hero-card">
-        <p class="stat-label">총 평가액</p>
-        <p class="stat-hero" style="font-size:28px;">${fmtW(totalValue)}</p>
+        <p class="stat-label">총 평가액${includeGrantsInTotal ? ' <span style="color:var(--good); font-weight:400; font-size:11px;">(자사주 예정분 포함)</span>' : ""}</p>
+        <p class="stat-hero" style="font-size:28px;">${fmtW(displayTotalValue)}</p>
         ${totalProfit != null ? `<p class="stat-sub" style="color:${totalProfit >= 0 ? "var(--good)" : "var(--critical)"}">손익 ${totalProfit >= 0 ? "+" : ""}${fmtW(totalProfit)} (${((costedValue / totalCost - 1) * 100).toFixed(2)}%)</p>` : `<p class="stat-sub">매입단가 입력 시 손익 표시</p>`}
+        ${myShareGrants.length ? `<label style="font-size:11px; display:flex; align-items:center; gap:4px; margin-top:4px; cursor:pointer;"><input type="checkbox" id="myIncludeGrantsToggle"${includeGrantsInTotal ? " checked" : ""}> 📈 자사주 예정분(${grantProjectedQty.toLocaleString()}주 · ${fmtW(grantProjectedValue)}) 반영</label>` : ""}
       </div>
       <div class="stat">
         <p class="stat-label">예상 월배당 (확정 DPS 우선)</p>
@@ -6719,6 +7066,7 @@ async function renderMyAssets() {
       <button type="button" class="dash-tab-btn" data-tab="alloc">📊 비중분석</button>
       <button type="button" class="dash-tab-btn" data-tab="heatmap">🗺️ 비중 히트맵</button>
       <button type="button" class="dash-tab-btn" data-tab="divstatus">💰 월배당현황</button>
+      <button type="button" class="dash-tab-btn" data-tab="tax">🧾 세금현황</button>
       <button type="button" class="dash-tab-btn" data-tab="suff">⚖️ 자급률·월매수</button>
       <button type="button" class="dash-tab-btn" data-tab="divbasis">💹 배당기준·이력</button>
       <button type="button" class="dash-tab-btn" data-tab="benchmark">📊 지수비교</button>
@@ -6915,8 +7263,6 @@ async function renderMyAssets() {
       ${accountDivDonutHTML ? `<p class="chart-title">🥧 계좌별 월배당 비중</p>
       ${accountDivDonutHTML}` : ""}
 
-      ${taxSummaryHTML}
-
       ${accountDivHTML ? `<p class="chart-title" style="margin-top:20px;">🏦 계좌별 월배당</p>
       <div class="bar-list">${accountDivHTML}</div>` : ""}
 
@@ -6928,6 +7274,33 @@ async function renderMyAssets() {
 
       ${annualDivHTML ? `<p class="chart-title" style="margin-top:20px;">📅 연간 배당 히스토리</p>
       ${annualDivHTML}` : ""}
+    </div>
+
+    <div class="dash-panel" data-tab="tax" hidden>
+      <p class="chart-title">🧾 세금 상세</p>
+      ${taxSummaryHTML}
+
+      <p class="chart-title" style="margin-top:24px;">📊 연도별 종합과세 한도 (자사주·특별배당 반영)</p>
+      <div class="controls" style="margin-bottom:8px; flex-wrap:wrap; gap:8px 16px;">
+        <div id="taxProjThresholdBtns" class="seg">
+          <button type="button" data-threshold="20000000">2,000만원</button>
+          <button type="button" data-threshold="10000000">1,000만원</button>
+        </div>
+        ${myShareGrants.some((g) => g.qtyLow != null && g.qtyLow !== "") ? `<div id="myGrantScenarioBtns" class="seg">
+          <button type="button" data-scenario="high">조건 충족</button>
+          <button type="button" data-scenario="low">조건 미달</button>
+        </div>` : ""}
+      </div>
+      <div id="taxProjectionBody">${taxProjectionHTML}</div>
+
+      <p class="chart-title" style="margin-top:24px;">🎁 자사주 수령 예정</p>
+      <div id="myGrantsBody">${shareGrantsHTML}</div>
+
+      <p class="chart-title" style="margin-top:24px;">💵 특별배당 추정</p>
+      <div id="mySpecialDivBody">${specialDivHTML}</div>
+
+      <p class="chart-title" style="margin-top:24px;">🏛️ 연금 절세 넛지</p>
+      <div id="myPensionNudgeBody">${pensionNudgeHTML}</div>
     </div>
 
     <div class="dash-panel" data-tab="suff" hidden>
@@ -7278,22 +7651,146 @@ async function renderMyAssets() {
     renderAllocScope();
   }
 
-  // A74(2026-09-02 사용자 요청): 금융소득종합과세 기준액 2,000만원/1,000만원 토글 —
-  // 시세 재조회 없이 #finIncomeBody만 다시 그린다(myDivHistoryMode와 같은 패턴).
+  // A74/A90(2026-09-07 확장): 금융소득종합과세 기준액 2,000만원/1,000만원 토글 — 월배당현황의
+  // finIncomeBody와 세금현황 탭의 taxProjectionBody가 같은 state.myFinIncomeThreshold를 공유하므로,
+  // 어느 쪽 버튼을 눌러도 둘 다 함께 갱신해 서로 어긋나지 않게 한다. 시세 재조회 없이 두 body만 다시 그린다.
   const finIncomeThresholdBtns = document.getElementById("finIncomeThresholdBtns");
-  if (finIncomeThresholdBtns) {
+  const taxProjThresholdBtns = document.getElementById("taxProjThresholdBtns");
+  const myGrantScenarioBtns = document.getElementById("myGrantScenarioBtns");
+  if (finIncomeThresholdBtns || taxProjThresholdBtns || myGrantScenarioBtns) {
     const renderFinIncome = () => {
       const body = document.getElementById("finIncomeBody");
       const threshold = state.myFinIncomeThreshold || 20000000;
       if (body) body.innerHTML = buildFinIncomeBodyHTML(totalAnnualTaxableIncome, threshold, unmeasuredTaxInfo);
-      finIncomeThresholdBtns.querySelectorAll("button").forEach((b) => {
-        b.classList.toggle("active", Number(b.dataset.threshold) === threshold);
-      });
     };
-    finIncomeThresholdBtns.querySelectorAll("button").forEach((b) => {
-      b.addEventListener("click", () => { state.myFinIncomeThreshold = Number(b.dataset.threshold); renderFinIncome(); });
+    const renderTaxProjection = () => {
+      const body = document.getElementById("taxProjectionBody");
+      const threshold = state.myFinIncomeThreshold || 20000000;
+      const scenario = state.myGrantScenario === "low" ? "low" : "high";
+      if (body) body.innerHTML = buildTaxProjectionHTML(perRow, myShareGrants, mySpecialDivs, threshold, scenario);
+    };
+    const syncToggleUI = () => {
+      const threshold = state.myFinIncomeThreshold || 20000000;
+      const scenario = state.myGrantScenario === "low" ? "low" : "high";
+      [finIncomeThresholdBtns, taxProjThresholdBtns].forEach((el) => {
+        if (!el) return;
+        el.querySelectorAll("button").forEach((b) => b.classList.toggle("active", Number(b.dataset.threshold) === threshold));
+      });
+      if (myGrantScenarioBtns) {
+        myGrantScenarioBtns.querySelectorAll("button").forEach((b) => b.classList.toggle("active", b.dataset.scenario === scenario));
+      }
+    };
+    [finIncomeThresholdBtns, taxProjThresholdBtns].forEach((el) => {
+      if (!el) return;
+      el.querySelectorAll("button").forEach((b) => {
+        b.addEventListener("click", () => {
+          state.myFinIncomeThreshold = Number(b.dataset.threshold);
+          renderFinIncome(); renderTaxProjection(); syncToggleUI();
+        });
+      });
     });
-    renderFinIncome();
+    if (myGrantScenarioBtns) {
+      myGrantScenarioBtns.querySelectorAll("button").forEach((b) => {
+        b.addEventListener("click", () => { state.myGrantScenario = b.dataset.scenario; renderTaxProjection(); syncToggleUI(); });
+      });
+    }
+    renderFinIncome(); renderTaxProjection(); syncToggleUI();
+  }
+
+  // A90: 자사주 수령 예정 편집표 — 필드 하나 바뀔 때마다 배열을 통째로 다시 써서 저장하고
+  // (myContribRows와 같은 결의 패턴), 총자산·연도별 시뮬레이션 둘 다에 영향을 주므로 전체를
+  // 다시 그린다(saveMyAssets + renderMyAssets — 목록이 작아 비용이 크지 않다).
+  const myGrantsTable = document.getElementById("myGrantsTable");
+  if (myGrantsTable) {
+    myGrantsTable.querySelectorAll(".grant-field").forEach((el) => {
+      el.addEventListener("change", () => {
+        const idx = Number(el.closest("tr").dataset.idx);
+        const list = readShareGrants();
+        if (!list[idx]) return;
+        const v = el.value;
+        list[idx][el.dataset.field] = el.type === "number" ? (v === "" ? "" : Number(v)) : v;
+        localStorage.setItem(MY_SHARE_GRANTS_KEY, JSON.stringify(list));
+        saveMyAssets();
+        renderMyAssets();
+      });
+    });
+    myGrantsTable.querySelectorAll(".grant-del-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const idx = Number(btn.dataset.idx);
+        const list = readShareGrants();
+        list.splice(idx, 1);
+        localStorage.setItem(MY_SHARE_GRANTS_KEY, JSON.stringify(list));
+        saveMyAssets();
+        renderMyAssets();
+      });
+    });
+  }
+  const myGrantAddBtn = document.getElementById("myGrantAddBtn");
+  if (myGrantAddBtn) {
+    myGrantAddBtn.addEventListener("click", () => {
+      const list = readShareGrants();
+      list.push({ symbol: "", account: "", month: "", qty: "", qtyLow: "" });
+      localStorage.setItem(MY_SHARE_GRANTS_KEY, JSON.stringify(list));
+      saveMyAssets();
+      renderMyAssets();
+    });
+  }
+
+  // A90: 특별배당 추정 편집표 — 자사주 표와 동일 패턴
+  const mySpecialDivTable = document.getElementById("mySpecialDivTable");
+  if (mySpecialDivTable) {
+    mySpecialDivTable.querySelectorAll(".special-field").forEach((el) => {
+      el.addEventListener("change", () => {
+        const idx = Number(el.closest("tr").dataset.idx);
+        const list = readSpecialDivs();
+        if (!list[idx]) return;
+        const v = el.value;
+        list[idx][el.dataset.field] = el.type === "number" ? (v === "" ? "" : Number(v)) : v;
+        localStorage.setItem(MY_SPECIAL_DIV_KEY, JSON.stringify(list));
+        saveMyAssets();
+        renderMyAssets();
+      });
+    });
+    mySpecialDivTable.querySelectorAll(".special-del-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const idx = Number(btn.dataset.idx);
+        const list = readSpecialDivs();
+        list.splice(idx, 1);
+        localStorage.setItem(MY_SPECIAL_DIV_KEY, JSON.stringify(list));
+        saveMyAssets();
+        renderMyAssets();
+      });
+    });
+  }
+  const mySpecialAddBtn = document.getElementById("mySpecialAddBtn");
+  if (mySpecialAddBtn) {
+    mySpecialAddBtn.addEventListener("click", () => {
+      const list = readSpecialDivs();
+      list.push({ symbol: "", year: new Date().getFullYear(), dps: "", recordMonth: "", note: "" });
+      localStorage.setItem(MY_SPECIAL_DIV_KEY, JSON.stringify(list));
+      saveMyAssets();
+      renderMyAssets();
+    });
+  }
+
+  // A90: 연금 절세 넛지의 출생연도 입력 — 시세 재조회 없이 넛지 블록만 다시 그린다
+  const myBirthYearInput = document.getElementById("myBirthYear");
+  if (myBirthYearInput) {
+    myBirthYearInput.addEventListener("change", () => {
+      state.myBirthYear = myBirthYearInput.value;
+      saveMyAssets();
+      const body = document.getElementById("myPensionNudgeBody");
+      if (body) body.innerHTML = buildPensionNudgeHTML(accountMap, state.myBirthYear);
+    });
+  }
+
+  // A90: "총 평가액"에 자사주 예정분을 얹어보는 토글 — 총자산 전체가 바뀌므로 전체 재렌더
+  const myIncludeGrantsToggle = document.getElementById("myIncludeGrantsToggle");
+  if (myIncludeGrantsToggle) {
+    myIncludeGrantsToggle.addEventListener("change", () => {
+      localStorage.setItem(MY_INCLUDE_GRANTS_KEY, myIncludeGrantsToggle.checked ? "1" : "0");
+      renderMyAssets();
+    });
   }
 
   document.getElementById("mySnapshotBtn").addEventListener("click", async () => {
