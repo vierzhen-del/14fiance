@@ -1697,7 +1697,8 @@ function buildReturnTrendHTML(dailyHistory, monthlyHistory, granularity, scope, 
 }
 
 /* A85(2026-09-07 사용자 요청): 위 수익률 추이(과거)의 앞쪽 짝 — 매수계획대로 계속 갔을 때
-   1·3개월 뒤 예상 평가액·수익률.
+   미래 시점 예상 평가액·수익률. 최초엔 1·3개월만 있었으나, 더 먼 시점(6개월·1년·3년·5년)도
+   보고 싶다는 요청(A86)으로 PROJECTION_MONTHS를 확장했다.
 
    원 요청은 "일별 표의 빈 날짜를 매수 시뮬레이션으로 채우기"였으나, buyDay가 구조화된 값이
    아니라 자유 텍스트(입력칸 placeholder부터 "요일/일 — 표시용")라 특정 날짜의 체결을 확정할
@@ -1706,25 +1707,31 @@ function buildReturnTrendHTML(dailyHistory, monthlyHistory, granularity, scope, 
    가정을 숫자에 섞지 않는다:
    - **가격 등락은 0%로 둔다** — 미래 주가를 지어내지 않기 위해서다. 그래서 평가손익 "금액"은
      그대로이고 분모(매입원가)만 커진다 → 수익률 %는 자연히 내려간다. 이 희석이 이 표의 핵심
-     정보다(자산이 줄어서가 아니라 새로 산 몫이 아직 0% 수익이라서).
-   - 증가분은 **월매수 계획액만** 쓴다. 월적립·배당을 따로 더하면 이중계상이다 — 이 앱의
-     자급률 모델에서 월매수는 배당·적립금을 주식으로 바꾸는 "행위"이지 별도 유입이 아니고,
-     totalValue는 예수금을 포함하지 않아 실제로 주식이 된 금액만 평가액을 올린다.
+     정보다(자산이 줄어서가 아니라 새로 산 몫이 아직 0% 수익이라서). 5년처럼 먼 시점도 같은
+     0% 가정을 유지한다 — 기간이 길다고 성장률을 지어내 넣지 않는다(하한 시나리오로 읽는다).
+   - 증가분은 **월매수 계획액에서 생활비사용액을 뺀 순매수액**만 쓴다(A86, 사용자 확정
+     "월매수액에서 json의 생활비사용액은 제외"). 배당금총액 = 생활비사용액 + 배당재투자액
+     구조(위 livingExpenseUsed)와 같은 원칙 — 생활비로 빠지는 돈은 애초에 재투자 여력이 아니다.
+     월적립은 여전히 더하지 않는다 — 월적립·배당을 따로 더하면 이중계상이다(자급률 모델에서
+     월매수는 배당·적립금을 주식으로 바꾸는 "행위"이고, totalValue는 예수금을 포함하지 않는다).
    - 새로 사는 몫은 시장가 매수라 매입원가와 평가액에 같은 금액이 더해진다(그 몫의 수익 0%).
    - 분모는 화면의 현재 수익률과 같은 기준(매입단가 입력 종목의 costedValue/totalCost)을 쓴다. */
-function buildBuyPlanProjectionHTML(totalValue, costedValue, totalCost, totalMonthlyBuy) {
+const PROJECTION_MONTHS = [0, 1, 3, 6, 12, 36, 60];
+const PROJECTION_MONTH_LABEL = (n) => (n === 0 ? "지금" : n % 12 === 0 ? `${n / 12}년 뒤` : `${n}개월 뒤`);
+function buildBuyPlanProjectionHTML(totalValue, costedValue, totalCost, totalMonthlyBuy, livingExpenseUsed) {
   const fmtW = (v) => fmtPrice(v, "KRW");
   if (!(totalMonthlyBuy > 0)) {
-    return `<p class="compare-empty">월매수 수량을 입력한 종목이 없어 예상을 계산할 수 없습니다 — 종목행의 "월매수" 칸을 채우면 여기에 1·3개월 뒤 예상이 표시됩니다.</p>`;
+    return `<p class="compare-empty">월매수 수량을 입력한 종목이 없어 예상을 계산할 수 없습니다 — 종목행의 "월매수" 칸을 채우면 여기에 미래 시점 예상이 표시됩니다.</p>`;
   }
+  const netMonthlyBuy = Math.max(0, totalMonthlyBuy - (livingExpenseUsed || 0));
   const profitAmt = totalCost > 0 ? costedValue - totalCost : null;
-  const rows = [0, 1, 3].map((n) => {
-    const added = totalMonthlyBuy * n;
+  const rows = PROJECTION_MONTHS.map((n) => {
+    const added = netMonthlyBuy * n;
     const pct = totalCost > 0 ? ((costedValue + added) / (totalCost + added) - 1) * 100 : null;
     return { n, value: totalValue + added, pct, added };
   });
   const trRows = rows.map((r) => `<tr>
-      <td>${r.n === 0 ? "지금" : `${r.n}개월 뒤`}</td>
+      <td>${PROJECTION_MONTH_LABEL(r.n)}</td>
       <td>${fmtW(r.value)}</td>
       <td style="color:${r.pct == null ? "var(--text-muted)" : r.pct >= 0 ? "var(--good)" : "var(--critical)"}">${r.pct == null ? "—" : `${r.pct >= 0 ? "+" : ""}${r.pct.toFixed(2)}%`}</td>
       <td>${r.added > 0 ? `+${fmtW(r.added)}` : "—"}</td>
@@ -1735,7 +1742,9 @@ function buildBuyPlanProjectionHTML(totalValue, costedValue, totalCost, totalMon
       <tbody>${trRows}</tbody>
     </table>
     </div>
-    <p class="stat-sub" style="margin-top:6px;">월매수 계획 <b>${fmtW(totalMonthlyBuy)}/월</b>이 그대로 실행된다고 봤을 때입니다. <b>가격 등락은 0%로 뒀습니다</b> — 미래 주가는 지어내지 않습니다.${
+    <p class="stat-sub" style="margin-top:6px;">월매수 계획 ${fmtW(totalMonthlyBuy)}/월${
+      livingExpenseUsed > 0 ? `에서 생활비사용액 ${fmtW(livingExpenseUsed)}을 뺀 <b>순매수액 ${fmtW(netMonthlyBuy)}/월</b>이` : `이 그대로`
+    } 실행된다고 봤을 때입니다. <b>가격 등락은 0%로 뒀습니다</b> — 미래 주가는 지어내지 않습니다(먼 시점도 동일 가정 — 성장률을 지어내지 않은 하한 시나리오로 읽어주세요).${
       profitAmt != null ? ` 그래서 평가손익 금액(${fmtW(profitAmt)})은 그대로인데 분모(매입원가)만 커집니다 — 새로 산 몫이 수익 0%에서 출발하므로 <b>수익률 %는 0% 쪽으로 희석</b>됩니다(지금 수익 중이면 %가 내려가고, 손실 중이면 0%에 가까워집니다). 자산이 줄어서가 아닙니다.` : ""
     } 이 매수액이 배당·적립금으로 충당되는지는 「⚖️ 자급률·월매수」 탭에서 확인하세요.</p>`;
 }
@@ -4148,7 +4157,7 @@ async function renderMyAssets() {
   const buyPlanHTML = buildBuyPlanHTML(perRow);
   const goalTrackerHTML = await buildGoalTrackerHTML(perRow, latestRate);
   // A85: 「📈 추이」탭 — 수익률 추이(과거)의 앞쪽 짝. 함수 주석의 가정 설명 참조.
-  const buyPlanProjectionHTML = buildBuyPlanProjectionHTML(totalValue, costedValue, totalCost, totalMonthlyBuy);
+  const buyPlanProjectionHTML = buildBuyPlanProjectionHTML(totalValue, costedValue, totalCost, totalMonthlyBuy, livingExpenseUsed);
 
   // 계좌 히트맵 탭은 A7에서 트리맵으로 대체 — 패널 컨테이너에 renderMyAssets 끝의
   // 와이어링(renderTreemap)이 buildTreemapHTML 결과를 채운다.
@@ -4385,7 +4394,7 @@ async function renderMyAssets() {
       </div>
       <div id="myReturnTrendBody"></div>
 
-      <p class="chart-title" style="margin-top:24px;">🛒 매수계획대로 갔을 때 (1·3개월 뒤 예상)</p>
+      <p class="chart-title" style="margin-top:24px;">🛒 매수계획대로 갔을 때 (미래 시점 예상)</p>
       ${buyPlanProjectionHTML}
 
       <p class="chart-title" style="margin-top:24px;">📅 월별 비중 변화</p>
