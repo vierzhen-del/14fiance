@@ -3959,16 +3959,19 @@ function buildReturnTrendHTML(dailyHistory, monthlyHistory, granularity, scope, 
   if (!rows.length) {
     return `<p class="compare-empty">${scopeLabel} 수익률 스냅샷이 아직 없습니다 — "오늘 자산 스냅샷"·"이번 달 스냅샷 저장"을 누르면 그 시점의 매입단가 기준 수익률이 함께 기록되고, 이후부터 추이가 쌓입니다(과거로 소급되진 않습니다).</p>`;
   }
+  // A83(2026-09-07 사용자 요청 "최신일자 먼저 정렬"): 전기간 대비(diffPt)는 시간순(오래된→최신)
+  // 기준 이전 값과 비교해야 맞으므로 그 계산은 그대로 두고, 화면 표시 순서만 뒤집어 최신이
+  // 맨 위로 오게 한다.
   const trRows = rows.map((r, i) => {
     const prev = rows[i - 1];
     const diffPt = prev ? r.g.pct - prev.g.pct : null;
-    return `<tr>
+    return { key: r.key, pct: r.g.pct, diffPt, costedValue: r.g.costedValue, cost: r.g.cost };
+  }).reverse().map((r) => `<tr>
       <td>${r.key}</td>
-      <td style="color:${r.g.pct >= 0 ? "var(--good)" : "var(--critical)"}">${r.g.pct >= 0 ? "+" : ""}${r.g.pct.toFixed(2)}%</td>
-      <td style="color:${diffPt == null ? "var(--text-muted)" : diffPt >= 0 ? "var(--good)" : "var(--critical)"}">${diffPt == null ? "—" : `${diffPt >= 0 ? "+" : ""}${diffPt.toFixed(2)}%p`}</td>
-      <td>${fmtW(r.g.costedValue)} / ${fmtW(r.g.cost)}</td>
-    </tr>`;
-  }).join("");
+      <td style="color:${r.pct >= 0 ? "var(--good)" : "var(--critical)"}">${r.pct >= 0 ? "+" : ""}${r.pct.toFixed(2)}%</td>
+      <td style="color:${r.diffPt == null ? "var(--text-muted)" : r.diffPt >= 0 ? "var(--good)" : "var(--critical)"}">${r.diffPt == null ? "—" : `${r.diffPt >= 0 ? "+" : ""}${r.diffPt.toFixed(2)}%p`}</td>
+      <td>${fmtW(r.costedValue)} / ${fmtW(r.cost)}</td>
+    </tr>`).join("");
   const periodLabel = granularity === "daily" ? "날짜" : granularity === "monthly" ? "월" : "연도";
   return `<div style="overflow-x:auto;">
     <table class="account-summary-table">
