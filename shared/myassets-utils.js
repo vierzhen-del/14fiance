@@ -448,16 +448,28 @@ function accountMonthlyValueSeries(rows, fx) {
 }
 
 /* 일별 평가액 시리즈 → 월별 손익(원) — 각 달의 "마지막 거래일" 평가액 차이.
-   반환 [{month:"YYYY-MM", pnl}] — 시간순, 첫 달은 비교 대상(전월)이 없어 제외된다. */
+   반환 [{month:"YYYY-MM", pnl, isPartial, lastDate}] — 시간순, 첫 달은 비교 대상(전월)이 없어 제외된다.
+   A88: 이번 달은 아직 끝나지 않았으므로 isPartial=true로 표시한다 — 9월 7일에 집계한 "9월 손익"은
+   7일치일 뿐인데 완결된 8월 막대와 나란히 두면 같은 크기 기준으로 읽혀 오해를 부른다. */
 function monthlyPnlFromDailySeries(dailySeries) {
   if (!dailySeries) return [];
   const { dates, values } = dailySeries;
   const monthEnd = new Map(); // 같은 달의 뒤쪽 날짜로 계속 덮어써서 결국 "그 달의 마지막 거래일"만 남는다
-  for (let i = 0; i < dates.length; i++) monthEnd.set(dates[i].slice(0, 7), values[i]);
+  const monthLastDate = new Map();
+  for (let i = 0; i < dates.length; i++) {
+    monthEnd.set(dates[i].slice(0, 7), values[i]);
+    monthLastDate.set(dates[i].slice(0, 7), dates[i]);
+  }
   const months = [...monthEnd.keys()].sort();
+  const thisMonth = todayStr().slice(0, 7);
   const out = [];
   for (let i = 1; i < months.length; i++) {
-    out.push({ month: months[i], pnl: monthEnd.get(months[i]) - monthEnd.get(months[i - 1]) });
+    out.push({
+      month: months[i],
+      pnl: monthEnd.get(months[i]) - monthEnd.get(months[i - 1]),
+      isPartial: months[i] === thisMonth,
+      lastDate: monthLastDate.get(months[i]),
+    });
   }
   return out;
 }
@@ -492,15 +504,27 @@ function buildMonthlyBarChart(container, months, opts = {}) {
   months.forEach((m, i) => {
     if (i % xTickEvery !== 0 && i !== n - 1) return;
     const x = (PAD_L + (i + 0.5) * bw).toFixed(2);
-    xLabelsSvg += `<text class="axis-label" x="${x}" y="${H - 4}" text-anchor="middle">${m.month.slice(2)}</text>`;
+    // A88: 진행 중인 달은 축 라벨에도 명시 — 막대만 흐리게 하면 이유를 알 수 없다
+    xLabelsSvg += `<text class="axis-label" x="${x}" y="${H - 4}" text-anchor="middle">${m.month.slice(2)}${m.isPartial ? " (진행중)" : ""}</text>`;
   });
 
+  /* A88(2026-09-07 사용자 요청 "가독성 개선"): 막대에 값 라벨을 직접 얹는다 — 종전엔 호버
+     툴팁뿐이라 모바일(앱)에서는 숫자를 보려면 일일이 눌러야 했고, 축 눈금에 눈대중으로
+     맞춰 읽어야 했다. 막대가 많아 라벨이 겹칠 때(≥8개)는 생략해 오히려 지저분해지지 않게 한다.
+     진행 중인 달(isPartial)은 아직 안 끝난 부분 집계라 완결된 달과 그대로 비교하면 안 되므로
+     빗금과 "(진행중)" 표기로 구분한다 — 실사례: 9월 7일에 9월 막대가 8월 막대보다 커 보였다. */
+  const showBarLabels = n <= 8;
   const barsSvg = months.map((m, i) => {
     const x = PAD_L + i * bw + bw * 0.15;
     const w = bw * 0.7;
     const y1 = yAt(Math.max(0, m.pnl)), y2 = yAt(Math.min(0, m.pnl));
     const color = m.pnl >= 0 ? good : bad;
-    return `<rect x="${x.toFixed(2)}" y="${y1.toFixed(2)}" width="${w.toFixed(2)}" height="${Math.max(0.5, y2 - y1).toFixed(2)}" fill="${color}"/>`;
+    const rect = `<rect x="${x.toFixed(2)}" y="${y1.toFixed(2)}" width="${w.toFixed(2)}" height="${Math.max(0.5, y2 - y1).toFixed(2)}" fill="${color}"${m.isPartial ? ' opacity="0.55"' : ""}/>`;
+    if (!showBarLabels) return rect;
+    // 라벨은 막대 바깥쪽(양수는 위, 음수는 아래)에 둬서 막대를 가리지 않게 한다
+    const ly = m.pnl >= 0 ? y1 - 5 : y2 + 12;
+    const label = `<text class="axis-label" x="${(x + w / 2).toFixed(2)}" y="${ly.toFixed(2)}" text-anchor="middle" fill="${color}">${fmtW(m.pnl)}</text>`;
+    return rect + label;
   }).join("");
 
   container.innerHTML = `

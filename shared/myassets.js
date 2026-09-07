@@ -3696,6 +3696,8 @@ async function renderMyAssets() {
   let totalValue = 0, totalCost = 0, totalMonthlyDiv = 0, totalMonthlyBuy = 0;
   // A74(2026-09-02 사용자 요청): 계좌 특성 반영 세후 배당 + 금융소득종합과세 도달률 집계
   let totalWithheldTax = 0, totalAfterTaxDiv = 0, totalDeferredTaxBase = 0, totalAnnualTaxableIncome = 0;
+  // A87: 지금 꺼내 쓸 수 있는 배당(일반·ISA 세후) vs 연금계좌에 묶이는 배당(DC·연금저축·IRP)
+  let totalReceivableNowDiv = 0, totalDeferredDiv = 0;
   let costedValue = 0; // 매입단가가 있는 종목의 평가액 합 (수익률 분모 정합성)
   const perRow = [];
   const accountMap = new Map();
@@ -3815,6 +3817,13 @@ async function renderMyAssets() {
     totalWithheldTax += withheldTax;
     totalAfterTaxDiv += afterTaxMonthlyDiv;
     if (isTaxDeferred) totalDeferredTaxBase += taxableDiv;
+    /* A87(2026-09-07 사용자 보고 "세금관련 계좌특성 미반영 · 세후 부분 오처리"): 세후 합계에는
+       DC·연금저축·IRP 배당까지 들어 있는데, 그 돈은 55세 전엔 꺼낼 수 없다(중도인출 시 기타
+       소득세 16.5% 또는 퇴직소득세). 그걸 "실수령"으로 부르면 지금 쓸 수 있는 돈을 크게
+       부풀린다 — 실측: 세후 합계 714만원 중 지금 인출 가능한 건 159만원(22%)뿐이었다.
+       생활비를 배당으로 충당하는 구조라 이 구분이 실제 판단을 좌우한다. */
+    if (isTaxDeferred) totalDeferredDiv += monthlyDiv;
+    else totalReceivableNowDiv += afterTaxMonthlyDiv; // 일반(세후) + ISA(한도 내 0원 가정)
     // 금융소득종합과세 2,000만원 한도에 들어가는 건 일반계좌뿐 — 연금·IRP·DC는 세금이연이라
     // 배당 시점에 과세되지 않고, ISA는 만기 분리과세라 종합소득에 합산되지 않는다.
     if (acctTaxType === "general") totalAnnualTaxableIncome += taxableDiv * annualMult;
@@ -4209,7 +4218,7 @@ async function renderMyAssets() {
     rows: unmeasuredTaxRows.map((p) => ({ name: p.meta ? p.meta.name : p.symbol, monthlyDiv: p.monthlyDiv, annualMult: p.annualMult })),
   };
   const taxSummaryHTML = `
-    <p class="chart-title" style="margin-top:20px;">🧾 세후 실수령 예상 (계좌 특성 반영)</p>
+    <p class="chart-title" style="margin-top:20px;">🧾 세후 배당 예상 (계좌 특성 반영)</p>
     <div class="stat-row">
       <div class="stat">
         <p class="stat-label">세전 예상 월배당</p>
@@ -4220,12 +4229,21 @@ async function renderMyAssets() {
         <p class="stat-value">${fmtW(totalWithheldTax)}</p>
         <p class="stat-sub">일반계좌만 15.4% · ISA는 한도 내 0원 가정${unmeasuredTaxInfo.amount > 0 ? " · 과세표준 미실측 종목은 보수적으로 100% 가정" : ""}</p>
       </div>
+      ${/* A87: 종전엔 여기 하나에 "세후 실수령 예상"으로 연금계좌분까지 합쳐 보여줬다 —
+           지금 꺼내 쓸 수 있는 돈과 55세까지 묶이는 돈을 갈라 놓는다. */""}
       <div class="stat">
-        <p class="stat-label">세후 실수령 예상</p>
-        <p class="stat-value" style="color:var(--good)">${fmtW(totalAfterTaxDiv)}</p>
+        <p class="stat-label">💰 지금 인출 가능 (세후)</p>
+        <p class="stat-value" style="color:var(--good)">${fmtW(totalReceivableNowDiv)}</p>
+        <p class="stat-sub">일반계좌 + ISA만${totalMonthlyDiv > 0 ? ` · 세전 총액의 ${((totalReceivableNowDiv / totalMonthlyDiv) * 100).toFixed(0)}%` : ""}</p>
       </div>
+      ${totalDeferredDiv > 0 ? `<div class="stat">
+        <p class="stat-label">🔒 연금계좌 적립 (인출 불가)</p>
+        <p class="stat-value" style="color:var(--text-muted)">${fmtW(totalDeferredDiv)}</p>
+        <p class="stat-sub">DC·연금저축·IRP · 55세 이후 수령</p>
+      </div>` : ""}
     </div>
-    ${totalDeferredTaxBase > 0 ? `<p class="stat-sub" style="margin-top:6px;">DC·연금저축·IRP 과세표준 ${fmtW(totalDeferredTaxBase)}은 지금 원천징수되지 않고 훗날 연금 수령 시 저율(3.3~5.5%) 과세됩니다.</p>` : ""}
+    <p class="stat-sub" style="margin-top:6px;">세후 합계는 ${fmtW(totalAfterTaxDiv)}이지만, 이 중 <b>${fmtW(totalDeferredDiv)}은 연금계좌에 쌓이는 몫이라 지금 생활비로 쓸 수 없습니다</b>(중도인출 시 기타소득세 16.5% 또는 퇴직소득세). 배당으로 생활비를 충당하는지 볼 때는 「💰 지금 인출 가능」 쪽을 보세요. ISA도 의무가입 3년·해지 전 수익금 인출 제한이 있어 완전히 자유롭지는 않습니다.</p>
+    ${totalDeferredTaxBase > 0 ? `<p class="stat-sub" style="margin-top:4px;">DC·연금저축·IRP 과세표준 ${fmtW(totalDeferredTaxBase)}은 지금 원천징수되지 않고 훗날 연금 수령 시 저율(3.3~5.5%) 과세됩니다.</p>` : ""}
 
     <p class="chart-title" style="margin-top:20px;">⚠️ 금융소득 종합과세 도달률 (주식 배당금 기준)</p>
     <div id="finIncomeThresholdBtns" class="seg" style="margin-bottom:8px;">
@@ -4419,7 +4437,11 @@ async function renderMyAssets() {
       <div id="myBenchMddWrap"><p class="compare-empty">불러오는 중…</p></div>
 
       <p class="chart-title" style="margin-top:24px;">💵 계좌별 월별 손익</p>
-      <p class="stat-sub">선택한 계좌의 <b>현재 보유 수량을 그 기간 내내 갖고 있었다고 가정</b>하고 월말 평가액 변화를 손익으로 계산합니다 — 실제 입출금·매매 내역은 반영하지 않으므로 추가 매수·환매가 있었던 달은 실제 손익과 다르게 보일 수 있습니다.</p>
+      <p class="stat-sub">선택한 계좌의 <b>현재 보유 수량을 그 기간 내내 갖고 있었다고 가정</b>하고 월말 평가액 변화를 손익으로 계산합니다 — 실제 입출금·매매 내역은 반영하지 않으므로 추가 매수·환매가 있었던 달은 실제 손익과 다르게 보일 수 있습니다. <b>"순수 시세 변동만 따로 본다"</b>는 용도입니다(월매수로 늘어난 몫은 손익이 아니라 원금 증가라 여기 섞이면 안 되기 때문).</p>
+      ${/* A88(2026-09-07 사용자 "가독성 개선·보완 필요성 확인"): 막대가 2~3개뿐인 이유를 화면에서
+           밝힌다 — 이 계산은 계좌 안 모든 종목에 가격이 다 있는 날만 쓰므로(그래야 평가액 합계가
+           같은 기준이 된다), 최근 상장 ETF가 하나라도 끼면 그 상장일부터로 구간이 잘린다. */""}
+      <p class="stat-sub" style="color:var(--text-muted);">막대가 몇 개뿐이라면 그 계좌에 <b>최근 상장한 종목</b>이 섞여 있어서입니다 — 계좌 안 모든 종목의 가격이 존재하는 날짜만 써야 평가액 합계가 같은 기준이 되므로, 가장 늦게 상장한 종목의 시작일부터만 그려집니다. 이번 달 막대는 아직 진행 중이라 흐리게 표시하고 <b>"(진행중)"</b>을 붙였습니다 — 완결된 달과 크기를 그대로 비교하면 안 됩니다.</p>
       <div class="controls" style="margin-bottom:8px;">
         <select id="myMonthlyPnlAccount" aria-label="월별 손익 계좌 선택"></select>
       </div>
