@@ -6324,10 +6324,11 @@ async function renderMyAssets() {
   }
   const REGION_ORDER = ["한국", "미국", "글로벌", "미분류"];
   const STYLE_ORDER = ["성장", "배당", "안전", "개별주", "미분류"];
-  // A82(2026-09-07 사용자 요청 "종합/일반계좌ETF 구분 버튼 추가"): 시장·스타일·카테고리 비중을
-  // "종합"(전체 계좌) 또는 "일반계좌ETF"(세금이연 계좌 제외·ETF만)로 필터링해 볼 수 있게 한다.
-  // DC·연금·IRP는 세금이연 계좌라 당장 리밸런싱이 자유롭지 않으므로, 실제 처분 가능한 비중은
-  // 일반계좌만 따로 봐야 한다는 요청 — accountTaxType()으로 계좌명을 일반화 판정(A52 원칙 유지).
+  // A84(2026-09-07 사용자 요청 "종합/일반계좌/ETF 3분할"): 시장·스타일·카테고리 비중을
+  // "종합"(필터 없음) · "일반계좌"(계좌유형만) · "ETF"(자산유형만)로 각각 따로 필터링해 볼 수
+  // 있게 한다. DC·연금·IRP는 세금이연 계좌라 당장 리밸런싱이 자유롭지 않으므로, 실제 처분
+  // 가능한 비중은 일반계좌만 따로 봐야 한다는 요청 — accountTaxType()으로 계좌명을 일반화
+  // 판정(A52 원칙 유지).
   function buildAllocCompositionHTML(rows) {
     const rMap = new Map(), sMap = new Map(), cMap = new Map();
     let tv = 0;
@@ -6372,9 +6373,17 @@ async function renderMyAssets() {
       <p class="chart-title" style="margin-top:20px;">🧩 자산 성격별 비중 (카테고리)</p>
       <div class="bar-list">${catHTML}</div>`;
   }
-  const isGeneralEtfRow = (p) => accountTaxType(p.account) === "general" && (!p.meta || p.meta.assetType !== "stock");
-  const allocScope = state.myAllocScope === "generalEtf" ? "generalEtf" : "all";
-  const allocScopeHTML = buildAllocCompositionHTML(allocScope === "generalEtf" ? perRow.filter(isGeneralEtfRow) : perRow);
+  // A84(2026-09-07 사용자 요청 "종합/일반계좌/ETF 3분할"): 계좌필터(일반계좌)와 자산유형필터(ETF)를
+  // 하나의 AND 조건으로 묶었던 이전 토글을 독립된 두 관점으로 분리한다 — "종합"은 필터 없음(둘 다
+  // 포함), "일반계좌"는 계좌유형만, "ETF"는 자산유형만 거른다.
+  const ALLOC_SCOPES = ["all", "general", "etf"];
+  const filterAllocRows = (scope) => {
+    if (scope === "general") return perRow.filter((p) => accountTaxType(p.account) === "general");
+    if (scope === "etf") return perRow.filter((p) => !p.meta || p.meta.assetType !== "stock");
+    return perRow;
+  };
+  const allocScope = ALLOC_SCOPES.includes(state.myAllocScope) ? state.myAllocScope : "all";
+  const allocScopeHTML = buildAllocCompositionHTML(filterAllocRows(allocScope));
 
   // 매수계획 상세(ETF모으기)
   const buyPlanHTML = buildBuyPlanHTML(perRow);
@@ -6693,8 +6702,9 @@ async function renderMyAssets() {
 
     <div class="dash-panel" data-tab="alloc" hidden>
       <div id="allocScopeBtns" class="seg" style="margin-bottom:8px;">
-        <button type="button" data-scope="all">종합</button>
-        <button type="button" data-scope="generalEtf">일반계좌ETF</button>
+        <button type="button" data-scope="all">종합 (일반계좌+ETF)</button>
+        <button type="button" data-scope="general">일반계좌</button>
+        <button type="button" data-scope="etf">ETF</button>
       </div>
       <div id="myAllocScopeBody">${allocScopeHTML}</div>
 
@@ -7084,14 +7094,14 @@ async function renderMyAssets() {
     });
   }
 
-  // A82(2026-09-07 사용자 요청 "종합/일반계좌ETF 구분 버튼 추가"): 비중분석 탭 종합/일반계좌ETF
+  // A84(2026-09-07 사용자 요청 "종합/일반계좌/ETF 3분할"): 비중분석 탭 종합/일반계좌/ETF
   // 토글 — 시세 재조회 없이 #myAllocScopeBody만 다시 그린다(finIncomeThresholdBtns와 같은 패턴).
   const allocScopeBtns = document.getElementById("allocScopeBtns");
   if (allocScopeBtns) {
     const renderAllocScope = () => {
       const body = document.getElementById("myAllocScopeBody");
-      const scope = state.myAllocScope === "generalEtf" ? "generalEtf" : "all";
-      if (body) body.innerHTML = buildAllocCompositionHTML(scope === "generalEtf" ? perRow.filter(isGeneralEtfRow) : perRow);
+      const scope = ALLOC_SCOPES.includes(state.myAllocScope) ? state.myAllocScope : "all";
+      if (body) body.innerHTML = buildAllocCompositionHTML(filterAllocRows(scope));
       allocScopeBtns.querySelectorAll("button").forEach((b) => {
         b.classList.toggle("active", b.dataset.scope === scope);
       });
