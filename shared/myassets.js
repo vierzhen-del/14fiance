@@ -1696,6 +1696,50 @@ function buildReturnTrendHTML(dailyHistory, monthlyHistory, granularity, scope, 
     <p class="stat-sub" style="margin-top:6px;">매입단가를 입력한 종목만 대상입니다(${scopeLabel}). 스냅샷을 쌓기 시작한 시점부터의 추이이며, 과거 매입단가 이력은 없어 소급 계산되지 않습니다.</p>`;
 }
 
+/* A85(2026-09-07 사용자 요청): 위 수익률 추이(과거)의 앞쪽 짝 — 매수계획대로 계속 갔을 때
+   1·3개월 뒤 예상 평가액·수익률.
+
+   원 요청은 "일별 표의 빈 날짜를 매수 시뮬레이션으로 채우기"였으나, buyDay가 구조화된 값이
+   아니라 자유 텍스트(입력칸 placeholder부터 "요일/일 — 표시용")라 특정 날짜의 체결을 확정할
+   수 없다. 날짜를 지어내는 대신 월 단위 총액만 쓰는 가벼운 형태로 합의(사용자 확정).
+
+   가정을 숫자에 섞지 않는다:
+   - **가격 등락은 0%로 둔다** — 미래 주가를 지어내지 않기 위해서다. 그래서 평가손익 "금액"은
+     그대로이고 분모(매입원가)만 커진다 → 수익률 %는 자연히 내려간다. 이 희석이 이 표의 핵심
+     정보다(자산이 줄어서가 아니라 새로 산 몫이 아직 0% 수익이라서).
+   - 증가분은 **월매수 계획액만** 쓴다. 월적립·배당을 따로 더하면 이중계상이다 — 이 앱의
+     자급률 모델에서 월매수는 배당·적립금을 주식으로 바꾸는 "행위"이지 별도 유입이 아니고,
+     totalValue는 예수금을 포함하지 않아 실제로 주식이 된 금액만 평가액을 올린다.
+   - 새로 사는 몫은 시장가 매수라 매입원가와 평가액에 같은 금액이 더해진다(그 몫의 수익 0%).
+   - 분모는 화면의 현재 수익률과 같은 기준(매입단가 입력 종목의 costedValue/totalCost)을 쓴다. */
+function buildBuyPlanProjectionHTML(totalValue, costedValue, totalCost, totalMonthlyBuy) {
+  const fmtW = (v) => fmtPrice(v, "KRW");
+  if (!(totalMonthlyBuy > 0)) {
+    return `<p class="compare-empty">월매수 수량을 입력한 종목이 없어 예상을 계산할 수 없습니다 — 종목행의 "월매수" 칸을 채우면 여기에 1·3개월 뒤 예상이 표시됩니다.</p>`;
+  }
+  const profitAmt = totalCost > 0 ? costedValue - totalCost : null;
+  const rows = [0, 1, 3].map((n) => {
+    const added = totalMonthlyBuy * n;
+    const pct = totalCost > 0 ? ((costedValue + added) / (totalCost + added) - 1) * 100 : null;
+    return { n, value: totalValue + added, pct, added };
+  });
+  const trRows = rows.map((r) => `<tr>
+      <td>${r.n === 0 ? "지금" : `${r.n}개월 뒤`}</td>
+      <td>${fmtW(r.value)}</td>
+      <td style="color:${r.pct == null ? "var(--text-muted)" : r.pct >= 0 ? "var(--good)" : "var(--critical)"}">${r.pct == null ? "—" : `${r.pct >= 0 ? "+" : ""}${r.pct.toFixed(2)}%`}</td>
+      <td>${r.added > 0 ? `+${fmtW(r.added)}` : "—"}</td>
+    </tr>`).join("");
+  return `<div style="overflow-x:auto;">
+    <table class="account-summary-table">
+      <thead><tr><th>시점</th><th>예상 평가액</th><th>예상 수익률</th><th>누적 매수액</th></tr></thead>
+      <tbody>${trRows}</tbody>
+    </table>
+    </div>
+    <p class="stat-sub" style="margin-top:6px;">월매수 계획 <b>${fmtW(totalMonthlyBuy)}/월</b>이 그대로 실행된다고 봤을 때입니다. <b>가격 등락은 0%로 뒀습니다</b> — 미래 주가는 지어내지 않습니다.${
+      profitAmt != null ? ` 그래서 평가손익 금액(${fmtW(profitAmt)})은 그대로인데 분모(매입원가)만 커집니다 — 새로 산 몫이 수익 0%에서 출발하므로 <b>수익률 %는 0% 쪽으로 희석</b>됩니다(지금 수익 중이면 %가 내려가고, 손실 중이면 0%에 가까워집니다). 자산이 줄어서가 아닙니다.` : ""
+    } 이 매수액이 배당·적립금으로 충당되는지는 「⚖️ 자급률·월매수」 탭에서 확인하세요.</p>`;
+}
+
 /* ---------- A3c: 🗂️ 변동이력 탭 — MY_ASSETS_CHANGELOG_KEY(자동 기록)를 일/주/월/연 단위로
    묶어 자산변동·비중변동·종목변동을 한 번에 보여준다. 위 buildDailyAssetHTML류(수동 스냅샷)와
    달리, 이건 "폼에 채우기"/"가져오기"가 실제로 일어난 이벤트만 모은다. */
@@ -4103,6 +4147,8 @@ async function renderMyAssets() {
   // 매수계획 상세(ETF모으기)
   const buyPlanHTML = buildBuyPlanHTML(perRow);
   const goalTrackerHTML = await buildGoalTrackerHTML(perRow, latestRate);
+  // A85: 「📈 추이」탭 — 수익률 추이(과거)의 앞쪽 짝. 함수 주석의 가정 설명 참조.
+  const buyPlanProjectionHTML = buildBuyPlanProjectionHTML(totalValue, costedValue, totalCost, totalMonthlyBuy);
 
   // 계좌 히트맵 탭은 A7에서 트리맵으로 대체 — 패널 컨테이너에 renderMyAssets 끝의
   // 와이어링(renderTreemap)이 buildTreemapHTML 결과를 채운다.
@@ -4338,6 +4384,9 @@ async function renderMyAssets() {
         <select id="myReturnTrendScope" aria-label="수익률 추이 범위"></select>
       </div>
       <div id="myReturnTrendBody"></div>
+
+      <p class="chart-title" style="margin-top:24px;">🛒 매수계획대로 갔을 때 (1·3개월 뒤 예상)</p>
+      ${buyPlanProjectionHTML}
 
       <p class="chart-title" style="margin-top:24px;">📅 월별 비중 변화</p>
       <div class="controls" style="margin-bottom:8px;">
