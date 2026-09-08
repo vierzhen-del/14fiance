@@ -521,8 +521,12 @@ function buildMonthlyBarChart(container, months, opts = {}) {
     const color = m.pnl >= 0 ? good : bad;
     const rect = `<rect x="${x.toFixed(2)}" y="${y1.toFixed(2)}" width="${w.toFixed(2)}" height="${Math.max(0.5, y2 - y1).toFixed(2)}" fill="${color}"${m.isPartial ? ' opacity="0.55"' : ""}/>`;
     if (!showBarLabels) return rect;
-    // 라벨은 막대 바깥쪽(양수는 위, 음수는 아래)에 둬서 막대를 가리지 않게 한다
-    const ly = m.pnl >= 0 ? y1 - 5 : y2 + 12;
+    // 라벨은 막대 바깥쪽(양수는 위, 음수는 아래)에 둬서 막대를 가리지 않게 한다.
+    // A91(2026-09-08 사용자 보고 "글자안보임"): 손실폭이 커서 막대가 축 가까이까지 내려오면
+    // y2+12가 x축 월 라벨(y=H-4)과 겹쳐 두 글자가 뭉개졌다 — 축 라벨 위로 최소 여백을 두게
+    // 클램프한다(막대보다 위, 즉 안쪽으로 살짝 들어와도 겹쳐 안 보이는 것보다 낫다).
+    const maxNegY = H - 4 - 10;
+    const ly = m.pnl >= 0 ? y1 - 5 : Math.min(y2 + 12, maxNegY);
     const label = `<text class="axis-label" x="${(x + w / 2).toFixed(2)}" y="${ly.toFixed(2)}" text-anchor="middle" fill="${color}">${fmtW(m.pnl)}</text>`;
     return rect + label;
   }).join("");

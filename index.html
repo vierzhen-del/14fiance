@@ -3494,6 +3494,21 @@ function buildPensionNudgeHTML(accountMap, birthYear) {
     <p class="stat-sub">재원: ${dcIrpAccounts.join(", ") || "—"}. 이연된 <b>퇴직소득세</b>가 연차에 따라 70%(1~10년차) → <b>60%(11년차~, 40%감면)</b>로 줄어듭니다. 1,500만원 한도와는 무관합니다(분리과세).</p>
     ${limitTable(dcIrpValue, "DC+IRP 합계")}
 
+    ${/* A91(2026-09-08 사용자 요청 "IRP 55세 만원 개시 필요 / DC 퇴직전 개시 불가 넛지 추가"):
+         DC·IRP는 같은 "퇴직연금" 범주로 묶이지만 개시 가능 시점이 정반대라 계좌별로 갈라
+         명시한다 — 이전 세션에서 사용자와 확인한 "재직 중 IRP는 55세부터 개시 가능하지만
+         DC는 실제 퇴사 전엔 불가"를 정적 팁으로 박아둔다(나이 입력 없이도 항상 보임). */""}
+    <div class="stat-row" style="margin-top:8px;">
+      <div class="stat">
+        <p class="stat-label">💡 IRP 절세팁</p>
+        <p class="stat-sub"><b>55세부터 재직 중이라도 개시 가능</b>합니다. 이때 최소액(예: 연 1만원)이라도 인출 신청해야 연차 시계가 시작됩니다 — 개시 신청을 미루면 55세가 지나도 연차가 쌓이지 않습니다.</p>
+      </div>
+      <div class="stat">
+        <p class="stat-label">⚠️ DC 주의사항</p>
+        <p class="stat-sub">재직 중인 회사의 DC는 <b>실제 퇴사 전에는 연금개시가 불가</b>합니다 — 55세가 지나도 그 회사에 남아있는 한 인출 자체가 안 됩니다. 퇴사 시 DC 잔액이 이전될 IRP는 <b>이미 개시된 IRP와는 별도 계좌</b>여야 합니다(연금수령을 개시한 계좌엔 추가 납입 불가).</p>
+      </div>
+    </div>
+
     <p class="chart-title" style="margin-top:20px;">💳 연금저축 — 연 1,500만원이 핵심</p>
     <p class="stat-sub">재원: ${pensionAccounts.join(", ") || "—"}. <b>연금소득세 3.3~5.5%</b>(저율)이지만, 사적연금 수령액 합계가 연 1,500만원을 넘으면 저율과세가 깨지고 종합과세 또는 16.5% 분리과세 중 선택해야 합니다.</p>
     ${limitTable(pensionValue, "연금저축 합계")}
@@ -6833,11 +6848,30 @@ async function renderMyAssets() {
         <span class="bar-value">${pct.toFixed(1)}%</span>
       </div>`;
     }).join("");
+    // A91(2026-09-08 사용자 요청 "버튼 누르면 top5 종목 비중 보여주기"): 지금 선택된 범위
+    // (종합/일반계좌/ETF) 안에서 평가액 상위 5종목 비중 — details/summary라 클릭해야
+    // 펼쳐지고, 별도 JS 배선 없이 이 함수 안에서 rows·tv를 그대로 재사용한다.
+    const top5Rows = rows.filter((p) => p.value > 0).sort((a, b) => b.value - a.value).slice(0, 5);
+    const top5HTML = top5Rows.map((p, i) => {
+      const pct = tv > 0 ? (p.value / tv) * 100 : 0;
+      const name = p.meta ? p.meta.name : p.symbol;
+      return `<div class="bar-row">
+        <span class="bar-label" title="${name}">${name}</span>
+        <div class="bar-track"><div class="bar-fill" style="width:${pct.toFixed(1)}%; background:${PALETTE[i % PALETTE.length]}"></div></div>
+        <span class="bar-value">${pct.toFixed(1)}% · ${fmtW(p.value)}</span>
+      </div>`;
+    }).join("");
     return `${kpiHTML}
       <p class="chart-title" style="margin-top:20px;">🌱 성장·배당·안전 비중</p>
       <div class="bar-list">${styleHTML}</div>
       <p class="chart-title" style="margin-top:20px;">🧩 자산 성격별 비중 (카테고리)</p>
-      <div class="bar-list">${catHTML}</div>`;
+      <div class="bar-list">${catHTML}</div>
+      <details class="collapse-box" style="margin-top:20px;">
+        <summary>🔝 TOP5 종목 비중 (눌러서 보기)</summary>
+        <div class="collapse-body">
+          <div class="bar-list">${top5HTML || `<p class="compare-empty">해당 범위의 보유 종목이 없습니다.</p>`}</div>
+        </div>
+      </details>`;
   }
   // A84(2026-09-07 사용자 요청 "종합/일반계좌/ETF 3분할"): 계좌필터(일반계좌)와 자산유형필터(ETF)를
   // 하나의 AND 조건으로 묶었던 이전 토글을 독립된 두 관점으로 분리한다 — "종합"은 필터 없음(둘 다
@@ -9950,8 +9984,12 @@ function buildMonthlyBarChart(container, months, opts = {}) {
     const color = m.pnl >= 0 ? good : bad;
     const rect = `<rect x="${x.toFixed(2)}" y="${y1.toFixed(2)}" width="${w.toFixed(2)}" height="${Math.max(0.5, y2 - y1).toFixed(2)}" fill="${color}"${m.isPartial ? ' opacity="0.55"' : ""}/>`;
     if (!showBarLabels) return rect;
-    // 라벨은 막대 바깥쪽(양수는 위, 음수는 아래)에 둬서 막대를 가리지 않게 한다
-    const ly = m.pnl >= 0 ? y1 - 5 : y2 + 12;
+    // 라벨은 막대 바깥쪽(양수는 위, 음수는 아래)에 둬서 막대를 가리지 않게 한다.
+    // A91(2026-09-08 사용자 보고 "글자안보임"): 손실폭이 커서 막대가 축 가까이까지 내려오면
+    // y2+12가 x축 월 라벨(y=H-4)과 겹쳐 두 글자가 뭉개졌다 — 축 라벨 위로 최소 여백을 두게
+    // 클램프한다(막대보다 위, 즉 안쪽으로 살짝 들어와도 겹쳐 안 보이는 것보다 낫다).
+    const maxNegY = H - 4 - 10;
+    const ly = m.pnl >= 0 ? y1 - 5 : Math.min(y2 + 12, maxNegY);
     const label = `<text class="axis-label" x="${(x + w / 2).toFixed(2)}" y="${ly.toFixed(2)}" text-anchor="middle" fill="${color}">${fmtW(m.pnl)}</text>`;
     return rect + label;
   }).join("");
