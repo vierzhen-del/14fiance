@@ -4556,7 +4556,12 @@ async function renderMyAssets() {
     // A91(2026-09-08 사용자 요청 "버튼 누르면 top5 종목 비중 보여주기"): 지금 선택된 범위
     // (종합/일반계좌/ETF) 안에서 평가액 상위 5종목 비중 — details/summary라 클릭해야
     // 펼쳐지고, 별도 JS 배선 없이 이 함수 안에서 rows·tv를 그대로 재사용한다.
-    const top5Rows = rows.filter((p) => p.value > 0).sort((a, b) => b.value - a.value).slice(0, 5);
+    // A92(2026-09-08 사용자 요청 "etf 글로벌 비중 top5종목"): TOP5 안에 지역(한국/미국/글로벌)
+    // 하위필터를 추가 — 예: ETF 범위를 고른 뒤 "글로벌"을 누르면 ETF 중 해외상장분만 다시 랭킹한다.
+    const availRegions = REGION_ORDER.filter((r) => rMap.has(r));
+    const selRegion = availRegions.includes(state.myTop5Region) ? state.myTop5Region : "all";
+    const top5Pool = selRegion === "all" ? rows : rows.filter((p) => ((p.meta && p.meta.region) || "미분류") === selRegion);
+    const top5Rows = top5Pool.filter((p) => p.value > 0).sort((a, b) => b.value - a.value).slice(0, 5);
     const top5HTML = top5Rows.map((p, i) => {
       const pct = tv > 0 ? (p.value / tv) * 100 : 0;
       const name = p.meta ? p.meta.name : p.symbol;
@@ -4566,16 +4571,53 @@ async function renderMyAssets() {
         <span class="bar-value">${pct.toFixed(1)}% · ${fmtW(p.value)}</span>
       </div>`;
     }).join("");
+    const top5RegionBtnsHTML = availRegions.length > 1 ? `<div id="top5RegionBtns" class="seg" style="margin-bottom:8px;">
+        <button type="button" data-region="all" class="${selRegion === "all" ? "active" : ""}">전체</button>
+        ${availRegions.map((r) => `<button type="button" data-region="${r}" class="${selRegion === r ? "active" : ""}">${r}</button>`).join("")}
+      </div>` : "";
+
+    // A92(2026-09-08 사용자 요청 "수익률 top worst도"): 지금 선택된 범위 안에서 수익률
+    // 상위/하위 — buildReturnAnalysisHTML의 전체 포트폴리오 랭킹(A27e)과 별개로 종합/일반계좌/ETF
+    // 범위로 좁혀서 본다. 매입단가 입력분만 대상(원가를 모르면 수익률이 없다).
+    const rankable = rows
+      .filter((p) => p.cost > 0 && p.profit != null)
+      .map((p) => ({ p, pct: (p.profit / p.cost) * 100 }))
+      .sort((a, b) => b.pct - a.pct);
+    const rankRowsHTML = (list) => list.map(({ p, pct }) => {
+      const color = pct >= 0 ? "var(--good)" : "var(--critical)";
+      return `<tr>
+        <td>${(p.meta && p.meta.name) || p.symbol}<br><span class="stat-sub" style="font-size:11.5px;">${p.account || "계좌 미지정"}</span></td>
+        <td>${fmtW(p.value)}</td>
+        <td style="color:${color}">${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%<br><span style="font-size:11.5px;">${p.profit >= 0 ? "+" : ""}${fmtW(p.profit)}</span></td></tr>`;
+    }).join("");
+    const rankTableHTML = (list) => `<div style="overflow-x:auto;"><table class="account-summary-table">
+        <thead><tr><th>종목 · 계좌</th><th>평가액</th><th>수익률 · 손익</th></tr></thead>
+        <tbody>${rankRowsHTML(list)}</tbody>
+      </table></div>`;
+    const rankN = Math.min(5, Math.floor(rankable.length / 2)) || (rankable.length ? 1 : 0);
+    const rankHTML = rankable.length === 0
+      ? `<p class="compare-empty">매입단가를 입력한 종목이 없어 수익률 순위를 계산할 수 없습니다.</p>`
+      : `<p class="chart-title" style="margin-top:14px; font-size:13.5px;">🏆 수익률 TOP${rankN}</p>
+         ${rankTableHTML(rankable.slice(0, rankN))}
+         <p class="chart-title" style="margin-top:14px; font-size:13.5px;">🔻 수익률 WORST${rankN}</p>
+         ${rankTableHTML(rankable.slice(-rankN).reverse())}
+         <p class="stat-sub" style="margin-top:6px;">매입단가를 입력한 ${rankable.length}종목만 순위에 들어갑니다(이 범위 보유 ${rows.filter((p) => p.value > 0).length}종목).</p>`;
+
     return `${kpiHTML}
       <p class="chart-title" style="margin-top:20px;">🌱 성장·배당·안전 비중</p>
       <div class="bar-list">${styleHTML}</div>
       <p class="chart-title" style="margin-top:20px;">🧩 자산 성격별 비중 (카테고리)</p>
       <div class="bar-list">${catHTML}</div>
-      <details class="collapse-box" style="margin-top:20px;">
+      <details id="top5DetailsBox" class="collapse-box" style="margin-top:20px;" ${state.myTop5Open ? "open" : ""}>
         <summary>🔝 TOP5 종목 비중 (눌러서 보기)</summary>
         <div class="collapse-body">
+          ${top5RegionBtnsHTML}
           <div class="bar-list">${top5HTML || `<p class="compare-empty">해당 범위의 보유 종목이 없습니다.</p>`}</div>
         </div>
+      </details>
+      <details id="rankDetailsBox" class="collapse-box" style="margin-top:12px;" ${state.myRankOpen ? "open" : ""}>
+        <summary>🏆 수익률 TOP/WORST (눌러서 보기)</summary>
+        <div class="collapse-body">${rankHTML}</div>
       </details>`;
   }
   // A84(2026-09-07 사용자 요청 "종합/일반계좌/ETF 3분할"): 계좌필터(일반계좌)와 자산유형필터(ETF)를
@@ -5383,6 +5425,20 @@ async function renderMyAssets() {
       allocScopeBtns.querySelectorAll("button").forEach((b) => {
         b.classList.toggle("active", b.dataset.scope === scope);
       });
+      // A92: TOP5 지역 하위필터 버튼은 myAllocScopeBody가 통째로 다시 그려질 때마다 새로
+      // 생기므로 매번 재배선한다(scope 토글 재사용).
+      const regionBtns = body ? body.querySelector("#top5RegionBtns") : null;
+      if (regionBtns) {
+        regionBtns.querySelectorAll("button").forEach((b) => {
+          b.addEventListener("click", () => { state.myTop5Region = b.dataset.region; state.myTop5Open = true; renderAllocScope(); });
+        });
+      }
+      // details가 통째로 다시 그려져도 열림 상태가 유지되도록 toggle을 state에 반영한다 —
+      // 안 그러면 지역필터를 누를 때마다 방금 펼친 TOP5 박스가 도로 접혀 결과가 안 보인다.
+      const top5Details = body ? body.querySelector("#top5DetailsBox") : null;
+      if (top5Details) top5Details.addEventListener("toggle", () => { state.myTop5Open = top5Details.open; });
+      const rankDetails = body ? body.querySelector("#rankDetailsBox") : null;
+      if (rankDetails) rankDetails.addEventListener("toggle", () => { state.myRankOpen = rankDetails.open; });
     };
     allocScopeBtns.querySelectorAll("button").forEach((b) => {
       b.addEventListener("click", () => { state.myAllocScope = b.dataset.scope; renderAllocScope(); });
