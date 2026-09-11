@@ -556,11 +556,21 @@ function buildReturnAnalysisHTML(regionRetMap, styleRetMap, accountMap, history,
     const first = sorted[0], last = sorted[sorted.length - 1];
     const diff = last.value - first.value;
     const pct = first.value > 0 ? (diff / first.value) * 100 : 0;
+    // A93(2026-09-11 사용자 요청 "BM 수익률대비 현 수익률"): 같은 first~last 구간의 코스피
+    // 등락률을 나란히 보여준다 — 스냅샷에 코스피 값이 없으면(과거 기록분 등) 지어내지 않고
+    // "비교 불가"로 남긴다(지어내지 않기 원칙).
+    const kospiPct = (first.kospi > 0 && last.kospi > 0) ? ((last.kospi - first.kospi) / first.kospi) * 100 : null;
+    const alpha = kospiPct != null ? pct - kospiPct : null;
     historyReturnHTML = `<div class="stat-row">
       <div class="stat">
         <p class="stat-label">평가액 변동 (${first.month} → ${last.month})</p>
         <p class="stat-value" style="color:${diff >= 0 ? "var(--good)" : "var(--critical)"}">${diff >= 0 ? "+" : ""}${fmtW(diff)} (${pct.toFixed(1)}%)</p>
         <p class="stat-sub">${fmtW(first.value)} → ${fmtW(last.value)}</p>
+      </div>
+      <div class="stat">
+        <p class="stat-label">코스피 대비 (같은 기간)</p>
+        <p class="stat-value" style="color:${kospiPct == null ? "var(--text-muted)" : alpha >= 0 ? "var(--good)" : "var(--critical)"}">${kospiPct == null ? "비교 불가" : `${alpha >= 0 ? "+" : ""}${alpha.toFixed(1)}%p`}</p>
+        <p class="stat-sub">${kospiPct == null ? "스냅샷에 코스피 값이 없습니다" : `내 ${pct >= 0 ? "+" : ""}${pct.toFixed(1)}% vs 코스피 ${kospiPct >= 0 ? "+" : ""}${kospiPct.toFixed(1)}%`}</p>
       </div>
     </div>
     <p class="stat-sub">참고: 스냅샷 시점 평가액을 단순 비교한 값입니다(추가 납입·매도 등 현금흐름은 반영하지 않음) — 정확한 수익률은 매입단가 기준 손익을 참고하세요.</p>`;
@@ -626,6 +636,9 @@ function buildReturnAnalysisHTML(regionRetMap, styleRetMap, accountMap, history,
 
   return `<p class="chart-title" style="margin-top:20px;">📈 자산 수익률</p>
     ${historyReturnHTML}
+
+    <p class="chart-title" style="margin-top:20px;">🆚 BM(벤치마크) 대비 초과/열세</p>
+    <div id="myRegionBenchBody"><p class="compare-empty">불러오는 중…</p></div>
 
     <p class="chart-title" style="margin-top:20px;">🌍 지역별 수익률 (매입단가 입력분 기준)</p>
     <div style="overflow-x:auto;">
@@ -6156,6 +6169,81 @@ async function renderMyAssets() {
   benchEtfOn.addEventListener("change", renderBenchmark);
   benchEtfSel.addEventListener("change", renderBenchmark);
   renderBenchmark();
+
+  // A93(2026-09-11 사용자 요청 "한국 KOSPI200 / 미국 S&P500(VOO) / 글로벌 VTI 가정, 미장·국장·
+  // 글로벌 비중을 반영해 BM수익률 산출"): 「추이」 탭 수익률 섹션에 지역비중 가중 합성 BM 대비
+  // 초과/열세를 보여준다. 코스피200은 069500.KS(KODEX 200, 069500 자체가 코스피200 완전복제
+  // ETF)로 근사 — 지수비교 탭(A6)의 BENCH_KR_SYMBOL과 같은 선택. buildMyBlendPctSeries·
+  // pctChangeSeriesSince·alignSeriesStarts를 그대로 재사용해 "현재 보유비중 고정" 가정을
+  // 지수비교 탭과 동일하게 유지한다(다른 방법론을 섞어 숫자가 어긋나는 것을 방지).
+  const REGION_BENCH_DEFS = {
+    한국: { symbol: "069500.KS", label: "KOSPI200(KODEX 200)" },
+    미국: { symbol: "VOO", label: "S&P500(VOO)" },
+    글로벌: { symbol: "VTI", label: "전세계(VTI)" },
+  };
+  async function renderRegionBenchCompare() {
+    const body = document.getElementById("myRegionBenchBody");
+    if (!body) return;
+    try {
+      const since = benchSinceDate(null); // 전체 기간(내 시리즈·벤치마크 공통 구간으로 자동 축소)
+      const mySeries = buildMyBlendPctSeries(perRow, since);
+      if (!mySeries) { body.innerHTML = `<p class="compare-empty">가격 이력이 있는 종목이 없어 비교할 수 없습니다.</p>`; return; }
+
+      const totalRegionValue = Object.keys(REGION_BENCH_DEFS).reduce((a, r) => a + (regionRetMap.get(r)?.value || 0), 0);
+      if (totalRegionValue <= 0) { body.innerHTML = `<p class="compare-empty">지역 비중 정보가 없어 합성 BM을 만들 수 없습니다.</p>`; return; }
+
+      const benchByRegion = {};
+      for (const [region, def] of Object.entries(REGION_BENCH_DEFS)) {
+        const w = (regionRetMap.get(region)?.value || 0) / totalRegionValue;
+        if (w <= 0) continue;
+        const full = await loadSymbol(def.symbol);
+        const s = pctChangeSeriesSince(full, since);
+        if (s) benchByRegion[region] = { dates: s.dates, values: s.values, weight: w, label: def.label };
+      }
+      const regions = Object.keys(benchByRegion);
+      if (!regions.length) { body.innerHTML = `<p class="compare-empty">벤치마크 가격 이력을 불러오지 못했습니다.</p>`; return; }
+
+      const aligned = alignSeriesStarts([
+        { key: "__my__", dates: mySeries.dates, values: mySeries.values },
+        ...regions.map((r) => ({ key: r, dates: benchByRegion[r].dates, values: benchByRegion[r].values })),
+      ]);
+      const myAligned = aligned.find((s) => s.key === "__my__");
+      const usable = regions.filter((r) => aligned.some((s) => s.key === r));
+      if (!myAligned || !usable.length) { body.innerHTML = `<p class="compare-empty">겹치는 기간이 부족합니다 — 종목·벤치마크 가격 이력을 다시 불러와 보세요.</p>`; return; }
+
+      // 데이터가 없어 빠진 지역이 있으면 남은 지역끼리 비중을 재정규화한다(값을 지어내지 않고
+      // "이만큼만 반영됨"을 아래 비고에 밝힌다).
+      const usedWeightSum = usable.reduce((a, r) => a + benchByRegion[r].weight, 0);
+      const myFinal = myAligned.values[myAligned.values.length - 1];
+      const bmFinal = usable.reduce((a, r) => {
+        const s = aligned.find((x) => x.key === r);
+        return a + (benchByRegion[r].weight / usedWeightSum) * s.values[s.values.length - 1];
+      }, 0);
+      const alpha = (myFinal - bmFinal) * 100;
+      const weightNote = usable.map((r) => `${r} ${(benchByRegion[r].weight * 100).toFixed(0)}%(${benchByRegion[r].label})`).join(" · ");
+      const missing = regions.filter((r) => !usable.includes(r));
+
+      body.innerHTML = `<div class="stat-row">
+        <div class="stat">
+          <p class="stat-label">내 수익률(현재 비중 기준)</p>
+          <p class="stat-value" style="color:${myFinal >= 0 ? "var(--good)" : "var(--critical)"}">${myFinal >= 0 ? "+" : ""}${(myFinal * 100).toFixed(1)}%</p>
+        </div>
+        <div class="stat">
+          <p class="stat-label">합성 BM (지역비중 가중)</p>
+          <p class="stat-value">${bmFinal >= 0 ? "+" : ""}${(bmFinal * 100).toFixed(1)}%</p>
+          <p class="stat-sub">${weightNote}</p>
+        </div>
+        <div class="stat">
+          <p class="stat-label">${alpha >= 0 ? "초과" : "열세"} 수익률</p>
+          <p class="stat-value" style="color:${alpha >= 0 ? "var(--good)" : "var(--critical)"}">${alpha >= 0 ? "+" : ""}${alpha.toFixed(1)}%p</p>
+        </div>
+      </div>
+      <p class="stat-sub">${myAligned.dates[0]} ~ ${myAligned.dates[myAligned.dates.length - 1]} · 현재 보유비중을 기간 내내 고정한 근사치(일별 리밸런싱 아님, 매수·매도 미반영)${missing.length ? ` · ⚠️ ${missing.join("·")} 벤치마크는 가격 이력 부족으로 빠짐(비중 재정규화 반영)` : ""}</p>`;
+    } catch (err) {
+      body.innerHTML = `<p class="compare-empty" style="color:var(--critical)">벤치마크 데이터를 불러오지 못했습니다: ${err.message}</p>`;
+    }
+  }
+  renderRegionBenchCompare();
 
   // A7: 🗺️ 비중 트리맵 — 그룹 기준 변경 시 트리맵만 재렌더
   const treemapSel = document.getElementById("myTreemapGroup");
