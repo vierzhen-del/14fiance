@@ -634,13 +634,17 @@ function buildReturnAnalysisHTML(regionRetMap, styleRetMap, accountMap, history,
       <td>${marketYield(g.div, g.value).toFixed(2)}%<br><span class="stat-sub" style="font-size:11.5px;">${cy == null ? "<span title='매입단가 미입력 — 매입원가를 알 수 없어 계산 불가'>YOC —</span>" : "YOC " + cy.toFixed(2) + "%"}</span></td></tr>`;
   }).join("");
 
-  return `<p class="chart-title" style="margin-top:20px;">📈 자산 수익률</p>
+  // A93(2026-09-11 사용자 요청 "추이 탭에 BM 수익률대비 현 수익률 추가"): 스냅샷 기반
+  // "자산 수익률"(시점 간 변동)과 BM 비교는 시간 흐름을 보는 값이라 「📈 추이」 탭 몫이고,
+  // 지역·계좌·성향별 실손익·배당수익률 표는 지금 이 순간의 구성을 보는 값이라 「📊 비중분석」
+  // 탭에 남긴다 — 그래서 이 함수는 둘로 나눠 반환한다(호출부에서 각자 다른 탭에 꽂는다).
+  const summaryHTML = `<p class="chart-title" style="margin-top:20px;">📈 자산 수익률</p>
     ${historyReturnHTML}
 
     <p class="chart-title" style="margin-top:20px;">🆚 BM(벤치마크) 대비 초과/열세</p>
-    <div id="myRegionBenchBody"><p class="compare-empty">불러오는 중…</p></div>
+    <div id="myRegionBenchBody"><p class="compare-empty">불러오는 중…</p></div>`;
 
-    <p class="chart-title" style="margin-top:20px;">🌍 지역별 수익률 (매입단가 입력분 기준)</p>
+  const detailHTML = `<p class="chart-title" style="margin-top:20px;">🌍 지역별 수익률 (매입단가 입력분 기준)</p>
     <div style="overflow-x:auto;">
     <table class="account-summary-table">
       <thead><tr><th>투자대상 시장</th><th>평가액</th><th>손익</th></tr></thead>
@@ -663,7 +667,7 @@ function buildReturnAnalysisHTML(regionRetMap, styleRetMap, accountMap, history,
       <tbody>${styleReturnRows}</tbody>
     </table>
     </div>
-    <p class="stat-sub" style="margin-top:6px;">위 「📈 자산 수익률」은 스냅샷 평가액을 단순 비교한 값(추가 납입·매도 포함)이고, 지역·계좌·성향별 손익은 <b>매입단가 기준 실손익</b>입니다 — 두 값은 서로 다릅니다.</p>
+    <p class="stat-sub" style="margin-top:6px;">「📈 추이」 탭의 「자산 수익률」은 스냅샷 평가액을 단순 비교한 값(추가 납입·매도 포함)이고, 아래 지역·계좌·성향별 손익은 <b>매입단가 기준 실손익</b>입니다 — 두 값은 서로 다릅니다.</p>
 
     ${rankHTML}
 
@@ -683,6 +687,8 @@ function buildReturnAnalysisHTML(regionRetMap, styleRetMap, accountMap, history,
     </table>
     </div>
     <p class="stat-sub" style="margin-top:6px;">시가배당률 = 연배당 ÷ 평가액(현재 조회 주가 기준 — "🔄 최신시세" 켜면 실시간 조회가로 계산). 투자배당률(YOC) = 연배당 ÷ 매입원가(매입단가 입력분만).</p>`;
+
+  return { summaryHTML, detailHTML };
 }
 
 /* ---------- A7: 🗺️ 비중 트리맵 히트맵 (finviz류) ----------
@@ -4681,7 +4687,9 @@ async function renderMyAssets() {
   const dailyHistory = JSON.parse(localStorage.getItem(MY_ASSETS_DAILY_HISTORY_KEY) || "[]");
 
   // 수익률 분석 — 자산 수익률(스냅샷 이력) + 지역별 수익률 + 배당수익률(계좌별·비중별)
-  const returnAnalysisHTML = buildReturnAnalysisHTML(regionRetMap, styleRetMap, accountMap, history, perRow);
+  // A93: summaryHTML(스냅샷 변동·BM비교)은 「추이」 탭, detailHTML(지역·계좌·성향별 실손익표)은
+  // 「비중분석」 탭에 각각 꽂는다 — buildReturnAnalysisHTML 정의부 주석 참고.
+  const { summaryHTML: returnSummaryHTML, detailHTML: returnDetailHTML } = buildReturnAnalysisHTML(regionRetMap, styleRetMap, accountMap, history, perRow);
 
   // 배당기준·이력 — 확정/추정 DPS, 다음달 기대월배당, 배당상승률
   const divBasisHTML = buildDividendBasisHTML(perRow, history);
@@ -4897,6 +4905,8 @@ async function renderMyAssets() {
       </div>
       ${trendHTML}
 
+      ${returnSummaryHTML}
+
       <p class="chart-title" style="margin-top:24px;">📅 자산변동 이력 (일별·주간·월별·연간)</p>
       <div class="action-row" style="margin-bottom:8px;">
         <button type="button" id="myDailySnapshotBtn" class="btn-action">📅 오늘 자산 스냅샷</button>
@@ -5020,7 +5030,7 @@ async function renderMyAssets() {
       <div class="bar-list">${accountAllocHTML}</div>
       <p class="stat-sub" style="margin-top:8px;">시장 전망(드러켄밀러 OS·매크로 스코어)은 외부 시장데이터가 필요해 이 사이트 범위 밖입니다 — 클로드 세션(금융비서)에서 제공됩니다.</p>
 
-      ${returnAnalysisHTML}
+      ${returnDetailHTML}
 
       <p class="chart-title" style="margin-top:24px;">📅 월별 비중 변화</p>
       <div class="controls" style="margin-bottom:8px;">
