@@ -60,6 +60,13 @@
       "title": "🧪 계좌 캡처 AI 파싱 프롬프트 검증",
       "role": "파싱 프롬프트 이력·비교테스트",
       "required": false
+    },
+    "selfops_guide": {
+      "id": "3dc5efd0-e462-81e6-9099-ec89d4a32cd6",
+      "url": "https://www.notion.so/3dc5efd0e46281e69099ec89d4a32cd6",
+      "title": "🛠️ Claude 없이 앱 셀프 운영 가이드",
+      "role": "Claude 구독 종료 시 사용자가 직접 할 일 + import JSON·etf_list.json 수정법(사람용 참고문서, 에이전트 소비 대상 아님)",
+      "required": false
     }
   },
   "staleness": {
