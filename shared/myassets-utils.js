@@ -216,7 +216,10 @@ function buildCompareChart(container, seriesList, opts = {}) {
       const x = xAt(tsLists[si][i]).toFixed(2), y = yAt(s.values[i]).toFixed(2);
       path += (i === 0 ? "M" : "L") + x + "," + y + " ";
     }
-    linesSvg += `<path fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" d="${path}"/>`;
+    // A94b: s.dash=true면 점선 — "예상 경로"와 "실제 기록"을 한 차트에 겹칠 때 둘을 눈으로
+    // 구분하기 위해서다(색만으로는 예상인지 실제인지 알 수 없다). 기존 호출부는 dash가
+    // undefined라 실선 그대로.
+    linesSvg += `<path fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"${s.dash ? ` stroke-dasharray="5 4"` : ""} d="${path}"/>`;
   });
 
   const legendSvg = seriesList
