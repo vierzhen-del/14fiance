@@ -24,7 +24,13 @@ jobs:
           distribution: "temurin"
           java-version: "21"
 
+      # packages: '' 로 기본 설치를 끈다 — setup-android가 기본으로 받는 레거시 'tools'
+      # 패키지가 Android SDK 저장소에서 제거돼 2026-09-16 빌드(run #280)가
+      # "Failed to find package 'tools'"로 19초 만에 실패했다(워크플로·앱 코드 변경과
+      # 무관한 외부 요인). 빌드에 필요한 platform/build-tools는 Gradle이 알아서 받는다.
       - uses: android-actions/setup-android@v3
+        with:
+          packages: ""
 
       - name: Install deps & build web assets
         working-directory: app
