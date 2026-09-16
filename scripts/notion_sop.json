@@ -61,6 +61,13 @@
       "role": "파싱 프롬프트 이력·비교테스트",
       "required": false
     },
+    "index_outlook": {
+      "id": "3dd5efd0-e462-81d3-b5d8-ea75e7e97c1a",
+      "url": "https://www.notion.so/3dd5efd0e46281d3b5d8ea75e7e97c1a",
+      "title": "🔭 지수 장기전망(보수/희망) & 괴리 투자가이드 — 기준·근거",
+      "role": "금리탭 지수전망(A94)의 앵커·시나리오 CAGR 근거와 출처. 시나리오를 바꾸려면 이 문서와 myassets.js의 INDEX_OUTLOOK_DEFS를 함께 고친다",
+      "required": false
+    },
     "selfops_guide": {
       "id": "3dc5efd0-e462-81e6-9099-ec89d4a32cd6",
       "url": "https://www.notion.so/3dc5efd0e46281e69099ec89d4a32cd6",
