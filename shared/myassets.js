@@ -23,6 +23,7 @@ const MY_SPECIAL_DIV_KEY = "my_special_div_v1";
 // A90: "📈 향후 예측"에서 자사주 예정분을 총 평가액에 얹어볼지 — 기본은 끔(현재 실보유만
 // 반영)이라 평소 화면 숫자는 안 흔들리고, 눌렀을 때만 예정분이 더해진 미래 전망치로 바뀐다.
 const MY_INCLUDE_GRANTS_KEY = "my_assets_include_grants_v1"; // "1"이면 포함
+const MY_INDEX_OUTLOOK_KEY = "my_index_outlook_v1"; // A94 지수 장기전망 대비 실제 괴리 기록([{date, sp500:{...}, ...}])
 /* A45: 직접입력(manual) 모드에서 "현재 종목수익률"을 계산할 때 쓰는 기본 조회기간(개월).
    종목별 실적 모드는 사용자가 고른 1/3/6/12를 쓰지만, 직접입력 모드는 고를 기간이 없어
    1년치를 표준으로 삼는다(단기 등락을 연율화하면 과장되는 문제를 피하려는 선택). */
@@ -354,6 +355,8 @@ function serializeMyAssets() {
     // A90: 세금탭의 자사주 수령 예정·특별배당 추정 — 내보내기/가져오기로 기기 간 이어지게 한다
     shareGrants: readShareGrants(),
     specialDividends: readSpecialDivs(),
+    // A94: 금리탭 지수전망 대비 실제 기록 — 이 이력이 이 기능의 유일한 산출물이라 백업에 꼭 포함
+    indexOutlookLog: readIndexOutlookLog(),
   };
 }
 
@@ -457,6 +460,7 @@ function applyMyAssets(data) {
      시뮬레이션이 조용히 틀어지기 때문(9/7 taxRatio 사건과 같은 계열의 함정). */
   if (Array.isArray(data.shareGrants)) localStorage.setItem(MY_SHARE_GRANTS_KEY, JSON.stringify(data.shareGrants));
   if (Array.isArray(data.specialDividends)) localStorage.setItem(MY_SPECIAL_DIV_KEY, JSON.stringify(data.specialDividends));
+  if (Array.isArray(data.indexOutlookLog)) localStorage.setItem(MY_INDEX_OUTLOOK_KEY, JSON.stringify(data.indexOutlookLog));
   document.getElementById("myAssetRows").innerHTML = "";
   for (const r of data.rows) {
     // 구버전(확정 월배당 총액) 데이터는 주당 DPS로 1회 변환
@@ -1858,6 +1862,193 @@ function buildRateGuideHTML() {
       <p class="stat-sub" style="margin-top:6px;">2024년 이후 사이클은 진행 상황이 계속 바뀌므로 이 표에 넣지 않았습니다 — 현재 국면 판단은 최신 FOMC·한국은행 발표를 직접 확인하세요. 같은 인상기·인하기라도 코스피 반응은 그때그때 경기·환율·수급에 크게 좌우되므로 위 표는 패턴 참고용이지 예측이 아닙니다.</p>
     </div>
   </div>`;
+}
+
+/* ---------- A94(2026-09-16 사용자 요청 "S&P500·나스닥·코스피 + 미국금리 직전 20년·향후 10년
+   전망을 반영한 보수/희망 지수전망, 예상치와 실제 이력을 쌓아 괴리 구간별 투자가이드") ----------
+
+   [무엇을 하는 화면인가] "예측"이 목적이 아니라 **예측이 빗나가는 폭을 재는 것**이 목적이다.
+   기준일 지수(앵커)를 코드에 고정해 두고 보수·희망 두 CAGR로 10년 경로를 그린 뒤, 시간이
+   지나며 실제 지수가 두 선 사이 어디에 있는지 본다. 앵커를 매번 현재가로 다시 잡으면 괴리가
+   늘 0이라 아무것도 측정하지 못하므로 상수로 박는다(고치려면 코드를 고쳐야 하는 의도된 불편).
+
+   [숫자의 출처 — 지어낸 값이 아니다]
+   ① 20년 실적 CAGR: 이 저장소 data/의 실측 종가로 계산(2026-09-11 기준, 배당 제외 가격수익률).
+      SPY 8.92% / QQQ 15.17% / KODEX200 11.58%, 20년 MDD는 셋 다 -53~-57%(2008년 저점).
+      ⚠️ 프록시 주의 — 앵커·실제값은 지수 자체(^GSPC/^IXIC/KOSPI)인데 과거 CAGR은 ETF 가격
+      기준이다. QQQ는 나스닥100이라 나스닥종합과, KODEX200은 코스피200이라 코스피종합과 완전히
+      같지 않다. "성장률의 크기"를 가늠하는 참고치로만 쓴다.
+   ② 향후 10년 기관 전망(2025-09~10 발표, 총수익 기준): Vanguard 미국주식 4.2~6.2%(대형주
+      3.4~5.4%, 성장주 2.3~4.3%) / BlackRock 미국주식 5.2% / J.P.Morgan 미국 대형주 6.7%,
+      60:40 6.4%. 모두 "지난 10년 같은 수익률의 반복은 어렵다"는 쪽이다.
+   ③ 금리 전제: 2026-09 FOMC 점도표 중앙값 2026년 4.1%(추가 인상 시사) → 2027년 4.00~4.25%
+      → 2029년 3.50~3.75%, 장기중립 3.25%(직전 3.06%에서 상향). "higher for longer" = 할인율이
+      지난 10년 평균보다 높게 유지된다는 뜻이라 보수 시나리오의 근거가 된다.
+   ④ 코스피: 국내 증권사 2026 하반기 목표밴드 7,600~10,000(2026년 예상순이익 832.5조원·목표
+      PER 10.9배), 2026·2027년 이익전망이 전년 전망 대비 +59.5%·+64.7% 상향, 밸류업·MSCI 선진
+      지수 승격 기대. 반대편 리스크는 유동시총 50%+가 IT이고 이익전망 절반 이상이 삼성전자·
+      SK하이닉스에 몰려 있다는 점 — 희망 CAGR을 20년 실적(11.58%)보다 낮게 잡은 이유다.
+
+   [시나리오 CAGR 근거] 보수 4.0%(3지수 공통)는 ②의 기관 컨센서스 하단(총수익 3~5%대)에서
+   배당수익률을 뺀 가격수익률 수준. 희망은 S&P500 8.0%(JPM 6.7%와 20년 실적 8.92% 사이),
+   나스닥 11.0%(20년 15.17%에서 성장주 프리미엄 축소를 반영해 크게 낮춤), 코스피 10.0%(④의
+   기대를 반영하되 집중 리스크 때문에 20년 실적 아래). 예언이 아니라 **판단 기준선**이다. */
+/* 앵커 날짜는 todayStr()과 같은 기준(UTC)으로 적는다 — 지수 수집시각이 KST 표기(2026-09-17
+   07:05 KST = 2026-09-16 22:05 UTC)라 무심코 KST 날짜를 넣으면 앵커가 "내일"이 돼 경과연수가
+   음수가 되고, 예상선이 앵커보다 낮게 깔려 괴리 0%인데도 "희망선 위"로 오판한다(2026-09-16
+   Playwright 검증에서 실제로 잡힌 버그). */
+const INDEX_OUTLOOK_ANCHOR_DATE = "2026-09-16";
+const INDEX_OUTLOOK_DEFS = [
+  { key: "sp500", label: "S&P500", quote: "sp500", base: 7551.81, cons: 0.040, opt: 0.080, hist20: 0.0892, histNote: "SPY 가격 20년", mdd20: -0.565 },
+  { key: "nasdaq", label: "나스닥", quote: "nasdaq", base: 25978.42, cons: 0.040, opt: 0.110, hist20: 0.1517, histNote: "QQQ(나스닥100) 20년", mdd20: -0.536 },
+  { key: "kospi", label: "코스피", quote: "kospi", base: 6717.97, cons: 0.040, opt: 0.100, hist20: 0.1158, histNote: "KODEX200 20년", mdd20: -0.527 },
+];
+
+/* 앵커일로부터의 경과연수만큼 복리 — 날짜 문자열 하나로 두 시나리오 값을 낸다. */
+function indexOutlookLevels(def, dateStr) {
+  const ms = Date.parse(dateStr + "T00:00:00Z") - Date.parse(INDEX_OUTLOOK_ANCHOR_DATE + "T00:00:00Z");
+  // 앵커 이전 날짜는 0으로 눌러 앵커값 그대로 쓴다(과거를 역추정하지 않음). 기기 시계·시간대가
+  // 앞서 있어도 예상선이 앵커 아래로 내려가 "과열"로 오판하는 일을 막는 안전장치다.
+  const years = Math.max(0, ms / (365.25 * 24 * 3600 * 1000));
+  return { years, cons: def.base * Math.pow(1 + def.cons, years), opt: def.base * Math.pow(1 + def.opt, years) };
+}
+
+/* 실제가 두 선 대비 어디인지 → 구간·색·행동 가이드.
+   경계 ±15%는 "한 해 수익률 한 번치" 정도로 잡은 실무 기준이지 통계적으로 검증된 값이 아니다
+   (화면에도 그렇게 밝힌다). 구간이 단조(저평가→과열)라 값이 커질수록 가이드가 한 방향으로만
+   움직인다 — 경계 근처에서 신호가 깜빡이지 않게 하려는 의도. */
+function indexOutlookBand(actual, cons, opt) {
+  if (!(actual > 0) || !(cons > 0) || !(opt > 0)) return null;
+  if (actual < cons * 0.85) return { zone: "저평가", icon: "🟢", color: "var(--good)", guide: "보수 시나리오보다도 15% 이상 낮은 구간 — 적립을 유지하고, 여유 현금이 있으면 분할 추가매수를 검토할 자리." };
+  if (actual < cons) return { zone: "보수선 아래", icon: "🟢", color: "var(--good)", guide: "기관 컨센서스 하단(보수선)에도 못 미치는 구간 — 적립 지속, 매도는 보류." };
+  if (actual <= opt) return { zone: "정상", icon: "⚪", color: "var(--text-muted)", guide: "두 시나리오 사이 = 계획대로 가는 중. 목표비중만 점검하고 별도 조치는 불필요." };
+  if (actual <= opt * 1.15) return { zone: "희망선 위", icon: "🟡", color: "#eda100", guide: "희망 시나리오까지 이미 당겨 쓴 구간 — 신규 매수 속도를 줄이고 목표비중 초과분 리밸런싱을 점검." };
+  return { zone: "과열", icon: "🔴", color: "var(--critical)", guide: "희망 시나리오조차 15% 넘게 웃도는 구간 — 추격매수 자제, 현금·안전자산 비중 확대와 이익실현 계획 검토." };
+}
+
+function readIndexOutlookLog() {
+  try {
+    const v = JSON.parse(localStorage.getItem(MY_INDEX_OUTLOOK_KEY) || "[]");
+    return Array.isArray(v) ? v.filter((r) => r && typeof r === "object" && r.date) : [];
+  } catch (e) { return []; }
+}
+
+/* 지수 전망 본체 — 전제표·현재 괴리·10년 경로·기록 이력. liveGlobal이 없으면(오프라인 등)
+   경로표는 그대로 보여주되 "실제 비교 불가"로 남긴다(마지막 기록값으로 대체하지 않는다 —
+   지금 시세인 것처럼 보이면 그게 더 위험하다). */
+function buildIndexOutlookHTML(liveGlobal) {
+  const snap = marketIndexSnapshot(liveGlobal);
+  const today = todayStr();
+  const idxFmt = (v) => Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 });
+  const pctFmt = (v) => `${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)}%`;
+
+  const premiseRows = INDEX_OUTLOOK_DEFS.map((d) => `<tr>
+    <td>${d.label}<br><span class="stat-sub" style="font-size:11px;">앵커 ${idxFmt(d.base)}</span></td>
+    <td>${(d.hist20 * 100).toFixed(2)}%<br><span class="stat-sub" style="font-size:11px;">${d.histNote}</span></td>
+    <td style="color:var(--text-muted);">${(d.cons * 100).toFixed(1)}%</td>
+    <td style="color:var(--good);">${(d.opt * 100).toFixed(1)}%</td>
+    <td style="color:var(--critical);">${(d.mdd20 * 100).toFixed(0)}%</td>
+  </tr>`).join("");
+
+  const nowCards = INDEX_OUTLOOK_DEFS.map((d) => {
+    const q = snap ? snap[d.quote] : null;
+    const actual = q && q.price > 0 ? q.price : null;
+    const lv = indexOutlookLevels(d, today);
+    const band = actual ? indexOutlookBand(actual, lv.cons, lv.opt) : null;
+    if (!band) {
+      return `<div class="stat">
+        <p class="stat-label">${d.label}</p>
+        <p class="stat-value" style="color:var(--text-muted);">비교 불가</p>
+        <p class="stat-sub">지수 시세를 못 불러왔습니다(네트워크). 보수 ${idxFmt(lv.cons)} · 희망 ${idxFmt(lv.opt)}</p>
+      </div>`;
+    }
+    const gapC = actual / lv.cons - 1, gapO = actual / lv.opt - 1;
+    return `<div class="stat">
+      <p class="stat-label">${d.label} ${band.icon} ${band.zone}</p>
+      <p class="stat-value" style="color:${band.color};">${idxFmt(actual)}</p>
+      <p class="stat-sub">보수 ${idxFmt(lv.cons)}(${pctFmt(gapC)}) · 희망 ${idxFmt(lv.opt)}(${pctFmt(gapO)})</p>
+    </div>`;
+  }).join("");
+
+  const guideRows = INDEX_OUTLOOK_DEFS.map((d) => {
+    const q = snap ? snap[d.quote] : null;
+    const actual = q && q.price > 0 ? q.price : null;
+    const lv = indexOutlookLevels(d, today);
+    const band = actual ? indexOutlookBand(actual, lv.cons, lv.opt) : null;
+    if (!band) return "";
+    return `<tr><td style="color:${band.color};">${band.icon} ${d.label} · ${band.zone}</td><td>${band.guide}</td></tr>`;
+  }).join("");
+
+  // 10년 경로 — 앵커 다음 해부터 10년치 연말(12-31) 기준. 한 칸에 "보수 → 희망"을 묶어
+  // 모바일 폭에서도 4열로 끝나게 한다.
+  const anchorYear = Number(INDEX_OUTLOOK_ANCHOR_DATE.slice(0, 4));
+  const pathRows = [];
+  for (let y = anchorYear; y <= anchorYear + 10; y++) {
+    const dateStr = y === anchorYear ? INDEX_OUTLOOK_ANCHOR_DATE : `${y}-12-31`;
+    const cells = INDEX_OUTLOOK_DEFS.map((d) => {
+      const lv = indexOutlookLevels(d, dateStr);
+      return `<td><span style="color:var(--text-muted);">${idxFmt(lv.cons)}</span> → <span style="color:var(--good);">${idxFmt(lv.opt)}</span></td>`;
+    }).join("");
+    pathRows.push(`<tr><td>${y === anchorYear ? `${y} 기준` : y}</td>${cells}</tr>`);
+  }
+
+  return `<div class="stat-row">${nowCards}</div>
+    <p class="stat-sub" style="margin-top:6px;">기준일 <b>${INDEX_OUTLOOK_ANCHOR_DATE}</b> 지수를 앵커로 고정하고 두 시나리오 CAGR로 굴린 값과 오늘(${today}) 실제를 비교합니다${snap && snap.updated ? ` · 지수 수집시각 ${snap.updated}` : ""}.</p>
+
+    ${guideRows ? `<p class="chart-title" style="margin-top:20px;">🧭 지금 구간에서의 행동 가이드</p>
+    <div style="overflow-x:auto;"><table class="account-summary-table">
+      <thead><tr><th>구간</th><th>가이드</th></tr></thead><tbody>${guideRows}</tbody>
+    </table></div>
+    <p class="stat-sub" style="margin-top:6px;">구간 경계(보수선 -15% / 희망선 +15%)는 "한 해 수익률 한 번치" 정도로 잡은 실무 기준이지 통계로 검증된 값이 아닙니다 — 매매 신호가 아니라 <b>점검 트리거</b>로 쓰세요.</p>` : ""}
+
+    <p class="chart-title" style="margin-top:20px;">📐 전제 — 20년 실적 vs 향후 10년 시나리오</p>
+    <div style="overflow-x:auto;"><table class="account-summary-table">
+      <thead><tr><th>지수</th><th>20년 실적 CAGR</th><th>보수</th><th>희망</th><th>20년 MDD</th></tr></thead>
+      <tbody>${premiseRows}</tbody>
+    </table></div>
+    <p class="stat-sub" style="margin-top:6px;">20년 실적·MDD는 이 앱이 수집한 실측 종가(배당 제외)에서 계산했고, 보수·희망 CAGR은 Vanguard(미국주식 4.2~6.2%)·BlackRock(5.2%)·J.P.Morgan(대형주 6.7%)의 10년 가정과 2026-09 FOMC 점도표(2026년 4.1%, 장기중립 3.25% — higher for longer), 국내 증권사 코스피 목표밴드(7,600~10,000)를 근거로 <b>제가 정한 기준선</b>입니다. 예측이 아니라 판단 잣대이며, ETF 프록시(SPY·QQQ·KODEX200)로 잰 과거 성장률이라 지수 자체와 완전히 같지 않습니다.</p>
+
+    <details class="collapse-box" style="margin-top:14px;">
+      <summary>📅 10년 경로 (보수 → 희망)</summary>
+      <div class="collapse-body">
+        <div style="overflow-x:auto;"><table class="account-summary-table" style="font-size:12.5px;">
+          <thead><tr><th>연도</th>${INDEX_OUTLOOK_DEFS.map((d) => `<th>${d.label}</th>`).join("")}</tr></thead>
+          <tbody>${pathRows.join("")}</tbody>
+        </table></div>
+        <p class="stat-sub" style="margin-top:6px;">각 칸은 <span style="color:var(--text-muted);">보수</span> → <span style="color:var(--good);">희망</span> 순입니다(연말 기준, 앵커 행만 기준일).</p>
+      </div>
+    </details>
+
+    <p class="chart-title" style="margin-top:20px;">🗂️ 예상 vs 실제 기록</p>
+    <div class="action-row" style="margin-bottom:8px;">
+      <button type="button" id="myIndexOutlookLogBtn" class="btn-action">📌 오늘 지수 기록</button>
+      <span id="myIndexOutlookStatus" class="action-status"></span>
+    </div>
+    <div id="myIndexOutlookLogBody">${buildIndexOutlookLogHTML(readIndexOutlookLog())}</div>`;
+}
+
+/* 기록 이력 — 같은 날 다시 누르면 덮어쓴다(하루 한 점). 정적 페이지라 자동 수집이 안 되므로
+   "눌러야 쌓인다"는 점을 화면에 밝힌다(자산 스냅샷과 같은 방식). */
+function buildIndexOutlookLogHTML(log) {
+  if (!log.length) {
+    return `<p class="compare-empty">아직 기록이 없습니다 — "📌 오늘 지수 기록"을 누르면 그 시점의 실제 지수와 보수·희망 예상치, 괴리율이 함께 저장됩니다. 정적 페이지라 자동으로는 쌓이지 않습니다(자산 스냅샷과 동일).</p>`;
+  }
+  const rows = log.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 24).map((r) => {
+    const cells = INDEX_OUTLOOK_DEFS.map((d) => {
+      const v = r[d.key];
+      if (!v || !(v.actual > 0)) return `<td>—</td>`;
+      const band = indexOutlookBand(v.actual, v.cons, v.opt);
+      const gapC = v.actual / v.cons - 1;
+      return `<td>${Number(v.actual).toLocaleString(undefined, { maximumFractionDigits: 0 })}<br>
+        <span class="stat-sub" style="font-size:11px; color:${band ? band.color : "var(--text-muted)"};">${band ? band.icon : ""} 보수대비 ${gapC >= 0 ? "+" : ""}${(gapC * 100).toFixed(1)}%</span></td>`;
+    }).join("");
+    return `<tr><td>${r.date}</td>${cells}</tr>`;
+  }).join("");
+  return `<div style="overflow-x:auto;"><table class="account-summary-table" style="font-size:12.5px;">
+      <thead><tr><th>기록일</th>${INDEX_OUTLOOK_DEFS.map((d) => `<th>${d.label}</th>`).join("")}</tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+    <p class="stat-sub" style="margin-top:6px;">최근 24건만 표시(저장은 200건까지). 각 행의 보수·희망 예상치는 <b>그날 기준으로 계산된 값</b>이 함께 저장돼 있어, 나중에 시나리오를 바꿔도 과거 기록의 괴리율은 그대로 남습니다.</p>`;
 }
 
 /* 코스피 값이 함께 저장된 월별 스냅샷(history)만으로 실제 보유기간의 코스피 대비 계좌
@@ -5143,7 +5334,10 @@ async function renderMyAssets() {
     </div>
 
     <div class="dash-panel" data-tab="rate" hidden>
-      <p class="chart-title" style="margin-top:20px;">🏦 금리 사이클 대응 가이드</p>
+      <p class="chart-title" style="margin-top:20px;">🔭 지수 장기전망 vs 실제 — 괴리 구간 가이드</p>
+      ${buildIndexOutlookHTML(liveGlobal)}
+
+      <p class="chart-title" style="margin-top:24px;">🏦 금리 사이클 대응 가이드</p>
       ${buildRateGuideHTML()}
       <p class="chart-title" style="margin-top:24px;">📊 코스피 vs 내 계좌 수익률 (실제 보유기간)</p>
       ${buildRateCorrelationInfoHTML(history)}
@@ -5421,6 +5615,35 @@ async function renderMyAssets() {
         { label: "코스피", color: "#199e70", dates: ratePts.map((h) => h.month + "-01"), values: ratePts.map((h) => h.kospi / base.kospi - 1) },
       ], { fmtAxis: (v) => (v * 100).toFixed(1) + "%", fmtTip: (v) => (v * 100).toFixed(2) + "%", anchorZero: true });
     }
+  }
+
+  // A94: 지수전망 대비 실제 기록 — 그날의 실제값뿐 아니라 그 시점 기준으로 계산한 보수·희망
+  // 예상치까지 함께 저장한다. 나중에 시나리오 CAGR을 바꿔도 과거 기록의 괴리율이 소급해서
+  // 바뀌면 "그때 어떻게 판단했는지"가 사라지기 때문이다.
+  const indexOutlookBtn = document.getElementById("myIndexOutlookLogBtn");
+  if (indexOutlookBtn) {
+    indexOutlookBtn.addEventListener("click", () => {
+      const snap = marketIndexSnapshot(state.liveGlobal ? state.liveGlobal.data : null);
+      if (!snap) { flashStatus("myIndexOutlookStatus", "지수 시세를 못 불러와 기록할 수 없습니다"); return; }
+      const date = todayStr();
+      const rec = { date, quotedAt: snap.updated || "" };
+      let saved = 0;
+      for (const d of INDEX_OUTLOOK_DEFS) {
+        const q = snap[d.quote];
+        if (!q || !(q.price > 0)) continue;
+        const lv = indexOutlookLevels(d, date);
+        rec[d.key] = { actual: q.price, cons: Math.round(lv.cons * 100) / 100, opt: Math.round(lv.opt * 100) / 100 };
+        saved++;
+      }
+      if (!saved) { flashStatus("myIndexOutlookStatus", "기록할 지수값이 없습니다"); return; }
+      const log = readIndexOutlookLog().filter((r) => r.date !== date); // 같은 날은 덮어쓰기(하루 한 점)
+      log.push(rec);
+      log.sort((a, b) => a.date.localeCompare(b.date));
+      localStorage.setItem(MY_INDEX_OUTLOOK_KEY, JSON.stringify(log.slice(-200)));
+      const body = document.getElementById("myIndexOutlookLogBody");
+      if (body) body.innerHTML = buildIndexOutlookLogHTML(readIndexOutlookLog());
+      flashStatus("myIndexOutlookStatus", `${date} 기록 완료(지수 ${saved}종)`);
+    });
   }
 
   // A81(2026-09-02 사용자 보고 "히트맵 지금 확인하기 버튼 없음"): "⏱️ 지금 확인"이 내 자산
