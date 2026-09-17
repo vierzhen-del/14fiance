@@ -4340,6 +4340,35 @@ const RATE_FOCUS_DEFS = {
     note: "3개국 금리(점선·우축)와 3개 지수(실선·좌축)를 모두 겹칩니다. 선이 6개라 모바일에서는 빽빽하니, 판단할 때는 나라별로 하나씩 보는 쪽을 권합니다.",
   },
 };
+/* A95b(2026-09-17 사용자 "년도를 전체/최근10년/5년/1년 줌인 / x축 기간이 넓어 조정 필요"):
+   20년을 한 화면에 그리면 최근 몇 년의 움직임이 왼쪽 20년에 눌려 안 보인다. 기간 버튼으로
+   끝(최신)에서 거꾸로 N년만 잘라 본다. 자른 구간의 **시작을 0%로 다시 맞추므로** "최근 1년
+   수익률"을 바로 읽을 수 있다(전체 구간 누적수익률을 그대로 잘라 보여주면 시작점이 +500%
+   같은 값이라 기울기만 보이고 수익률은 못 읽는다). */
+const RATE_RANGE_DEFS = {
+  all: { label: "전체", years: 0 },
+  y10: { label: "최근 10년", years: 10 },
+  y5: { label: "5년", years: 5 },
+  y1: { label: "1년", years: 1 },
+};
+
+/* 구간 자르기 — 경계에 걸친 선은 잘린 위치의 값(선형 보간)을 시작점으로 둔다. 없는 점을
+   만들어내는 게 아니라 **이미 그려지던 선을 창 경계에서 자르는 것**이다(자르지 않고 직전
+   점을 그대로 살리면 그 계열만 창보다 앞에서 시작해 x축이 어긋난다).
+   정책금리는 연말 기준 근사치라 경계값도 앞뒤 연말값을 잇는 선에서 읽은 값 — 화면에 밝힌다. */
+function clipSeriesFrom(s, startDate) {
+  const i = s.dates.findIndex((d) => d >= startDate);
+  if (i < 0) return null;
+  const dates = s.dates.slice(i), values = s.values.slice(i);
+  if (i > 0 && dates[0] > startDate) {
+    const t0 = Date.parse(s.dates[i - 1]), t1 = Date.parse(s.dates[i]), t = Date.parse(startDate);
+    const f = t1 > t0 ? (t - t0) / (t1 - t0) : 0;
+    dates.unshift(startDate);
+    values.unshift(s.values[i - 1] + (s.values[i] - s.values[i - 1]) * f);
+  }
+  return dates.length >= 2 ? { ...s, dates, values } : null;
+}
+
 /* 과거 지수 시계열 캐시 — 나라 버튼을 누를 때마다 가격이력을 다시 내려받지 않기 위해
    심볼→계열로 담아 둔다. 세 지수를 **한 번에** alignSeriesStarts로 맞춰 넣으므로, 어떤
    나라를 골라도 시작일(0%)이 같아 선택 간 비교가 어긋나지 않는다. */
@@ -4510,6 +4539,9 @@ function buildIndexOutlookHTML(liveGlobal) {
     <div id="myRateFocusBtns" class="seg" style="margin-bottom:8px;">
       ${Object.entries(RATE_FOCUS_DEFS).map(([k, d]) => `<button type="button" data-focus="${k}">${d.label}</button>`).join("")}
     </div>
+    <div id="myRateRangeBtns" class="seg" style="margin-bottom:8px;">
+      ${Object.entries(RATE_RANGE_DEFS).map(([k, d]) => `<button type="button" data-range="${k}">${d.label}</button>`).join("")}
+    </div>
     <div id="myOutlookPastComboChart"><p class="compare-empty">불러오는 중…</p></div>
     <p class="stat-sub" style="margin-top:4px;" id="myRateFocusNote"></p>
     <p class="stat-sub" style="margin-top:4px;">지수(실선·좌축)는 ETF 프록시(SPY·QQQ·KODEX200) 종가를 시작일 0%로 맞춘 누적 수익률이고(배당 제외), 금리(점선·우축)는 <b>연말 기준 근사치</b>입니다(미국=목표범위 상단, 한국=기준금리, 일본=무담보콜 유도목표. 마지막 점만 ${POLICY_RATE_NOW.asOf} 확인값). 이 앱은 금리 시계열을 수집하지 않아 공개된 역사적 사실을 상수로 넣은 것이며, 정확한 결정일·중간 변동은 담고 있지 않습니다 — 판단 전 각 중앙은행 발표를 확인하세요.</p>
@@ -4545,10 +4577,18 @@ function renderOutlookPastComboChart() {
   if (!el) return;
   const focus = RATE_FOCUS_DEFS[state.myRateFocus] ? state.myRateFocus : "us";
   const def = RATE_FOCUS_DEFS[focus];
+  const range = RATE_RANGE_DEFS[state.myRateRange] ? state.myRateRange : "all";
+  const rangeDef = RATE_RANGE_DEFS[range];
   const btns = document.getElementById("myRateFocusBtns");
   if (btns) btns.querySelectorAll("button").forEach((b) => b.classList.toggle("active", b.dataset.focus === focus));
+  const rangeBtns = document.getElementById("myRateRangeBtns");
+  if (rangeBtns) rangeBtns.querySelectorAll("button").forEach((b) => b.classList.toggle("active", b.dataset.range === range));
   const note = document.getElementById("myRateFocusNote");
-  if (note) note.innerHTML = def.note;
+  if (note) {
+    note.innerHTML = def.note + (rangeDef.years
+      ? ` <b>최근 ${rangeDef.years}년</b> 구간만 잘라 보고 있습니다 — 지수선은 <b>구간 시작을 0%로 다시 맞춰</b> 그 기간 수익률을 바로 읽을 수 있고, 금리선은 연말 기준 근사치라 구간 시작점 값은 앞뒤 연말값을 잇는 선에서 읽은 값입니다${rangeDef.years <= 1 ? " (1년 구간에는 연말 점이 한 개뿐이라 금리선이 거의 직선으로 보입니다)" : ""}.`
+      : "");
+  }
   if (!pastIndexSeriesCache) return; // 로딩 중 — 완료 시 와이어링에서 다시 부른다
   const series = [];
   for (const sym of def.symbols) {
@@ -4567,8 +4607,25 @@ function renderOutlookPastComboChart() {
     });
   }
   if (!series.length) { el.innerHTML = `<p class="compare-empty">그릴 계열이 없습니다.</p>`; return; }
+
+  // 기간 줌 — 가장 최신 점에서 거꾸로 N년. 자른 뒤 지수(좌축)만 구간 시작 0%로 재기준한다
+  // (금리는 절대 수준 자체가 의미라 손대지 않는다).
+  let shown = series;
+  if (rangeDef.years > 0) {
+    const endTs = Math.max(...series.map((s) => Date.parse(s.dates[s.dates.length - 1])));
+    const start = new Date(endTs);
+    start.setUTCFullYear(start.getUTCFullYear() - rangeDef.years);
+    const startStr = start.toISOString().slice(0, 10);
+    shown = series.map((s) => clipSeriesFrom(s, startStr)).filter(Boolean)
+      .map((s) => {
+        if (s.axis === "right") return s;
+        const f = 1 + s.values[0];
+        return { ...s, values: s.values.map((v) => (1 + v) / f - 1) };
+      });
+    if (!shown.length) { el.innerHTML = `<p class="compare-empty">이 기간에 표시할 데이터가 없습니다.</p>`; return; }
+  }
   el.innerHTML = "";
-  buildCompareChart(el, series, {
+  buildCompareChart(el, shown, {
     fmtAxis: (v) => (v * 100).toFixed(0) + "%",
     fmtTip: (v) => (v * 100).toFixed(1) + "%",
     fmtAxisRight: (v) => (v * 100).toFixed(1) + "%",
@@ -8219,6 +8276,12 @@ async function renderMyAssets() {
     if (rateFocusBtns) {
       rateFocusBtns.querySelectorAll("button").forEach((b) => {
         b.addEventListener("click", () => { state.myRateFocus = b.dataset.focus; renderOutlookPastComboChart(); });
+      });
+    }
+    const rateRangeBtns = document.getElementById("myRateRangeBtns");
+    if (rateRangeBtns) {
+      rateRangeBtns.querySelectorAll("button").forEach((b) => {
+        b.addEventListener("click", () => { state.myRateRange = b.dataset.range; renderOutlookPastComboChart(); });
       });
     }
     renderOutlookPastComboChart(); // 버튼 활성표시·설명 먼저
