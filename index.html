@@ -4319,7 +4319,7 @@ const PAST_INDEX_DEFS = [
 ];
 const RATE_LINE_DEFS = {
   us: { label: "미국 정책금리(우축)", col: 1, color: "#d03b3b" },
-  kr: { label: "한국 기준금리(우축)", col: 2, color: "#0c6b3f" },
+  kr: { label: "한국 기준금리(우축)", col: 2, color: "#c2348b" }, // 코스피200 선(초록)과 겹치지 않게 자홍
   jp: { label: "일본 유도목표(우축)", col: 3, color: "#b07d00" },
 };
 const RATE_FOCUS_DEFS = {
@@ -4329,7 +4329,7 @@ const RATE_FOCUS_DEFS = {
   },
   kr: {
     label: "🇰🇷 한국금리", rates: ["kr"], symbols: ["069500.KS"],
-    note: "한국 기준금리(초록 점선·우축)와 코스피200(좌축)입니다. 한국은 <b>한·미 금리차가 역전되면</b> 원화 약세·외국인 자금유출 압력이 겹쳐, 금리를 올려도 지수가 함께 눌리는 구간이 있었습니다.",
+    note: "한국 기준금리(자홍 점선·우축)와 코스피200(좌축)입니다. 한국은 <b>한·미 금리차가 역전되면</b> 원화 약세·외국인 자금유출 압력이 겹쳐, 금리를 올려도 지수가 함께 눌리는 구간이 있었습니다.",
   },
   jp: {
     label: "🇯🇵 일본금리", rates: ["jp"], symbols: ["SPY", "QQQ", "069500.KS"],
