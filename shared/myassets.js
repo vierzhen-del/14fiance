@@ -1899,10 +1899,48 @@ function buildRateGuideHTML() {
    Playwright 검증에서 실제로 잡힌 버그). */
 const INDEX_OUTLOOK_ANCHOR_DATE = "2026-09-16";
 const INDEX_OUTLOOK_DEFS = [
-  { key: "sp500", label: "S&P500", quote: "sp500", base: 7551.81, cons: 0.040, opt: 0.080, hist20: 0.0892, histNote: "SPY 가격 20년", mdd20: -0.565 },
-  { key: "nasdaq", label: "나스닥", quote: "nasdaq", base: 25978.42, cons: 0.040, opt: 0.110, hist20: 0.1517, histNote: "QQQ(나스닥100) 20년", mdd20: -0.536 },
-  { key: "kospi", label: "코스피", quote: "kospi", base: 6717.97, cons: 0.040, opt: 0.100, hist20: 0.1158, histNote: "KODEX200 20년", mdd20: -0.527 },
+  { key: "sp500", label: "S&P500", quote: "sp500", base: 7551.81, cons: 0.040, opt: 0.080, hist20: 0.0892, histNote: "SPY 가격 20년", mdd20: -0.565, mddHike: -0.227, mddCut: -0.518 },
+  { key: "nasdaq", label: "나스닥", quote: "nasdaq", base: 25978.42, cons: 0.040, opt: 0.110, hist20: 0.1517, histNote: "QQQ(나스닥100) 20년", mdd20: -0.536, mddHike: -0.299, mddCut: -0.536 },
+  { key: "kospi", label: "코스피", quote: "kospi", base: 6717.97, cons: 0.040, opt: 0.100, hist20: 0.1158, histNote: "KODEX200 20년", mdd20: -0.527, mddHike: -0.226, mddCut: -0.527 },
 ];
+
+/* A94c(2026-09-17 사용자 지적 "금리인상기 MDD를 반영해라 / 지금 수익률은 우상향인 부분 오류점검"):
+   두 지적 모두 맞았다. 확인한 내용과 고친 방향을 남긴다.
+
+   [지적 1 — MDD 맥락 오류] 화면에 쓰던 "20년 MDD -53~-57%"는 전부 2008년 금융위기, 즉
+   **금리 인하기** 값이다. 지금은 한·미·일 동시 인상기인데 인하기 낙폭을 들이대고 있었다.
+   data/ 실측으로 국면을 나눠보니 통념과 반대의 결과가 나왔다:
+     · 인상기(2015~18, 2022~23): MDD -20~-30%, 구간수익률은 대체로 **플러스**
+     · 인하기(2007~08, 2019~20): MDD -29~-54%, 구간수익률은 **마이너스**
+   인하가 보통 "경기가 나빠져서" 나오는 대응이라 인하 시작 자체가 위기 신호인 탓이다.
+   → 전제표를 인상기/인하기로 쪼개고, 지금 국면(인상기) 값을 기본으로 쓴다.
+
+   [지적 2 — 우상향 전망의 결함] 보수 4%·희망 8~11% 모두 매끄러운 지수함수라 11개 시점이
+   전부 상승, **낙폭 구간이 0개**였다. "보수"라는 이름을 달고도 실제로는 낙관적이었다는 뜻이다
+   (10년이면 인상기·인하기가 여러 번 오고 -20~-50% 구간을 반드시 지난다).
+   → 전망 차트·경로표에 **충격 하단선**(보수경로 × (1 + 인상기 MDD))을 추가한다. 경로가
+   우상향이어도 "언제든 이 선까지 내려갈 수 있다"를 같이 보여주는 것이 정직하다.
+   경로 자체에 인위적 폭락 시점을 박지 않는 이유: 언제 올지는 아무도 모르므로 특정 연도에
+   찍으면 그게 또 다른 거짓 정밀도가 된다. 밴드로 두면 "아무 때나 올 수 있다"가 된다. */
+const CYCLE_MDD_ROWS = [
+  ["인상기", "2015.12~2018.12", "-20.2%", "-23.2%", "-22.0%", "+18.6% / +34.0% / +13.4%"],
+  ["인상기", "2022.03~2023.07", "-22.7%", "-29.9%", "-22.6%", "+6.5% / +12.4% / -1.3%"],
+  ["인하기", "2007.09~2008.12", "-51.8%", "-53.6%", "-52.7%", "-39.5% / -40.1% / -36.7%"],
+  ["인하기", "2019.07~2020.03", "-34.1%", "-28.6%", "-34.6%", "-12.8% / +0.6% / -12.9%"],
+];
+
+/* 국면별 낙폭 표 — "인상기가 더 안전하다"는 결론을 내려주지 않는다. 표본이 20년에 두 사이클씩
+   뿐이라 통계로 말할 수 없고, 인상기 끝에 인하기가 붙어 오는 경우도 있기 때문이다. */
+function buildCycleMddHTML() {
+  return `<div style="overflow-x:auto;"><table class="account-summary-table" style="font-size:12px;">
+      <thead><tr><th>국면</th><th>기간</th><th>S&P500</th><th>나스닥100</th><th>코스피200</th><th>구간수익률</th></tr></thead>
+      <tbody>${CYCLE_MDD_ROWS.map(([c, p, a, b, d, r]) => `<tr>
+        <td style="color:${c === "인상기" ? "#eda100" : "var(--critical)"};">${c}</td><td>${p}</td>
+        <td style="color:var(--critical);">${a}</td><td style="color:var(--critical);">${b}</td><td style="color:var(--critical);">${d}</td>
+        <td class="stat-sub" style="font-size:11px;">${r}</td></tr>`).join("")}</tbody>
+    </table></div>
+    <p class="stat-sub" style="margin-top:6px;">이 앱이 수집한 실측 종가로 각 구간의 최대낙폭을 직접 계산한 값입니다(구간수익률은 S&P500 / 나스닥100 / 코스피200 순). <b>인상기 낙폭(-20~-30%)이 인하기(-29~-54%)보다 얕고 구간수익률도 대체로 플러스</b>인데, 인하는 보통 경기가 나빠져서 하는 대응이라 인하 시작 자체가 위기 신호인 탓입니다. 다만 20년에 사이클이 두 번씩뿐이라 <b>통계로 단정할 표본은 아니며</b>, 인상기 끝에 인하기가 곧바로 붙어 오기도 합니다(2018년 말 → 2019년 인하).</p>`;
+}
 
 /* 앵커일로부터의 경과연수만큼 복리 — 날짜 문자열 하나로 두 시나리오 값을 낸다. */
 function indexOutlookLevels(def, dateStr) {
@@ -1949,8 +1987,8 @@ const POLICY_RATE_NOW = {
    구조라 현금이 0이면 하락장에서 자산을 팔아야 하므로, 과열일수록 현금을 늘려 두는 쪽이다. */
 function indexOutlookBand(actual, cons, opt) {
   if (!(actual > 0) || !(cons > 0) || !(opt > 0)) return null;
-  if (actual < cons * 0.85) return { zone: "저평가", icon: "🟢", color: "var(--good)", cash: "5~10%", guide: "보수 시나리오보다도 15% 이상 낮은 구간 — 적립을 유지하고, 모아둔 현금을 분할 투입할 자리. 현금은 최소한(생활비 3~6개월)만 남긴다." };
-  if (actual < cons) return { zone: "보수선 아래", icon: "🟢", color: "var(--good)", cash: "10~15%", guide: "기관 컨센서스 하단(보수선)에도 못 미치는 구간 — 적립 지속, 매도 보류. 현금은 평소 수준 유지." };
+  if (actual < cons * 0.85) return { zone: "저평가", icon: "🟢", color: "var(--good)", cash: "5~10%", guide: "보수 시나리오보다도 15% 이상 낮은 구간 — 적립 유지, 모아둔 현금을 <b>분할</b> 투입할 자리. ⚠️ <b>여기가 바닥이라는 뜻은 아니다</b>: 과거 낙폭은 인상기 -20~-30%, 인하기 -34~-54%였으므로 한 번에 다 넣지 말 것." };
+  if (actual < cons) return { zone: "보수선 아래", icon: "🟢", color: "var(--good)", cash: "10~15%", guide: "기관 컨센서스 하단(보수선)에도 못 미치는 구간 — 적립 지속, 매도 보류. 다만 <b>충격 하단선까지는 더 내려갈 수 있으니</b> 현금은 평소 수준을 유지한다." };
   if (actual <= opt) return { zone: "정상", icon: "⚪", color: "var(--text-muted)", cash: "15~20%", guide: "두 시나리오 사이 = 계획대로 가는 중. 목표비중만 점검하고 별도 조치는 불필요. 생활비 6~12개월치 현금을 유지." };
   if (actual <= opt * 1.15) return { zone: "희망선 위", icon: "🟡", color: "#eda100", cash: "20~30%", guide: "희망 시나리오까지 이미 당겨 쓴 구간 — 신규 매수 속도를 줄이고 초과분 리밸런싱. 줄인 매수액은 소비하지 말고 **현금으로 쌓아** 다음 저평가 구간의 실탄으로 둔다." };
   return { zone: "과열", icon: "🔴", color: "var(--critical)", cash: "30~40%", guide: "희망 시나리오조차 15% 넘게 웃도는 구간 — 추격매수 자제, 이익실현으로 현금을 만들어 둔다. 20년간 세 지수 모두 -53~-57% 낙폭을 겪었다는 점을 기억할 것." };
@@ -1994,7 +2032,8 @@ function buildIndexOutlookHTML(liveGlobal) {
     <td>${(d.hist20 * 100).toFixed(2)}%<br><span class="stat-sub" style="font-size:11px;">${d.histNote}</span></td>
     <td style="color:var(--text-muted);">${(d.cons * 100).toFixed(1)}%</td>
     <td style="color:var(--good);">${(d.opt * 100).toFixed(1)}%</td>
-    <td style="color:var(--critical);">${(d.mdd20 * 100).toFixed(0)}%</td>
+    <td style="color:#eda100;">${(d.mddHike * 100).toFixed(0)}%</td>
+    <td style="color:var(--critical);">${(d.mddCut * 100).toFixed(0)}%</td>
   </tr>`).join("");
 
   const nowCards = INDEX_OUTLOOK_DEFS.map((d) => {
@@ -2050,9 +2089,10 @@ function buildIndexOutlookHTML(liveGlobal) {
 
     <p class="chart-title" style="margin-top:20px;">📐 전제 — 20년 실적 vs 향후 10년 시나리오</p>
     <div style="overflow-x:auto;"><table class="account-summary-table">
-      <thead><tr><th>지수</th><th>20년 실적 CAGR</th><th>보수</th><th>희망</th><th>20년 MDD</th></tr></thead>
+      <thead><tr><th>지수</th><th>20년 실적 CAGR</th><th>보수</th><th>희망</th><th>인상기<br>MDD</th><th>인하기<br>MDD</th></tr></thead>
       <tbody>${premiseRows}</tbody>
     </table></div>
+    <p class="stat-sub" style="margin-top:6px;">⚠️ <b>두 시나리오 모두 낙폭이 0인 매끄러운 우상향 곡선입니다</b> — 10년이면 인상기·인하기가 여러 번 오고 위 MDD 구간을 반드시 지나므로, 경로를 그대로 믿으면 안 됩니다. 아래 전망 차트의 <b>충격 하단선</b>(보수경로에서 인상기 MDD만큼 내려간 선)을 함께 보세요.</p>
     <p class="stat-sub" style="margin-top:6px;">20년 실적·MDD는 이 앱이 수집한 실측 종가(배당 제외)에서 계산했고, 보수·희망 CAGR은 Vanguard(미국주식 4.2~6.2%)·BlackRock(5.2%)·J.P.Morgan(대형주 6.7%)의 10년 가정과 2026-09 FOMC 점도표(2026년 4.1%, 장기중립 3.25% — higher for longer), 국내 증권사 코스피 목표밴드(7,600~10,000)를 근거로 <b>제가 정한 기준선</b>입니다. 예측이 아니라 판단 잣대이며, ETF 프록시(SPY·QQQ·KODEX200)로 잰 과거 성장률이라 지수 자체와 완전히 같지 않습니다.</p>
 
     <details class="collapse-box" style="margin-top:14px;">
@@ -2106,9 +2146,12 @@ function buildIndexOutlookHTML(liveGlobal) {
     <div id="myOutlookPastRateChart" style="margin-top:10px;"></div>
     <p class="stat-sub" style="margin-top:4px;">정책금리는 <b>연말 기준 근사치</b>입니다(미국=목표범위 상단, 한국=기준금리, 일본=무담보콜 유도목표). 이 앱은 금리 시계열을 수집하지 않아 공개된 역사적 사실을 상수로 넣은 것이며, 정확한 결정일·중간 변동은 담고 있지 않습니다 — 판단 전 각 중앙은행 발표를 확인하세요.</p>
 
+    <p class="chart-title" style="margin-top:20px;">📊 금리 국면별 실제 낙폭 (실측)</p>
+    ${buildCycleMddHTML()}
+
     <p class="chart-title" style="margin-top:20px;">🔮 향후 10년 전망 경로와 실제</p>
     <div id="myOutlookFutureChart"><p class="compare-empty">불러오는 중…</p></div>
-    <p class="stat-sub" style="margin-top:4px;">점선 두 개가 보수·희망 경로, 굵은 선이 <b>"📌 오늘 지수 기록"으로 쌓인 실제</b>입니다. 기록이 2건 이상 쌓여야 실제 선이 그려집니다.</p>
+    <p class="stat-sub" style="margin-top:4px;">점선이 보수·희망 경로와 <b style="color:var(--critical);">충격 하단선</b>(보수경로에서 인상기 MDD만큼 내려간 선), 실선이 <b>"📌 오늘 지수 기록"으로 쌓인 실제</b>입니다(기록 2건부터). <b>두 시나리오는 낙폭이 0인 우상향 곡선</b>이라 그대로 믿으면 안 되고, 충격 하단선이 "경로를 따라가더라도 도중에 여기까지는 내려갈 수 있다"를 뜻합니다 — 그 구간을 버티는 데 필요한 것이 아래 <b>현금 비중</b>입니다.</p>
 
     <p class="chart-title" style="margin-top:20px;">📏 이동평균 이격도 (M20 / M60 / M200)</p>
     <div id="myOutlookMaBody"><p class="compare-empty">불러오는 중…</p></div>
@@ -2142,9 +2185,16 @@ function renderOutlookFutureChart() {
     dates: futDates, values: futDates.map((d) => indexOutlookLevels(def, d)[kind] / def.base - 1),
   });
   const sp = INDEX_OUTLOOK_DEFS[0], ks = INDEX_OUTLOOK_DEFS[2];
+  // A94c: 충격 하단 = 보수경로 × (1 + 인상기 MDD). 두 시나리오가 모두 매끄러운 우상향이라
+  // "낙폭이 한 번도 없는 미래"를 그리고 있었는데, 이 선을 같이 그려야 경로를 믿더라도
+  // 도중에 어디까지 내려갈 수 있는지가 눈에 들어온다.
+  const shock = (def, color) => ({
+    label: `${def.label} 충격하단(${(def.mddHike * 100).toFixed(0)}%)`, color, dash: true,
+    dates: futDates, values: futDates.map((d) => indexOutlookLevels(def, d).cons * (1 + def.mddHike) / def.base - 1),
+  });
   const series = [
-    mk(sp, "cons", "#9fb6cc"), mk(sp, "opt", "#2a78d6"),
-    mk(ks, "cons", "#a6ccb9"), mk(ks, "opt", "#199e70"),
+    mk(sp, "cons", "#9fb6cc"), mk(sp, "opt", "#2a78d6"), shock(sp, "#d03b3b"),
+    mk(ks, "cons", "#a6ccb9"), mk(ks, "opt", "#199e70"), shock(ks, "#e08b8b"),
   ];
   const log = readIndexOutlookLog().slice().sort((a, b) => a.date.localeCompare(b.date));
   for (const [def, color] of [[sp, "#0b3d91"], [ks, "#0c6b3f"]]) {
