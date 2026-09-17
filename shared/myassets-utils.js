@@ -177,23 +177,50 @@ function buildCompareChart(container, seriesList, opts = {}) {
   const fmtTip = opts.fmtTip || ((v) => (v * 100).toFixed(1) + "%");
   const anchorZero = opts.anchorZero !== false;
   const H = opts.height || CHART_H;
+  // A95: s.axis==="right"인 계열은 오른쪽 y축의 별도 스케일로 그린다 — 정책금리(0~5%)와
+  // 지수 누적수익률(0~600%)처럼 자릿수가 다른 값을 한 차트에 겹쳐 "금리가 오를 때 지수가
+  // 어떻게 움직였나"를 한 눈에 보기 위한 것이다. 우축 계열이 없거나 전부 우축이면 축을
+  // 둘로 나눌 이유가 없어 기존 단일축 경로를 그대로 탄다(기존 호출부 무변경).
+  const rightSeries = seriesList.filter((s) => s.axis === "right");
+  const leftSeries = seriesList.filter((s) => s.axis !== "right");
+  const hasRight = rightSeries.length > 0 && leftSeries.length > 0;
+  const fmtAxisR = opts.fmtAxisRight || fmtAxis;
+  const fmtTipR = opts.fmtTipRight || fmtTip;
+  const padR = hasRight ? 46 : PAD_R;
   const domainMin = Math.min(...seriesList.map((s) => Date.parse(s.dates[0])));
   const domainMax = Math.max(...seriesList.map((s) => Date.parse(s.dates[s.dates.length - 1])));
-  const xAt = (ts) => PAD_L + ((ts - domainMin) / (domainMax - domainMin)) * (CHART_W - PAD_L - PAD_R);
+  const xAt = (ts) => PAD_L + ((ts - domainMin) / (domainMax - domainMin)) * (CHART_W - PAD_L - padR);
 
   let vMin = anchorZero ? 0 : Infinity, vMax = anchorZero ? 0 : -Infinity;
-  for (const s of seriesList) { vMin = Math.min(vMin, ...s.values); vMax = Math.max(vMax, ...s.values); }
+  for (const s of (hasRight ? leftSeries : seriesList)) { vMin = Math.min(vMin, ...s.values); vMax = Math.max(vMax, ...s.values); }
   const ticks = niceTicks(vMin, vMax, 5);
   const tMin = ticks[0], tMax = ticks[ticks.length - 1];
   const yAt = (v) => PAD_T + (1 - (v - tMin) / (tMax - tMin)) * (H - PAD_T - PAD_B);
 
+  // 우축 눈금은 좌축과 **같은 개수**로 맞춘다 — 격자선이 두 벌로 겹쳐 보이지 않게 하려는 것.
+  // 눈금 수를 맞추려고 step을 키우는 루프에는 상한(guard)을 둬 무한루프를 막는다.
+  let rTicks = [], yAtR = yAt;
+  if (hasRight) {
+    let rMin = Infinity, rMax = -Infinity;
+    for (const s of rightSeries) { rMin = Math.min(rMin, ...s.values); rMax = Math.max(rMax, ...s.values); }
+    if (opts.anchorZeroRight !== false) { rMin = Math.min(rMin, 0); rMax = Math.max(rMax, 0); }
+    const rBaseTicks = niceTicks(rMin, rMax, Math.max(1, ticks.length - 1));
+    const rLo = rBaseTicks[0], rHi = rBaseTicks[rBaseTicks.length - 1];
+    // 우축 눈금값은 좌축 격자선 위치에 **비례 배분**한다. 눈금 개수를 맞추려고 우축 상한을
+    // 올리면(예: 금리 최대 5.5%인데 축이 0~10%) 금리선이 아래쪽에 깔려 움직임이 안 보인다 —
+    // 라벨이 딱 떨어지는 숫자가 아니더라도 선이 화면을 꽉 쓰는 쪽을 택했다(격자선은 한 벌).
+    rTicks = ticks.map((t) => rLo + ((t - tMin) / (tMax - tMin)) * (rHi - rLo));
+    yAtR = (v) => PAD_T + (1 - (v - rLo) / (rHi - rLo)) * (H - PAD_T - PAD_B);
+  }
+
   const tsLists = seriesList.map((s) => s.dates.map((d) => Date.parse(d)));
 
   const gridSvg = ticks
-    .map((t) => {
+    .map((t, ti) => {
       const y = yAt(t).toFixed(2);
-      return `<line class="gridline" x1="${PAD_L}" x2="${CHART_W - PAD_R}" y1="${y}" y2="${y}"/>` +
-             `<text class="axis-label" x="${PAD_L - 6}" y="${Number(y) + 3}" text-anchor="end">${fmtAxis(t)}</text>`;
+      return `<line class="gridline" x1="${PAD_L}" x2="${CHART_W - padR}" y1="${y}" y2="${y}"/>` +
+             `<text class="axis-label" x="${PAD_L - 6}" y="${Number(y) + 3}" text-anchor="end">${fmtAxis(t)}</text>` +
+             (hasRight ? `<text class="axis-label" x="${CHART_W - padR + 6}" y="${Number(y) + 3}" text-anchor="start">${fmtAxisR(rTicks[ti])}</text>` : "");
     })
     .join("");
 
@@ -213,7 +240,7 @@ function buildCompareChart(container, seriesList, opts = {}) {
   seriesList.forEach((s, si) => {
     let path = "";
     for (let i = 0; i < s.dates.length; i++) {
-      const x = xAt(tsLists[si][i]).toFixed(2), y = yAt(s.values[i]).toFixed(2);
+      const x = xAt(tsLists[si][i]).toFixed(2), y = (s.axis === "right" ? yAtR : yAt)(s.values[i]).toFixed(2);
       path += (i === 0 ? "M" : "L") + x + "," + y + " ";
     }
     // A94b: s.dash=true면 점선 — "예상 경로"와 "실제 기록"을 한 차트에 겹칠 때 둘을 눈으로
@@ -232,7 +259,7 @@ function buildCompareChart(container, seriesList, opts = {}) {
       <svg class="chart" viewBox="0 0 ${CHART_W} ${H}" preserveAspectRatio="xMidYMid meet">
         ${gridSvg}
         ${xLabelsSvg}
-        <line class="baseline" x1="${PAD_L}" x2="${CHART_W - PAD_R}" y1="${zeroY}" y2="${zeroY}"/>
+        <line class="baseline" x1="${PAD_L}" x2="${CHART_W - padR}" y1="${zeroY}" y2="${zeroY}"/>
         ${linesSvg}
         <g class="hover-layer" style="display:none">
           <line class="crosshair-line" x1="0" x2="0" y1="${PAD_T}" y2="${H - PAD_B}"/>
@@ -250,7 +277,7 @@ function buildCompareChart(container, seriesList, opts = {}) {
     const pt = svg.createSVGPoint();
     pt.x = evt.clientX; pt.y = evt.clientY;
     const loc = pt.matrixTransform(svg.getScreenCTM().inverse());
-    const ratio = Math.min(1, Math.max(0, (loc.x - PAD_L) / (CHART_W - PAD_L - PAD_R)));
+    const ratio = Math.min(1, Math.max(0, (loc.x - PAD_L) / (CHART_W - PAD_L - padR)));
     const targetTs = domainMin + ratio * (domainMax - domainMin);
 
     hoverLayer.style.display = "";
@@ -270,7 +297,7 @@ function buildCompareChart(container, seriesList, opts = {}) {
         const idx = nearestIndexByTime(tsLists[si], targetTs);
         if (!refDate || s.dates[idx] > refDate) refDate = s.dates[idx];
         return `<div class="t-row"><span class="t-key"><span class="t-swatch" style="background:${s.color}"></span>${s.label}</span>` +
-               `<strong>${fmtTip(s.values[idx])}</strong></div>`;
+               `<strong>${(s.axis === "right" ? fmtTipR : fmtTip)(s.values[idx])}</strong></div>`;
       })
       .join("");
     tooltip.innerHTML = `<div class="t-date">${refDate}</div>${rows}`;

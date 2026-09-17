@@ -1979,6 +1979,45 @@ const POLICY_RATE_NOW = {
   dots: [["2026년 말", "4.1%"], ["2027년", "4.00~4.25%"], ["2028년", "3.75~4.00%"], ["2029년", "3.50~3.75%"], ["장기중립", "3.25%"]],
 };
 
+/* A95(2026-09-17 사용자 "금리인상 지수하락 대비용 탭 / 금리 선택시 지수도 같이"):
+   이 탭의 목적이 "금리가 오를 때 지수가 얼마나 빠지는지 미리 보고 대비하는 것"인데,
+   금리 차트와 지수 차트가 따로 그려져 있으면 두 선을 눈으로 겹쳐 봐야 했다. 나라를 고르면
+   그 나라 정책금리(우축)와 그 나라 지수(좌축)가 **한 차트에** 그려지게 묶는다.
+   일본은 이 저장소에 닛케이 가격 이력이 없다 — 없는 데이터를 지어내지 않고, 대신 엔캐리
+   청산의 영향을 받는 3개 지수를 함께 띄우고 그 사실을 화면에 밝힌다. */
+const PAST_INDEX_DEFS = [
+  { sym: "SPY", label: "S&P500(SPY)", color: "#2a78d6" },
+  { sym: "QQQ", label: "나스닥100(QQQ)", color: "#7b5ec9" },
+  { sym: "069500.KS", label: "코스피200(KODEX)", color: "#199e70" },
+];
+const RATE_LINE_DEFS = {
+  us: { label: "미국 정책금리(우축)", col: 1, color: "#d03b3b" },
+  kr: { label: "한국 기준금리(우축)", col: 2, color: "#0c6b3f" },
+  jp: { label: "일본 유도목표(우축)", col: 3, color: "#b07d00" },
+};
+const RATE_FOCUS_DEFS = {
+  us: {
+    label: "🇺🇸 미국금리", rates: ["us"], symbols: ["SPY", "QQQ"],
+    note: "미국 정책금리(빨강 점선·우축)와 미국 지수 2종(좌축)입니다. <b>2015~2018·2022~2023 인상 구간</b>에서 두 지수가 각각 -20.2%·-23.2%, -22.7%·-29.9%까지 밀렸습니다(아래 '금리 국면별 실제 낙폭' 표와 같은 실측치).",
+  },
+  kr: {
+    label: "🇰🇷 한국금리", rates: ["kr"], symbols: ["069500.KS"],
+    note: "한국 기준금리(초록 점선·우축)와 코스피200(좌축)입니다. 한국은 <b>한·미 금리차가 역전되면</b> 원화 약세·외국인 자금유출 압력이 겹쳐, 금리를 올려도 지수가 함께 눌리는 구간이 있었습니다.",
+  },
+  jp: {
+    label: "🇯🇵 일본금리", rates: ["jp"], symbols: ["SPY", "QQQ", "069500.KS"],
+    note: "일본 유도목표(주황 점선·우축)와 지수 3종입니다. <b>이 저장소에는 닛케이 가격 이력이 없어</b> 일본 지수는 그리지 못합니다 — 대신 일본이 금리를 올릴 때 엔캐리 청산으로 함께 흔들리는 3개 지수를 띄웁니다(2024-08 엔캐리 청산이 그 사례).",
+  },
+  all: {
+    label: "전체", rates: ["us", "kr", "jp"], symbols: ["SPY", "QQQ", "069500.KS"],
+    note: "3개국 금리(점선·우축)와 3개 지수(실선·좌축)를 모두 겹칩니다. 선이 6개라 모바일에서는 빽빽하니, 판단할 때는 나라별로 하나씩 보는 쪽을 권합니다.",
+  },
+};
+/* 과거 지수 시계열 캐시 — 나라 버튼을 누를 때마다 가격이력을 다시 내려받지 않기 위해
+   심볼→계열로 담아 둔다. 세 지수를 **한 번에** alignSeriesStarts로 맞춰 넣으므로, 어떤
+   나라를 골라도 시작일(0%)이 같아 선택 간 비교가 어긋나지 않는다. */
+let pastIndexSeriesCache = null;
+
 /* 실제가 두 선 대비 어디인지 → 구간·색·행동 가이드·현금 비중.
    경계 ±15%는 "한 해 수익률 한 번치" 정도로 잡은 실무 기준이지 통계적으로 검증된 값이 아니다
    (화면에도 그렇게 밝힌다). 구간이 단조(저평가→과열)라 값이 커질수록 가이드가 한 방향으로만
@@ -2140,11 +2179,13 @@ function buildIndexOutlookHTML(liveGlobal) {
       </div>
     </details>
 
-    <p class="chart-title" style="margin-top:20px;">📉 과거 20년 — 지수와 정책금리</p>
-    <div id="myOutlookPastIdxChart"><p class="compare-empty">불러오는 중…</p></div>
-    <p class="stat-sub" style="margin-top:4px;">지수는 ETF 프록시(SPY·QQQ·KODEX200) 종가를 시작일 0%로 맞춘 누적 수익률입니다(배당 제외).</p>
-    <div id="myOutlookPastRateChart" style="margin-top:10px;"></div>
-    <p class="stat-sub" style="margin-top:4px;">정책금리는 <b>연말 기준 근사치</b>입니다(미국=목표범위 상단, 한국=기준금리, 일본=무담보콜 유도목표). 이 앱은 금리 시계열을 수집하지 않아 공개된 역사적 사실을 상수로 넣은 것이며, 정확한 결정일·중간 변동은 담고 있지 않습니다 — 판단 전 각 중앙은행 발표를 확인하세요.</p>
+    <p class="chart-title" style="margin-top:20px;">📉 과거 20년 — 금리를 고르면 그 나라 지수가 함께 그려집니다</p>
+    <div id="myRateFocusBtns" class="seg" style="margin-bottom:8px;">
+      ${Object.entries(RATE_FOCUS_DEFS).map(([k, d]) => `<button type="button" data-focus="${k}">${d.label}</button>`).join("")}
+    </div>
+    <div id="myOutlookPastComboChart"><p class="compare-empty">불러오는 중…</p></div>
+    <p class="stat-sub" style="margin-top:4px;" id="myRateFocusNote"></p>
+    <p class="stat-sub" style="margin-top:4px;">지수(실선·좌축)는 ETF 프록시(SPY·QQQ·KODEX200) 종가를 시작일 0%로 맞춘 누적 수익률이고(배당 제외), 금리(점선·우축)는 <b>연말 기준 근사치</b>입니다(미국=목표범위 상단, 한국=기준금리, 일본=무담보콜 유도목표. 마지막 점만 ${POLICY_RATE_NOW.asOf} 확인값). 이 앱은 금리 시계열을 수집하지 않아 공개된 역사적 사실을 상수로 넣은 것이며, 정확한 결정일·중간 변동은 담고 있지 않습니다 — 판단 전 각 중앙은행 발표를 확인하세요.</p>
 
     <p class="chart-title" style="margin-top:20px;">📊 금리 국면별 실제 낙폭 (실측)</p>
     ${buildCycleMddHTML()}
@@ -2165,6 +2206,48 @@ function buildIndexOutlookHTML(liveGlobal) {
       <span id="myIndexOutlookStatus" class="action-status"></span>
     </div>
     <div id="myIndexOutlookLogBody">${buildIndexOutlookLogHTML(readIndexOutlookLog())}</div>`;
+}
+
+/* A95: 금리 ↔ 지수 연동 차트. 나라 버튼을 누를 때마다 이 함수만 다시 불러 그린다
+   (가격이력은 pastIndexSeriesCache에 있으니 재조회 없음). 금리는 단위가 달라 우축
+   별도 스케일(buildCompareChart의 s.axis="right")로 그리고, 점선으로 지수와 구분한다.
+   캐시가 아직 안 찼으면(비동기 로딩 중) "불러오는 중"을 유지한다 — 금리만 먼저 그리면
+   좌축이 금리 단위로 잡혔다가 지수가 붙는 순간 축이 튀어 보기 나쁘다. */
+function renderOutlookPastComboChart() {
+  const el = document.getElementById("myOutlookPastComboChart");
+  if (!el) return;
+  const focus = RATE_FOCUS_DEFS[state.myRateFocus] ? state.myRateFocus : "us";
+  const def = RATE_FOCUS_DEFS[focus];
+  const btns = document.getElementById("myRateFocusBtns");
+  if (btns) btns.querySelectorAll("button").forEach((b) => b.classList.toggle("active", b.dataset.focus === focus));
+  const note = document.getElementById("myRateFocusNote");
+  if (note) note.innerHTML = def.note;
+  if (!pastIndexSeriesCache) return; // 로딩 중 — 완료 시 와이어링에서 다시 부른다
+  const series = [];
+  for (const sym of def.symbols) {
+    const s = pastIndexSeriesCache[sym];
+    if (s) series.push(s);
+  }
+  // 금리 이력의 마지막 해는 아직 연말이 아니므로 연말(12-31)이 아니라 확인일로 찍는다
+  // — 미래 날짜에 점을 찍으면 x축이 오지도 않은 기간까지 늘어난다.
+  const last = POLICY_RATE_HISTORY.length - 1;
+  const rateDates = POLICY_RATE_HISTORY.map(([y], i) => (i === last ? POLICY_RATE_NOW.asOf : `${y}-12-31`));
+  for (const k of def.rates) {
+    const r = RATE_LINE_DEFS[k];
+    series.push({
+      label: r.label, color: r.color, axis: "right", dash: true,
+      dates: rateDates, values: POLICY_RATE_HISTORY.map((row) => row[r.col] / 100),
+    });
+  }
+  if (!series.length) { el.innerHTML = `<p class="compare-empty">그릴 계열이 없습니다.</p>`; return; }
+  el.innerHTML = "";
+  buildCompareChart(el, series, {
+    fmtAxis: (v) => (v * 100).toFixed(0) + "%",
+    fmtTip: (v) => (v * 100).toFixed(1) + "%",
+    fmtAxisRight: (v) => (v * 100).toFixed(1) + "%",
+    fmtTipRight: (v) => (v * 100).toFixed(2) + "%",
+    height: 300, // 두 축을 겹쳐 읽는 차트라 기본 높이(220)로는 금리선 기울기가 안 보인다
+  });
 }
 
 /* 향후 전망 경로 + 실제 기록 차트 — 앵커를 0%로 정규화해 여러 지수를 한 차트에서 비교한다
@@ -5803,23 +5886,28 @@ async function renderMyAssets() {
   // A94b(2026-09-17 사용자 요청 "이전 금리 변동과 지수 그래프 / 향후 전망 그래프 / M20·M60·M200"):
   // 과거 지수는 loadSymbol(가격이력)이 필요해 비동기라, 렌더가 끝난 뒤 여기서 채운다.
   // 금리 차트는 상수라 비동기가 필요 없지만 같은 자리에서 그려 두 차트의 x축 기간을 맞춘다.
-  if (document.getElementById("myOutlookPastIdxChart")) {
+  if (document.getElementById("myOutlookPastComboChart")) {
+    // A95: 나라 버튼은 HTML이 그려지는 즉시 눌릴 수 있으므로 먼저 배선하고(캐시가 없으면
+    // 설명만 바뀌고 차트는 "불러오는 중" 유지), 가격이력이 도착하면 다시 그린다.
+    const rateFocusBtns = document.getElementById("myRateFocusBtns");
+    if (rateFocusBtns) {
+      rateFocusBtns.querySelectorAll("button").forEach((b) => {
+        b.addEventListener("click", () => { state.myRateFocus = b.dataset.focus; renderOutlookPastComboChart(); });
+      });
+    }
+    renderOutlookPastComboChart(); // 버튼 활성표시·설명 먼저
     (async () => {
-      const PAST = [
-        { sym: "SPY", label: "S&P500(SPY)", color: "#2a78d6" },
-        { sym: "QQQ", label: "나스닥100(QQQ)", color: "#7b5ec9" },
-        { sym: "069500.KS", label: "코스피200(KODEX)", color: "#199e70" },
-      ];
+      const PAST = PAST_INDEX_DEFS;
       // 금리 이력이 2006년부터라 지수도 같은 시작점으로 맞춘다(공정 비교).
       const since = `${POLICY_RATE_HISTORY[0][0]}-01-01`;
-      const idxEl = document.getElementById("myOutlookPastIdxChart");
+      const idxEl = document.getElementById("myOutlookPastComboChart");
       const maEl = document.getElementById("myOutlookMaBody");
       try {
         const series = [], maRows = [];
         for (const p of PAST) {
           const full = await loadSymbol(p.sym);
           const s = pctChangeSeriesSince(full, since);
-          if (s) series.push({ label: p.label, color: p.color, ...s });
+          if (s) series.push({ sym: p.sym, label: p.label, color: p.color, ...s });
           // M20/M60/M200 — 실제 일별 종가로 계산(프록시 ETF 기준이라 지수 자체의 이평선과는
           // 값이 다르다. 이격도(현재가 대비 %)로 읽어야 의미가 있어 그렇게만 표시한다).
           const closes = full.closes, last = closes[closes.length - 1];
@@ -5835,8 +5923,9 @@ async function renderMyAssets() {
         }
         if (series.length) {
           const aligned = alignSeriesStarts(series);
-          idxEl.innerHTML = "";
-          buildCompareChart(idxEl, aligned.length ? aligned : series);
+          pastIndexSeriesCache = {};
+          for (const s of (aligned.length ? aligned : series)) pastIndexSeriesCache[s.sym] = s;
+          renderOutlookPastComboChart();
         } else {
           idxEl.innerHTML = `<p class="compare-empty">가격 이력을 불러오지 못했습니다.</p>`;
         }
@@ -5850,17 +5939,6 @@ async function renderMyAssets() {
       } catch (err) {
         idxEl.innerHTML = `<p class="compare-empty" style="color:var(--critical)">지수 이력을 불러오지 못했습니다: ${err.message}</p>`;
         if (maEl) maEl.innerHTML = `<p class="compare-empty">이동평균을 계산하지 못했습니다.</p>`;
-      }
-
-      // 정책금리 차트 — 연말 기준 상수라 즉시 그린다.
-      const rateEl = document.getElementById("myOutlookPastRateChart");
-      if (rateEl) {
-        const dates = POLICY_RATE_HISTORY.map(([y]) => `${y}-12-31`);
-        buildCompareChart(rateEl, [
-          { label: "미국", color: "#d03b3b", dates, values: POLICY_RATE_HISTORY.map((r) => r[1] / 100) },
-          { label: "한국", color: "#199e70", dates, values: POLICY_RATE_HISTORY.map((r) => r[2] / 100) },
-          { label: "일본", color: "#eda100", dates, values: POLICY_RATE_HISTORY.map((r) => r[3] / 100) },
-        ], { fmtAxis: (v) => (v * 100).toFixed(1) + "%", fmtTip: (v) => (v * 100).toFixed(2) + "%", anchorZero: false });
       }
 
       renderOutlookFutureChart();
