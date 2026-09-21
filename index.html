@@ -5939,6 +5939,124 @@ function marketIndexSnapshot(liveGlobal) {
   return { kospi: pick("KOSPI"), sp500: pick("^GSPC"), nasdaq: pick("^IXIC"), updated: liveGlobal.updated };
 }
 
+/* ---------- A100(2026-09-21 사용자 "지금확인 버튼 누를때 업데이트 실행되게") ----------
+   종전 "⏱️ 지금 확인"은 **이미 수집돼 있는 JSON을 다시 읽기만** 했다. 예약 수집이 멈춰 있으면
+   몇 번을 눌러도 같은 과거 값이 나왔다(A99에서 그 사실이 보이게는 했지만, 고치려면 여전히
+   PC에서 수동 실행해야 했다). 이제 기기에 GitHub 토큰이 저장돼 있으면 이 버튼이 수집
+   워크플로를 **직접 실행**시키고, 새 결과가 올라올 때까지 기다렸다가 화면을 갱신한다.
+
+   토큰은 이 기기 localStorage에만 둔다(KIS 앱키·텔레그램 토큰과 같은 취급) — 내보내기 JSON·
+   웹훅·저장소 어디에도 싣지 않는다. 필요한 권한은 14fiance 한 곳의 Actions: Read and write뿐.
+
+   갱신 확인은 raw.githubusercontent가 아니라 GitHub API로 읽는다 — raw는 CDN이 최대 5분
+   캐시하고 **쿼리스트링을 붙여도 우회되지 않는 것을 실측**했다(방금 올라온 커밋이 안 보임). */
+const MY_GH_PAT_KEY = "my_gh_dispatch_pat_v1";
+const GH_DISPATCH_REPO = "vierzhen-del/14fiance";
+const GH_DISPATCH_REF = "claude/us-etf-mdd-calculator-gdwui7";
+const GH_DISPATCH_TARGETS = [
+  { wf: "intraday-kr.yml", path: "latest_kr.json", branch: "live", key: "liveKr", label: "국내 시세", needsLiveToggle: true },
+  { wf: "intraday-global.yml", path: "latest_global.json", branch: "live-trading", key: "liveGlobal", label: "지수(코스피 등)" },
+];
+const GH_DISPATCH_WAIT_MS = 180000; // 국내 수집이 보통 1분 30초쯤 걸린다(실측 06:35:02→06:36:49)
+const GH_DISPATCH_POLL_MS = 8000;
+const GH_DISPATCH_FRESH_MIN = 3; // 이 분(分) 안에 수집된 값이면 또 실행하지 않는다(연타 방지)
+
+function ghDispatchPat() { try { return localStorage.getItem(MY_GH_PAT_KEY) || ""; } catch (e) { return ""; } }
+function sleepMs(ms) { return new Promise((res) => setTimeout(res, ms)); }
+
+async function ghApiFetch(path, opts = {}) {
+  return fetch(`https://api.github.com/repos/${GH_DISPATCH_REPO}${path}`, {
+    ...opts,
+    cache: "no-store",
+    headers: { Authorization: `Bearer ${ghDispatchPat()}`, "X-GitHub-Api-Version": "2022-11-28", ...(opts.headers || {}) },
+    signal: AbortSignal.timeout(15000),
+  });
+}
+
+async function ghReadLiveFile(t) {
+  const res = await ghApiFetch(`/contents/${t.path}?ref=${t.branch}&t=${Date.now()}`,
+    { headers: { Accept: "application/vnd.github.raw+json" } });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+async function ghDispatchWorkflow(wf) {
+  const res = await ghApiFetch(`/actions/workflows/${wf}/dispatches`, {
+    method: "POST",
+    headers: { Accept: "application/vnd.github+json", "Content-Type": "application/json" },
+    body: JSON.stringify({ ref: GH_DISPATCH_REF }),
+  });
+  if (res.status !== 204) throw new Error(`HTTP ${res.status}`);
+}
+
+/* "⏱️ 지금 확인" 공통 동작 — 헤더·히트맵 탭 두 버튼이 같이 쓴다.
+   토큰이 없으면 종전처럼 캐시만 비우고 다시 읽는다(기능이 사라지지 않게). */
+async function refreshLiveQuotesNow(btnId, statusId) {
+  const btn = btnId ? document.getElementById(btnId) : null;
+  const setMsg = (m) => { const el = statusId ? document.getElementById(statusId) : null; if (el) el.textContent = m; };
+  if (btn) btn.disabled = true;
+  const targets = GH_DISPATCH_TARGETS.filter((t) => !t.needsLiveToggle || liveQuotesEnabled());
+  const done = new Set();
+  try {
+    if (ghDispatchPat() && targets.length) {
+      setMsg("수집 상태 확인 중…");
+      const before = {};
+      for (const t of targets) {
+        try { before[t.path] = (await ghReadLiveFile(t)).updated || ""; } catch (e) { before[t.path] = ""; }
+      }
+      const allFresh = targets.every((t) => {
+        const age = liveGlobalAgeHours(before[t.path]);
+        return age != null && age * 60 < GH_DISPATCH_FRESH_MIN;
+      });
+      if (allFresh) {
+        setMsg(`${GH_DISPATCH_FRESH_MIN}분 이내 수집분이라 그대로 사용합니다`);
+      } else {
+        setMsg("수집 실행 요청 중…");
+        const failed = [];
+        for (const t of targets) {
+          try { await ghDispatchWorkflow(t.wf); } catch (err) { failed.push(`${t.label} ${err.message}`); }
+        }
+        if (failed.length === targets.length) {
+          setMsg(`수집 실행 실패(${failed.join(" · ")}) — 저장된 값으로 표시합니다`);
+        } else {
+          const deadline = Date.now() + GH_DISPATCH_WAIT_MS;
+          while (Date.now() < deadline && done.size < targets.length) {
+            await sleepMs(GH_DISPATCH_POLL_MS);
+            for (const t of targets) {
+              if (done.has(t.path)) continue;
+              try {
+                const data = await ghReadLiveFile(t);
+                // updated가 바뀌어야 "새로 수집됨"이다 — 같은 값이면 아직 커밋 전이다.
+                if (data && data.updated && data.updated !== before[t.path] && data.prices) {
+                  state[t.key] = { data, fetchedAt: Date.now() };
+                  if (t.key === "liveKr") state.liveKrError = null;
+                  done.add(t.path);
+                }
+              } catch (e) { /* 폴링 중 일시 오류는 다음 회차에서 다시 본다 */ }
+            }
+            const left = Math.max(0, Math.round((deadline - Date.now()) / 1000));
+            if (done.size < targets.length) setMsg(`수집 대기 중… ${done.size}/${targets.length} 완료 · ${left}초 남음`);
+          }
+          if (done.size < targets.length) {
+            setMsg(`일부 수집이 제시간에 끝나지 않았습니다(${done.size}/${targets.length}) — 잠시 뒤 다시 눌러 주세요`);
+          }
+        }
+      }
+    }
+    // 새로 받은 계열은 state에 이미 넣었고, 나머지는 캐시를 비워 다시 읽게 한다.
+    for (const t of GH_DISPATCH_TARGETS) if (!done.has(t.path)) state[t.key] = null;
+    await renderMyAssets();
+    if (done.size) {
+      const stamps = GH_DISPATCH_TARGETS
+        .filter((t) => state[t.key] && state[t.key].data)
+        .map((t) => `${t.label} ${String(state[t.key].data.updated || "").slice(11)}`);
+      setMsg(`수집 완료 — ${stamps.join(" · ")} 기준`);
+    }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 /* A99: 수집 시각("2026-09-21 12:57 KST")이 몇 시간 전인지. 날짜 문자열끼리 비교하면
    todayStr()이 UTC 기준이라 KST 새벽~오전에 멀쩡한 데이터를 "어제 것"으로 오판한다 —
    경과 시간으로 재는 편이 시간대에 안전하고 "몇 시간 전"이라는 정보까지 준다. */
@@ -8230,6 +8348,16 @@ async function renderMyAssets() {
       <p class="stat-sub">최신 수집: <b>${state.manifest.updated}</b> (매주 자동 수집 — 실시간 시세 아님)</p>
       <p class="stat-sub">🔄 최신시세(장중 30분 주기 예정): <b>${liveQuotesEnabled() ? (liveKr ? `켬 — ${liveKr.updated} 기준 국내 ${liveApplied}종목 적용` : `켬 — 불러오기 실패, 주간 종가 사용`) : "끔"}</b> — 국내 장중(평일 09:05~15:35)에만 갱신되며 GitHub 무료 스케줄 큐 혼잡으로 수 시간까지 지연되거나 일부 주기는 건너뛸 수 있습니다.</p>
 
+      <p class="chart-title" style="margin-top:20px;">🔑 수집 실행 토큰 (선택 · 이 기기에만 저장)</p>
+      <p class="stat-sub">여기에 GitHub 토큰을 저장하면 <b>"⏱️ 지금 확인"을 누를 때 수집 워크플로가 실제로 실행</b>되고, 새 시세가 올라올 때까지 기다렸다가 화면을 갱신합니다. 저장하지 않으면 종전처럼 <b>이미 수집된 값만 다시 읽습니다</b>(예약 수집이 멈춰 있으면 같은 과거 값이 계속 나옵니다).</p>
+      <div class="action-row" style="margin:8px 0;">
+        <input type="password" id="myGhPatInput" placeholder="github_pat_..." style="min-width:220px;" autocomplete="off" aria-label="GitHub 토큰">
+        <button type="button" id="myGhPatSaveBtn" class="btn-action">저장</button>
+        <button type="button" id="myGhPatClearBtn" class="btn-action">삭제</button>
+        <span id="myGhPatStatus" class="action-status">${ghDispatchPat() ? "저장됨 ✓" : "미저장"}</span>
+      </div>
+      <p class="stat-sub">만드는 법: GitHub → Settings → Developer settings → <b>Fine-grained personal access token</b> → Repository access는 <code>14fiance</code> 하나만, Permissions는 <b>Actions: Read and write</b>만 주면 됩니다. ⚠️ 토큰은 <b>이 기기의 브라우저 저장소에만</b> 보관되며 내보내기 JSON·웹훅·저장소에는 절대 실리지 않습니다. 기기를 잃어버리면 GitHub에서 그 토큰을 폐기(revoke)하세요.</p>
+
       <p class="chart-title" style="margin-top:20px;">🏢 일반종목(개별주) 반영 상태</p>
       <p class="stat-sub">현재: <b>${includeStocks ? "포함" : "제외"}</b> — 위쪽 "일반종목: 포함/제외" 버튼으로 전환할 수 있습니다.</p>
 
@@ -8474,13 +8602,8 @@ async function renderMyAssets() {
   // 탭에도 같은 동작(3분 캐시 무시하고 최신시세 강제 재조회)의 버튼을 하나 더 둔다.
   const heatmapNowBtn = document.getElementById("myHeatmapLiveNowBtn");
   if (heatmapNowBtn) {
-    heatmapNowBtn.addEventListener("click", async () => {
-      const statusEl = document.getElementById("myHeatmapLiveNowStatus");
-      heatmapNowBtn.disabled = true;
-      if (statusEl) statusEl.textContent = "확인 중…";
-      state.liveKr = null; // 캐시 무시하고 강제 재조회
-      try { await renderMyAssets(); } finally { heatmapNowBtn.disabled = false; }
-    });
+    // A100: 헤더 버튼과 동일하게 — 토큰이 있으면 수집까지 실행하고 기다린다.
+    heatmapNowBtn.addEventListener("click", () => refreshLiveQuotesNow("myHeatmapLiveNowBtn", "myHeatmapLiveNowStatus"));
   }
 
   // A84(2026-09-07 사용자 요청 "종합/일반계좌/ETF 3분할"): 비중분석 탭 종합/일반계좌/ETF
@@ -8779,6 +8902,28 @@ async function renderMyAssets() {
   if (state.myAssetChangeGranularity) changeSel.value = state.myAssetChangeGranularity;
   changeSel.addEventListener("change", () => { state.myAssetChangeGranularity = changeSel.value; renderAssetChange(); });
   renderAssetChange();
+
+  // A100: 수집 실행 토큰 — 저장/삭제. 값 자체는 화면에 다시 뿌리지 않는다(어깨너머 노출 방지).
+  const ghPatSaveBtn = document.getElementById("myGhPatSaveBtn");
+  if (ghPatSaveBtn) {
+    ghPatSaveBtn.addEventListener("click", () => {
+      const input = document.getElementById("myGhPatInput");
+      const v = (input.value || "").trim();
+      if (!v) { flashStatus("myGhPatStatus", "토큰을 입력하세요"); return; }
+      localStorage.setItem(MY_GH_PAT_KEY, v);
+      input.value = "";
+      flashStatus("myGhPatStatus", "저장됨 ✓ — 이 기기에만 보관됩니다", 4000);
+    });
+  }
+  const ghPatClearBtn = document.getElementById("myGhPatClearBtn");
+  if (ghPatClearBtn) {
+    ghPatClearBtn.addEventListener("click", () => {
+      localStorage.removeItem(MY_GH_PAT_KEY);
+      const input = document.getElementById("myGhPatInput");
+      if (input) input.value = "";
+      flashStatus("myGhPatStatus", "삭제됨 — GitHub에서도 폐기(revoke)하세요", 4000);
+    });
+  }
 
   // A40: n8n 에이전트 웹훅 — 주소 저장 + 수동 전송
   const agentUrlInput = document.getElementById("myAgentWebhookUrl");
@@ -12028,14 +12173,12 @@ async function init() {
     state.liveKr = null; // 토글 시 캐시 비우고 새로 가져옴
     renderMyAssets();
   });
-  document.getElementById("myLiveQuotesNowBtn").addEventListener("click", async () => {
+  // A100(2026-09-21 사용자 "지금확인 버튼 누를때 업데이트 실행되게"): 캐시만 비우던 것을
+  // refreshLiveQuotesNow로 넘긴다 — 설정 탭에 토큰이 저장돼 있으면 수집 워크플로를 실제로
+  // 실행하고 새 값이 올라올 때까지 기다린다(없으면 종전과 동일하게 다시 읽기만).
+  document.getElementById("myLiveQuotesNowBtn").addEventListener("click", () => {
     if (!liveQuotesEnabled()) return;
-    const nowBtn = document.getElementById("myLiveQuotesNowBtn");
-    const statusEl = document.getElementById("myLiveQuotesTimeStatus");
-    nowBtn.disabled = true;
-    if (statusEl) statusEl.textContent = "확인 중…";
-    state.liveKr = null; // 3분 캐시 무시하고 강제 재조회
-    try { await renderMyAssets(); } finally { nowBtn.disabled = false; }
+    refreshLiveQuotesNow("myLiveQuotesNowBtn", "myLiveQuotesTimeStatus");
   });
 
   // 시뮬레이터: 공유 링크가 있으면 그 설정으로, 없으면 기본값(SPY 100%, 간단 모드)으로 시작
