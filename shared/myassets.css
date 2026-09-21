@@ -168,6 +168,11 @@
   .marker.peak { stroke: var(--text-secondary); }
   .marker.trough { stroke: var(--critical); }
   .direct-label { font-size: 11px; font-weight: 600; fill: var(--text-primary); }
+  /* A98: 좁은 화면에서는 JS(chartMetrics)가 svg에 chart-narrow를 달고, 여백도 함께 키워서
+     그린다 — viewBox가 화면 폭에 맞춰 0.4배로 줄어드는 만큼 user unit을 키워야 실제로
+     9~10px로 보인다. 데스크톱(chart-narrow 없음)은 기존 크기 그대로. */
+  svg.chart.chart-narrow .axis-label { font-size: 23px; }
+  svg.chart.chart-narrow .direct-label { font-size: 25px; }
   .crosshair-line { stroke: var(--text-muted); stroke-width: 1; stroke-dasharray: 3 3; pointer-events: none; }
 
   .tooltip {
