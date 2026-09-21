@@ -117,6 +117,35 @@ function niceTicks(min, max, count) {
   return ticks;
 }
 
+/* A98(2026-09-21 사용자 "글자가 x y축 너무 작아서 안 보임"): SVG 좌표계(viewBox 800) 안의
+   글자는 화면 폭에 비례해 줄어든다 — 폰에서 차트는 330px 안팎으로 그려지므로 축소율이 0.41배,
+   10.5px 축 라벨이 실제로는 4.3px로 보였다. 폭이 좁으면 **user unit 기준으로** 글자와 여백을
+   함께 키워 렌더 크기를 9~10px로 맞춘다(글자만 키우면 좌축 숫자가 여백을 넘어 잘린다).
+   컨테이너 폭이 아니라 window.innerWidth로 판단한다 — 숨은 탭 안에서 그려질 때 컨테이너
+   폭이 0이라 측정값을 믿을 수 없기 때문. kind="won"은 "₩25,000,000"처럼 긴 라벨이 오는
+   차트라 좌측 여백을 더 준다. */
+function chartMetrics(kind) {
+  const w = (typeof window !== "undefined" && window.innerWidth) || 1024;
+  if (w > 720) {
+    // 원화 라벨(₩25,000,000)은 기본 여백 46을 넘어 카드 밖으로 삐져나가 있었다 — 넓은
+    // 화면에서도 그만큼은 확보한다.
+    return { narrow: false, font: 10.5, padL: kind === "won" ? 80 : PAD_L, padR: PAD_R, padRAxis: 46, padT: PAD_T, padB: PAD_B,
+             gap: 6, dy: 3, xY: 4, markDy: 10, barDy: 5, barDyNeg: 12 };
+  }
+  return { narrow: true, font: 23, padL: kind === "won" ? 172 : 96, padR: 14, padRAxis: 104, padT: 20, padB: 42,
+           gap: 10, dy: 8, xY: 12, markDy: 22, barDy: 10, barDyNeg: 26 };
+}
+
+/* A98: 맨 끝 x축 라벨은 가운데 정렬을 고수하면 절반이 차트 밖으로 나가 잘린다(실사례:
+   "26-09 (진행중)"). 끝에서는 정렬을 바꿔 안쪽으로 붙인다. 한글은 영문의 약 2배 폭이라
+   글자별로 다르게 센다(정확한 측정은 DOM이 필요하고, 숨은 탭에서는 측정이 안 된다). */
+function axisLabelPos(cx, text, font) {
+  const w = [...String(text)].reduce((a, ch) => a + (ch.charCodeAt(0) > 255 ? 1 : 0.55), 0) * font;
+  if (cx + w / 2 > CHART_W) return { x: CHART_W.toFixed(2), anchor: "end" };
+  if (cx - w / 2 < 0) return { x: "0", anchor: "start" };
+  return { x: cx.toFixed(2), anchor: "middle" };
+}
+
 function nearestIndexByTime(tsArray, targetTs) {
   let lo = 0, hi = tsArray.length - 1;
   while (lo < hi) {
@@ -177,6 +206,9 @@ function buildCompareChart(container, seriesList, opts = {}) {
   const fmtTip = opts.fmtTip || ((v) => (v * 100).toFixed(1) + "%");
   const anchorZero = opts.anchorZero !== false;
   const H = opts.height || CHART_H;
+  // A98: 좁은 화면이면 글자·여백을 키운 값으로 PAD_*를 가린다(이 함수 안에서만 유효).
+  const M = chartMetrics(opts.axisKind);
+  const PAD_L = M.padL, PAD_T = M.padT, PAD_B = M.padB;
   // A95: s.axis==="right"인 계열은 오른쪽 y축의 별도 스케일로 그린다 — 정책금리(0~5%)와
   // 지수 누적수익률(0~600%)처럼 자릿수가 다른 값을 한 차트에 겹쳐 "금리가 오를 때 지수가
   // 어떻게 움직였나"를 한 눈에 보기 위한 것이다. 우축 계열이 없거나 전부 우축이면 축을
@@ -186,7 +218,7 @@ function buildCompareChart(container, seriesList, opts = {}) {
   const hasRight = rightSeries.length > 0 && leftSeries.length > 0;
   const fmtAxisR = opts.fmtAxisRight || fmtAxis;
   const fmtTipR = opts.fmtTipRight || fmtTip;
-  const padR = hasRight ? 46 : PAD_R;
+  const padR = hasRight ? M.padRAxis : M.padR;
   const domainMin = Math.min(...seriesList.map((s) => Date.parse(s.dates[0])));
   const domainMax = Math.max(...seriesList.map((s) => Date.parse(s.dates[s.dates.length - 1])));
   const xAt = (ts) => PAD_L + ((ts - domainMin) / (domainMax - domainMin)) * (CHART_W - PAD_L - padR);
@@ -219,8 +251,8 @@ function buildCompareChart(container, seriesList, opts = {}) {
     .map((t, ti) => {
       const y = yAt(t).toFixed(2);
       return `<line class="gridline" x1="${PAD_L}" x2="${CHART_W - padR}" y1="${y}" y2="${y}"/>` +
-             `<text class="axis-label" x="${PAD_L - 6}" y="${Number(y) + 3}" text-anchor="end">${fmtAxis(t)}</text>` +
-             (hasRight ? `<text class="axis-label" x="${CHART_W - padR + 6}" y="${Number(y) + 3}" text-anchor="start">${fmtAxisR(rTicks[ti])}</text>` : "");
+             `<text class="axis-label" x="${PAD_L - M.gap}" y="${Number(y) + M.dy}" text-anchor="end">${fmtAxis(t)}</text>` +
+             (hasRight ? `<text class="axis-label" x="${CHART_W - padR + M.gap}" y="${Number(y) + M.dy}" text-anchor="start">${fmtAxisR(rTicks[ti])}</text>` : "");
     })
     .join("");
 
@@ -228,9 +260,9 @@ function buildCompareChart(container, seriesList, opts = {}) {
   let xLabelsSvg = "";
   for (let k = 0; k <= xTickCount; k++) {
     const ts = domainMin + (k / xTickCount) * (domainMax - domainMin);
-    const x = xAt(ts).toFixed(2);
     const label = new Date(ts).toISOString().slice(0, 7);
-    xLabelsSvg += `<text class="axis-label" x="${x}" y="${H - 4}" text-anchor="middle">${label}</text>`;
+    const lp = axisLabelPos(xAt(ts), label, M.font);
+    xLabelsSvg += `<text class="axis-label" x="${lp.x}" y="${H - M.xY}" text-anchor="${lp.anchor}">${label}</text>`;
   }
 
   // 0% 기준선(수익/손실 경계) — 낙폭 전용이던 원본과 달리 0이 축 중간에 올 수 있어 명시적으로 그린다
@@ -256,7 +288,7 @@ function buildCompareChart(container, seriesList, opts = {}) {
   container.innerHTML = `
     <div class="legend-row">${legendSvg}</div>
     <div class="chart-box">
-      <svg class="chart" viewBox="0 0 ${CHART_W} ${H}" preserveAspectRatio="xMidYMid meet">
+      <svg class="chart${M.narrow ? " chart-narrow" : ""}" viewBox="0 0 ${CHART_W} ${H}" preserveAspectRatio="xMidYMid meet">
         ${gridSvg}
         ${xLabelsSvg}
         <line class="baseline" x1="${PAD_L}" x2="${CHART_W - padR}" y1="${zeroY}" y2="${zeroY}"/>
@@ -320,6 +352,9 @@ function buildCompareChart(container, seriesList, opts = {}) {
 function buildChart(container, opts) {
   const { dates, values, color, mode, markers, valueFmt, seriesLabel } = opts;
   const axisPrefix = opts.currency === "KRW" ? "₩" : "$";
+  // A98: 좁은 화면 대응(낙폭 모드는 "%"라 라벨이 짧아 여백을 덜 준다)
+  const M = chartMetrics(mode === "drawdown" ? "pct" : "won");
+  const PAD_L = M.padL, PAD_R = M.padR, PAD_T = M.padT, PAD_B = M.padB;
   const n = values.length;
   const xAt = (i) => PAD_L + (i / (n - 1)) * (CHART_W - PAD_L - PAD_R);
 
@@ -343,7 +378,7 @@ function buildChart(container, opts) {
       const y = yAt(t).toFixed(2);
       const label = mode === "drawdown" ? (t * 100).toFixed(0) + "%" : axisPrefix + t.toLocaleString();
       return `<line class="gridline" x1="${PAD_L}" x2="${CHART_W - PAD_R}" y1="${y}" y2="${y}"/>` +
-             `<text class="axis-label" x="${PAD_L - 6}" y="${Number(y) + 3}" text-anchor="end">${label}</text>`;
+             `<text class="axis-label" x="${PAD_L - M.gap}" y="${Number(y) + M.dy}" text-anchor="end">${label}</text>`;
     })
     .join("");
 
@@ -352,8 +387,9 @@ function buildChart(container, opts) {
   let xLabelsSvg = "";
   for (let k = 0; k <= xTickCount; k++) {
     const idx = Math.round((k / xTickCount) * (n - 1));
-    const x = xAt(idx).toFixed(2);
-    xLabelsSvg += `<text class="axis-label" x="${x}" y="${CHART_H - 4}" text-anchor="middle">${dates[idx].slice(0, 7)}</text>`;
+    const label = dates[idx].slice(0, 7);
+    const lp = axisLabelPos(xAt(idx), label, M.font);
+    xLabelsSvg += `<text class="axis-label" x="${lp.x}" y="${CHART_H - M.xY}" text-anchor="${lp.anchor}">${label}</text>`;
   }
 
   let markerSvg = "";
@@ -364,14 +400,14 @@ function buildChart(container, opts) {
       if (m.label) {
         const anchor = m.idx > n * 0.75 ? "end" : m.idx < n * 0.25 ? "start" : "middle";
         const dx = anchor === "end" ? -8 : anchor === "start" ? 8 : 0;
-        markerSvg += `<text class="direct-label" x="${Number(x) + dx}" y="${Number(y) - 10}" text-anchor="${anchor}">${m.label}</text>`;
+        markerSvg += `<text class="direct-label" x="${Number(x) + dx}" y="${Number(y) - M.markDy}" text-anchor="${anchor}">${m.label}</text>`;
       }
     }
   }
 
   container.innerHTML = `
     <div class="chart-box">
-      <svg class="chart" viewBox="0 0 ${CHART_W} ${CHART_H}" preserveAspectRatio="xMidYMid meet">
+      <svg class="chart${M.narrow ? " chart-narrow" : ""}" viewBox="0 0 ${CHART_W} ${CHART_H}" preserveAspectRatio="xMidYMid meet">
         ${gridSvg}
         <line class="baseline" x1="${PAD_L}" x2="${CHART_W - PAD_R}" y1="${CHART_H - PAD_B}" y2="${CHART_H - PAD_B}"/>
         ${areaPath ? `<path class="dd-area" d="${areaPath}"/>` : ""}<path class="${mode === "drawdown" ? "dd-line" : "price-line"}" d="${path}"/>
@@ -512,6 +548,9 @@ function buildMonthlyBarChart(container, months, opts = {}) {
     return;
   }
   const H = opts.height || CHART_H;
+  // A98: 손익 막대는 "₩25,000,000" 같은 긴 라벨이 좌축에 온다
+  const M = chartMetrics("won");
+  const PAD_L = M.padL, PAD_R = M.padR, PAD_T = M.padT, PAD_B = M.padB;
   const n = months.length;
   const vals = months.map((m) => m.pnl);
   const vMin = Math.min(0, ...vals), vMax = Math.max(0, ...vals);
@@ -526,24 +565,37 @@ function buildMonthlyBarChart(container, months, opts = {}) {
   const gridSvg = ticks.map((t) => {
     const y = yAt(t).toFixed(2);
     return `<line class="gridline" x1="${PAD_L}" x2="${CHART_W - PAD_R}" y1="${y}" y2="${y}"/>` +
-           `<text class="axis-label" x="${PAD_L - 6}" y="${Number(y) + 3}" text-anchor="end">${fmtW(t)}</text>`;
+           `<text class="axis-label" x="${PAD_L - M.gap}" y="${Number(y) + M.dy}" text-anchor="end">${fmtW(t)}</text>`;
   }).join("");
 
-  const xTickEvery = Math.max(1, Math.ceil(n / 12));
+  // A98: 글자를 키운 만큼 라벨 수를 줄인다 — 폰에서 12개를 찍으면 서로 겹쳐 뭉개진다
+  const xTickEvery = Math.max(1, Math.ceil(n / (M.narrow ? 5 : 12)));
+  const labelIdx = [];
+  for (let i = 0; i < n; i++) if (i % xTickEvery === 0) labelIdx.push(i);
+  if (labelIdx[labelIdx.length - 1] !== n - 1) labelIdx.push(n - 1);
+  // 마지막 달은 항상 찍는다(진행중 여부를 알려야 하므로). 다만 "(진행중)"이 붙어 라벨이 길어
+  // 직전 라벨과 겹치면 **직전 쪽을 뺀다** — 실사례: "26-06"과 "26-09 (진행중)"이 뭉갰다.
+  const minLabelGap = M.narrow ? (months[n - 1].isPartial ? 210 : 140) : 70;
+  while (labelIdx.length >= 2) {
+    const a = labelIdx[labelIdx.length - 2], b = labelIdx[labelIdx.length - 1];
+    if ((b - a) * bw >= minLabelGap) break;
+    labelIdx.splice(labelIdx.length - 2, 1);
+  }
   let xLabelsSvg = "";
-  months.forEach((m, i) => {
-    if (i % xTickEvery !== 0 && i !== n - 1) return;
-    const x = (PAD_L + (i + 0.5) * bw).toFixed(2);
+  for (const i of labelIdx) {
+    const m = months[i];
     // A88: 진행 중인 달은 축 라벨에도 명시 — 막대만 흐리게 하면 이유를 알 수 없다
-    xLabelsSvg += `<text class="axis-label" x="${x}" y="${H - 4}" text-anchor="middle">${m.month.slice(2)}${m.isPartial ? " (진행중)" : ""}</text>`;
-  });
+    const label = `${m.month.slice(2)}${m.isPartial ? " (진행중)" : ""}`;
+    const lp = axisLabelPos(PAD_L + (i + 0.5) * bw, label, M.font);
+    xLabelsSvg += `<text class="axis-label" x="${lp.x}" y="${H - M.xY}" text-anchor="${lp.anchor}">${label}</text>`;
+  }
 
   /* A88(2026-09-07 사용자 요청 "가독성 개선"): 막대에 값 라벨을 직접 얹는다 — 종전엔 호버
      툴팁뿐이라 모바일(앱)에서는 숫자를 보려면 일일이 눌러야 했고, 축 눈금에 눈대중으로
      맞춰 읽어야 했다. 막대가 많아 라벨이 겹칠 때(≥8개)는 생략해 오히려 지저분해지지 않게 한다.
      진행 중인 달(isPartial)은 아직 안 끝난 부분 집계라 완결된 달과 그대로 비교하면 안 되므로
      빗금과 "(진행중)" 표기로 구분한다 — 실사례: 9월 7일에 9월 막대가 8월 막대보다 커 보였다. */
-  const showBarLabels = n <= 8;
+  const showBarLabels = n <= (M.narrow ? 4 : 8); // A98: 폰에서는 5개만 돼도 값 라벨이 겹친다
   const barsSvg = months.map((m, i) => {
     const x = PAD_L + i * bw + bw * 0.15;
     const w = bw * 0.7;
@@ -555,15 +607,15 @@ function buildMonthlyBarChart(container, months, opts = {}) {
     // A91(2026-09-08 사용자 보고 "글자안보임"): 손실폭이 커서 막대가 축 가까이까지 내려오면
     // y2+12가 x축 월 라벨(y=H-4)과 겹쳐 두 글자가 뭉개졌다 — 축 라벨 위로 최소 여백을 두게
     // 클램프한다(막대보다 위, 즉 안쪽으로 살짝 들어와도 겹쳐 안 보이는 것보다 낫다).
-    const maxNegY = H - 4 - 10;
-    const ly = m.pnl >= 0 ? y1 - 5 : Math.min(y2 + 12, maxNegY);
+    const maxNegY = H - M.xY - M.barDyNeg;
+    const ly = m.pnl >= 0 ? y1 - M.barDy : Math.min(y2 + M.barDyNeg, maxNegY);
     const label = `<text class="axis-label" x="${(x + w / 2).toFixed(2)}" y="${ly.toFixed(2)}" text-anchor="middle" fill="${color}">${fmtW(m.pnl)}</text>`;
     return rect + label;
   }).join("");
 
   container.innerHTML = `
     <div class="chart-box">
-      <svg class="chart" viewBox="0 0 ${CHART_W} ${H}" preserveAspectRatio="xMidYMid meet">
+      <svg class="chart${M.narrow ? " chart-narrow" : ""}" viewBox="0 0 ${CHART_W} ${H}" preserveAspectRatio="xMidYMid meet">
         ${gridSvg}
         ${xLabelsSvg}
         <line class="baseline" x1="${PAD_L}" x2="${CHART_W - PAD_R}" y1="${zeroY.toFixed(2)}" y2="${zeroY.toFixed(2)}"/>
