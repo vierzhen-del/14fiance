@@ -2944,6 +2944,12 @@ function buildReturnAnalysisHTML(regionRetMap, styleRetMap, accountMap, history,
     const myKPct = hasK ? ((kLast.value - kFirst.value) / kFirst.value) * 100 : null;
     const alpha = hasK ? myKPct - kospiPct : null;
     const kSameSpan = hasK && kFirst.month === first.month && kLast.month === last.month;
+    // A99: 비교에 쓴 코스피가 **그 달에 수집된 값이 아닐 수 있다**(예약 수집 지연). 그러면
+    // 초과수익률도 그만큼 어긋나므로 조용히 넘기지 않고 어느 행이 언제 수집분인지 밝힌다.
+    const kStale = hasK
+      ? [kFirst, kLast].filter((h) => h.kospiAsOf && String(h.kospiAsOf).slice(0, 7) !== h.month)
+          .map((h) => `${h.month} 행은 ${String(h.kospiAsOf).slice(0, 10)} 수집분`).join(" · ")
+      : "";
     historyReturnHTML = `<div class="stat-row">
       <div class="stat">
         <p class="stat-label">평가액 변동 (${first.month} → ${last.month})</p>
@@ -2955,7 +2961,7 @@ function buildReturnAnalysisHTML(regionRetMap, styleRetMap, accountMap, history,
         <p class="stat-value" style="color:${!hasK ? "var(--text-muted)" : alpha >= 0 ? "var(--good)" : "var(--critical)"}">${!hasK ? "비교 불가" : `${alpha >= 0 ? "+" : ""}${alpha.toFixed(1)}%p`}</p>
         <p class="stat-sub">${!hasK
           ? `코스피 값이 함께 저장된 스냅샷이 2개월 이상 있어야 합니다(현재 ${kPts.length}개월).`
-          : `내 ${myKPct >= 0 ? "+" : ""}${myKPct.toFixed(1)}% vs 코스피 ${kospiPct >= 0 ? "+" : ""}${kospiPct.toFixed(1)}%${kSameSpan ? "" : ` · 코스피 값이 있는 ${kFirst.month}~${kLast.month} 구간만 비교(내 수익률도 같은 구간으로 재계산)`}`}</p>
+          : `내 ${myKPct >= 0 ? "+" : ""}${myKPct.toFixed(1)}% vs 코스피 ${kospiPct >= 0 ? "+" : ""}${kospiPct.toFixed(1)}%${kSameSpan ? "" : ` · 코스피 값이 있는 ${kFirst.month}~${kLast.month} 구간만 비교(내 수익률도 같은 구간으로 재계산)`}${kStale ? `<br><span style="color:#c26a00;">⚠ ${kStale} — 예약 수집이 지연돼 그 달 값이 아닙니다</span>` : ""}`}</p>
       </div>
     </div>
     <p class="stat-sub">참고: 스냅샷 시점 평가액을 단순 비교한 값입니다(추가 납입·매도 등 현금흐름은 반영하지 않음) — 정확한 수익률은 매입단가 기준 손익을 참고하세요.</p>`;
@@ -4792,6 +4798,23 @@ function buildRateCorrCoefHTML(pts) {
   return `<p class="stat-sub"><b>월간 등락률 상관계수(코스피 vs 내 계좌)</b>: ${r.toFixed(2)} — 코스피와 ${strength}(표본 ${n}개월, 표본이 적어 참고용).</p>`;
 }
 
+/* A99(2026-09-21 사용자 "추이 코스피반영 오류체크"): 스냅샷의 코스피가 **그날 값이 아닐 수
+   있다** — 앱은 live-trading 브랜치의 latest_global.json을 읽는데, GitHub 예약 수집은
+   best-effort라 지연·누락되면 며칠 전 값을 그대로 물고 있는다(실사례: 9/21 월요일 낮에
+   대시보드는 네이버 실시간 7,018.92인데 스냅샷에는 9/19 수집분 6,894.23이 찍혔다).
+   A61에서 수집 시각을 저장해 뒀지만 title 속성(마우스 호버)뿐이라 **모바일에서는 볼 수가
+   없었다** — 수집일이 그 행의 날짜와 다르면 숫자 밑에 눈에 보이게 표기한다. */
+function kospiCellHTML(kospi, asOf, rowKey) {
+  if (!(kospi > 0)) return `<td>—</td>`;
+  const num = kospi.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  const asOfDate = asOf ? String(asOf).slice(0, 10) : "";
+  // rowKey가 "YYYY-MM-DD"(일별)면 날짜까지, "YYYY-MM"(월별)이면 월까지 같으면 정상으로 본다.
+  const same = !asOfDate || asOfDate.slice(0, rowKey.length) === rowKey;
+  const title = asOf ? ` title="${asOf} 수집분 — 예약 수집(30분 주기)이 지연되면 이전 값이 그대로 남는다"` : "";
+  if (same) return `<td${title}>${num}</td>`;
+  return `<td${title}>${num}<br><span class="stat-sub" style="font-size:11px; color:#c26a00;">⚠ ${asOfDate.slice(5).replace("-", "/")} 수집분</span></td>`;
+}
+
 /* 일별 자산변동 캡처 이력 테이블 — "오늘 자산 스냅샷" 버튼으로 쌓은 이력을 최근순으로 표시 */
 function buildDailyAssetHTML(dailyHistory) {
   if (!dailyHistory.length) {
@@ -4806,7 +4829,7 @@ function buildDailyAssetHTML(dailyHistory) {
       <td>${h.date}</td><td>${fmtW(h.value)}</td>
       <td style="color:${diff == null ? "var(--text-muted)" : diff >= 0 ? "var(--good)" : "var(--critical)"}">${diff == null ? "—" : (diff >= 0 ? "+" : "") + fmtW(diff)}</td>
       <td>${h.monthlyDiv > 0 ? fmtW(h.monthlyDiv) : "—"}</td>
-      <td${h.kospiAsOf ? ` title="${h.kospiAsOf} 수집분(30분 주기) — 같은 값이 이어지면 그사이 수집이 갱신 안 된 것"` : ""}>${h.kospi > 0 ? h.kospi.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—"}</td>
+      ${kospiCellHTML(h.kospi, h.kospiAsOf, h.date)}
       <td><button type="button" class="my-daily-del" data-date="${h.date}" title="이 날 기록 삭제"
         style="border:none; background:none; color:var(--critical); cursor:pointer; font-size:15px; padding:2px 6px;">🗑</button></td>
     </tr>`;
@@ -4922,7 +4945,7 @@ function buildMonthlyAssetHTML(monthlyHistory) {
       <td>${h.month}</td><td>${fmtW(h.value)}</td>
       <td style="color:${diff == null ? "var(--text-muted)" : diff >= 0 ? "var(--good)" : "var(--critical)"}">${diff == null ? "—" : `${diff >= 0 ? "+" : ""}${fmtW(diff)} (${pct.toFixed(2)}%)`}</td>
       <td>${h.monthlyDiv > 0 ? fmtW(h.monthlyDiv) : "—"}</td>
-      <td${h.kospiAsOf ? ` title="${h.kospiAsOf} 수집분(30분 주기) — 같은 값이 이어지면 그사이 수집이 갱신 안 된 것"` : ""}>${h.kospi > 0 ? h.kospi.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—"}</td>
+      ${kospiCellHTML(h.kospi, h.kospiAsOf, h.month)}
     </tr>`;
   }).join("");
   return `<div style="overflow-x:auto;">
@@ -5916,6 +5939,16 @@ function marketIndexSnapshot(liveGlobal) {
   return { kospi: pick("KOSPI"), sp500: pick("^GSPC"), nasdaq: pick("^IXIC"), updated: liveGlobal.updated };
 }
 
+/* A99: 수집 시각("2026-09-21 12:57 KST")이 몇 시간 전인지. 날짜 문자열끼리 비교하면
+   todayStr()이 UTC 기준이라 KST 새벽~오전에 멀쩡한 데이터를 "어제 것"으로 오판한다 —
+   경과 시간으로 재는 편이 시간대에 안전하고 "몇 시간 전"이라는 정보까지 준다. */
+function liveGlobalAgeHours(updated) {
+  const m = /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}) KST$/.exec(String(updated || ""));
+  if (!m) return null;
+  const ts = Date.parse(`${m[1]}T${m[2]}:00+09:00`);
+  return Number.isFinite(ts) ? (Date.now() - ts) / 3600000 : null;
+}
+
 /* 조회시점 코스피 표시 — "🔄 최신시세" 라인 바로 아래, 매 렌더마다 보인다. 데이터가 없으면
    빈 문자열(있던 값이 사라진 것처럼 보이지 않게, 아예 줄 자체를 안 그린다). */
 function marketIndexBarHTML(liveGlobal) {
@@ -5924,7 +5957,14 @@ function marketIndexBarHTML(liveGlobal) {
   const k = snap.kospi;
   const pct = k.changePct || 0;
   const color = pct > 0 ? "var(--good)" : pct < 0 ? "var(--critical)" : "var(--text-muted)";
-  return `<p class="stat-sub">📈 코스피 ${k.price.toLocaleString(undefined, { maximumFractionDigits: 2 })} <span style="color:${color}">${signedPct(pct)}</span> — ${snap.updated} 기준(30분 주기 수집, 실시간 아님)</p>`;
+  // A99(2026-09-21 사용자 "추이 코스피반영 오류체크"): GitHub 예약 수집은 best-effort라
+  // 지연·누락되면 며칠 전 값이 그대로 남는다(실사례: 월요일 낮에 금요일 종가가 찍혀 있었고,
+  // 그 상태로 저장한 스냅샷에 과거 지수가 함께 기록됐다). 오래된 값이면 눈에 보이게 알린다.
+  const age = liveGlobalAgeHours(snap.updated);
+  const staleMsg = age != null && age >= 6
+    ? `<br><span style="color:#c26a00;">⚠ 마지막 수집이 ${age >= 48 ? Math.floor(age / 24) + "일" : Math.floor(age) + "시간"} 전입니다 — 예약 수집이 지연·누락된 상태라, 지금 스냅샷을 저장하면 이 과거 지수가 함께 기록됩니다.</span>`
+    : "";
+  return `<p class="stat-sub">📈 코스피 ${k.price.toLocaleString(undefined, { maximumFractionDigits: 2 })} <span style="color:${color}">${signedPct(pct)}</span> — ${snap.updated} 기준(30분 주기 수집, 실시간 아님)${staleMsg}</p>`;
 }
 
 /* ---------- A28: 종합 탭 "리포트 생성" (A31에서 가독성·등락 보강) ----------
