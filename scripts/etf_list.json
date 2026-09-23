@@ -1123,6 +1123,27 @@
       "category": "미국·글로벌 테마 액티브(국내상장)",
       "region": "미국",
       "style": "성장"
+    },
+    {
+      "symbol": "0238F0.KS",
+      "name": "KODEX 미국AI메모리TOP2플러스",
+      "category": "미국 테마",
+      "region": "미국",
+      "style": "성장"
+    },
+    {
+      "symbol": "0048J0.KS",
+      "name": "KODEX 미국머니마켓액티브",
+      "category": "채권",
+      "region": "미국",
+      "style": "안전"
+    },
+    {
+      "symbol": "498270.KS",
+      "name": "KIWOOM 미국양자컴퓨팅",
+      "category": "미국 테마",
+      "region": "미국",
+      "style": "성장"
     }
   ]
 }
